@@ -60,11 +60,34 @@ docker compose up -d
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 pnpm db:migrate        # create tables
-pnpm db:seed           # optional demo school
+pnpm db:seed           # optional demo schools (see Demo data)
 pnpm dev               # API on :4000, web on :3000
 ```
 
-Demo login after seeding: school code `demo-school`, email `owner@demo.pk` (or `teacher@demo.pk` and `accountant@demo.pk`), password `password123`. The seed adds 24 students, subject teachers, fee structures, two admission enquiries and a mid-term exam with all marks entered (ready to publish), a bell schedule, timetables, a homework item, staff salary details ready for a payroll run, and a few months of other income and expenses.
+## Demo data
+
+`pnpm db:seed` builds two schools with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Every login's password is `password123`.
+
+**City Grammar School** (school code `demo-school`, Lahore): two campuses (Model Town, with Playgroup to Grade 8, and Johar Town, with Playgroup to Grade 5), about 490 students in 300 families with siblings, 47 staff, and from the start of the academic year:
+
+- daily attendance with a few chronic absentees, and today's registers partly taken;
+- monthly fee vouchers with sibling, staff-child and merit concessions, payments by cash, bank, JazzCash, Easypaisa and 1Bill, some late or part payments, and a few defaulting families;
+- a published first-term exam with positions and remarks, and a monthly test still being marked;
+- timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, an admissions pipeline, announcements and a message log.
+
+| Login | Role |
+| --- | --- |
+| `owner@demo.pk` | Owner (whole school) |
+| `principal@demo.pk` | Principal (whole school) |
+| `johar.head@demo.pk` | Campus head, Johar Town only |
+| `admin@demo.pk` | Admin officer, Model Town only |
+| `accountant@demo.pk` | Accountant |
+| `teacher@demo.pk` | Mathematics teacher and a class teacher |
+| `03001234567` | Parent (Imran Khan) with three children |
+
+**Bright Future School** (school code `bright-future`, Faisalabad): a smaller single-campus school, to check that schools never see each other's data. Owner login `owner@brightfuture.pk`.
+
+`docs/sample-data/` has spreadsheets for trying the student import against the demo school: `new-admissions.xlsx` (40 clean rows) and `new-admissions-with-mistakes.xlsx` (rows with the usual problems).
 
 ## Tests
 

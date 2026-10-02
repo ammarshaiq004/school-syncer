@@ -10,12 +10,29 @@ import { CurrentUser, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
-const className = (e?: { section: { name: string; class: { name: string } } }) =>
-  e ? `${e.section.class.name} ${e.section.name}` : 'Not enrolled';
+interface SectionWithCampus {
+  name: string;
+  class: { name: string; campus: { name: string } };
+}
+
+/** "Grade 3 A", or "Grade 3 A, Johar Town campus" when campuses share class names. */
+const sectionName = (section: SectionWithCampus, withCampus: boolean) =>
+  `${section.class.name} ${section.name}${withCampus ? `, ${section.class.campus.name}` : ''}`;
+
+const className = (withCampus: boolean, e?: { section: SectionWithCampus }) =>
+  e ? sectionName(e.section, withCampus) : 'Not enrolled';
+
+const sectionSelect = {
+  select: { name: true, class: { select: { name: true, campus: { select: { name: true } } } } },
+} as const;
 
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly prisma: PrismaService) {}
+
+  private async hasCampuses(schoolId: string) {
+    return (await this.prisma.campus.count({ where: { schoolId } })) > 1;
+  }
 
   /** Income and expenditure for a period: fees, other income, expenses by category and salaries. */
   @Get('income-expense')
@@ -66,6 +83,7 @@ export class ReportsController {
   @Roles(...FEE_ROLES)
   async feeCollection(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
     const r = dateRange(from, to);
+    const withCampus = await this.hasCampuses(user.schoolId);
     const payments = await this.prisma.payment.findMany({
       where: {
         schoolId: user.schoolId,
@@ -78,7 +96,7 @@ export class ReportsController {
               select: {
                 enrollments: {
                   where: { status: 'ACTIVE' },
-                  select: { section: { select: { name: true, class: { select: { name: true } } } } },
+                  select: { section: sectionSelect },
                 },
               },
             },
@@ -94,7 +112,7 @@ export class ReportsController {
         a.name.localeCompare(b.name),
       ),
       byMethod: totalsBy(payments, (p) => p.method, (p) => p.amount),
-      byClass: totalsBy(payments, (p) => className(p.invoice.student.enrollments[0]), (p) => p.amount),
+      byClass: totalsBy(payments, (p) => className(withCampus, p.invoice.student.enrollments[0]), (p) => p.amount),
     };
   }
 
@@ -102,6 +120,7 @@ export class ReportsController {
   @Get('outstanding')
   @Roles(...FEE_ROLES)
   async outstanding(@CurrentUser() user: AuthUser) {
+    const withCampus = await this.hasCampuses(user.schoolId);
     const invoices = await this.prisma.invoice.findMany({
       where: {
         schoolId: user.schoolId,
@@ -118,7 +137,7 @@ export class ReportsController {
             admissionNo: true,
             enrollments: {
               where: { status: 'ACTIVE' },
-              select: { section: { select: { name: true, class: { select: { name: true } } } } },
+              select: { section: sectionSelect },
             },
           },
         },
@@ -132,7 +151,7 @@ export class ReportsController {
         id: s.id,
         name: [s.firstName, s.lastName].filter(Boolean).join(' '),
         admissionNo: s.admissionNo,
-        class: className(s.enrollments[0]),
+        class: className(withCampus, s.enrollments[0]),
         balance: 0,
         invoices: 0,
       };
@@ -161,6 +180,7 @@ export class ReportsController {
     const end = new Date(start);
     end.setUTCMonth(end.getUTCMonth() + 1);
     const scope = campusScope(user);
+    const withCampus = (scope?.length ?? 2) > 1 && (await this.hasCampuses(user.schoolId));
     const sessions = await this.prisma.attendanceSession.findMany({
       where: {
         schoolId: user.schoolId,
@@ -168,7 +188,13 @@ export class ReportsController {
         ...(scope ? { section: { class: { campusId: { in: scope } } } } : {}),
       },
       include: {
-        section: { select: { id: true, name: true, class: { select: { name: true, sortOrder: true } } } },
+        section: {
+          select: {
+            id: true,
+            name: true,
+            class: { select: { name: true, sortOrder: true, campus: { select: { name: true } } } },
+          },
+        },
         records: {
           select: {
             status: true,
@@ -182,7 +208,7 @@ export class ReportsController {
     const sections = new Map<string, { sectionId: string; name: string; sort: number; days: number; marks: number; present: number }>();
     const students = new Map<string, { id: string; name: string; admissionNo: string; class: string; days: number; present: number }>();
     for (const session of sessions) {
-      const name = `${session.section.class.name} ${session.section.name}`;
+      const name = sectionName(session.section, withCampus);
       const sec = sections.get(session.section.id) ?? {
         sectionId: session.section.id,
         name,
