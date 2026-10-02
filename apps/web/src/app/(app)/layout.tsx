@@ -16,6 +16,8 @@ const NAV: { href: string; label: string; roles: Role[] }[] = [
   { href: "/exams", label: "Exams and results", roles: TEACHING },
   { href: "/fees", label: "Fees", roles: FEES },
   { href: "/hr", label: "HR and payroll", roles: STAFF },
+  { href: "/accounts", label: "Accounts", roles: FEES },
+  { href: "/reports", label: "Reports", roles: FEES },
   { href: "/announcements", label: "Announcements", roles: STAFF },
   { href: "/messages", label: "Message log", roles: SETUP },
   { href: "/campuses", label: "Campuses", roles: SETUP },
@@ -25,7 +27,6 @@ const NAV: { href: string; label: string; roles: Role[] }[] = [
 ];
 
 const COMING = [
-  { label: "Accounts and reports", phase: 2 },
   { label: "Transport", phase: 3 },
 ];
 

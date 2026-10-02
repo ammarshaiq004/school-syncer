@@ -8,6 +8,11 @@ export function localToday(timeZone = SCHOOL_TIMEZONE): string {
   );
 }
 
+/** The local YYYY-MM-DD day an instant falls on, in the school's timezone. */
+export function localDate(at: Date, timeZone = SCHOOL_TIMEZONE): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+}
+
 /** A YYYY-MM-DD day as the UTC-midnight Date that @db.Date columns store. */
 export const dayStart = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
