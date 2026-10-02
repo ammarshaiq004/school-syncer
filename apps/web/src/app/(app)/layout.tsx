@@ -3,26 +3,28 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, setToken, type Role, type SessionUser } from "@/lib/api";
+import { api, setToken, type Feature, type Role, type SchoolPlan, type SessionUser } from "@/lib/api";
+import { day } from "@/lib/format";
 import { FEES, hasRole, SessionContext, SETUP, STAFF, TEACHING } from "@/lib/session";
 
-const NAV: { href: string; label: string; roles: Role[] }[] = [
+const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] = [
   { href: "/dashboard", label: "Dashboard", roles: STAFF },
-  { href: "/admissions", label: "Admissions", roles: SETUP },
+  { href: "/admissions", label: "Admissions", roles: SETUP, feature: "admissions" },
   { href: "/students", label: "Students", roles: STAFF },
   { href: "/attendance", label: "Attendance", roles: TEACHING },
-  { href: "/timetable", label: "Timetable", roles: STAFF },
-  { href: "/homework", label: "Homework", roles: TEACHING },
-  { href: "/exams", label: "Exams and results", roles: TEACHING },
-  { href: "/fees", label: "Fees", roles: FEES },
-  { href: "/hr", label: "HR and payroll", roles: STAFF },
-  { href: "/accounts", label: "Accounts", roles: FEES },
-  { href: "/reports", label: "Reports", roles: FEES },
+  { href: "/timetable", label: "Timetable", roles: STAFF, feature: "timetable" },
+  { href: "/homework", label: "Homework", roles: TEACHING, feature: "homework" },
+  { href: "/exams", label: "Exams and results", roles: TEACHING, feature: "exams" },
+  { href: "/fees", label: "Fees", roles: FEES, feature: "fees" },
+  { href: "/hr", label: "HR and payroll", roles: STAFF, feature: "hr" },
+  { href: "/accounts", label: "Accounts", roles: FEES, feature: "accounts" },
+  { href: "/reports", label: "Reports", roles: FEES, feature: "reports" },
   { href: "/announcements", label: "Announcements", roles: STAFF },
   { href: "/messages", label: "Message log", roles: SETUP },
   { href: "/campuses", label: "Campuses", roles: SETUP },
   { href: "/classes", label: "Classes and sections", roles: SETUP },
   { href: "/users", label: "Users and roles", roles: SETUP },
+  { href: "/billing", label: "Plan and billing", roles: FEES },
   { href: "/parent", label: "My children", roles: ["PARENT"] },
 ];
 
@@ -35,11 +37,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [signedInAt, setSignedInAt] = useState(0);
 
   useEffect(() => {
     api<SessionUser>("/auth/me")
       .then((me) => {
         setUser(me);
+        setSignedInAt(Date.now());
         // Parents only have their own portal.
         if (!hasRole(me, STAFF) && !pathname.startsWith("/parent")) router.replace("/parent");
       })
@@ -55,7 +59,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return <div className="p-8 text-sm opacity-60">Loading...</div>;
   }
 
-  const nav = NAV.filter((item) => hasRole(user, item.roles));
+  const features = user.plan?.features;
+  const nav = NAV.filter(
+    (item) => hasRole(user, item.roles) && (!item.feature || !features || features.includes(item.feature)),
+  );
 
   return (
     <SessionContext.Provider value={user}>
@@ -102,9 +109,41 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </span>
             <button onClick={signOut} className="text-sm text-brand">Sign out</button>
           </header>
+          {user.plan && hasRole(user, STAFF) && <PlanBanner plan={user.plan} canBill={hasRole(user, FEES)} now={signedInAt} />}
           <main className="p-4 md:p-6 print:p-0">{children}</main>
         </div>
       </div>
     </SessionContext.Provider>
+  );
+}
+
+/** Tells staff when the school is on a trial or can't make changes. */
+function PlanBanner({ plan, canBill, now }: { plan: SchoolPlan; canBill: boolean; now: number }) {
+  const daysLeft = plan.trialEndsAt ? Math.ceil((new Date(plan.trialEndsAt).getTime() - now) / 86_400_000) : null;
+  let text: string;
+  let urgent = false;
+  if (plan.access !== "full") {
+    text = `${plan.reason ?? "The school can't make changes right now."} You can still look everything up.`;
+    urgent = true;
+  } else if (plan.status === "TRIAL" && daysLeft !== null) {
+    text = `Free trial of the ${plan.name} plan: ${daysLeft <= 1 ? "ends today" : `${daysLeft} days left`}, until ${day(plan.trialEndsAt!)}.`;
+    urgent = daysLeft <= 7;
+  } else {
+    return null;
+  }
+  return (
+    <div
+      role="status"
+      className={`flex flex-wrap items-center justify-between gap-2 px-6 py-2 text-sm print:hidden ${
+        urgent ? "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200" : "bg-brand/10 text-brand"
+      }`}
+    >
+      <span>{text}</span>
+      {canBill && (
+        <Link href="/billing" className="font-medium underline">
+          {plan.status === "TRIAL" ? "Choose a plan" : "Plan and billing"}
+        </Link>
+      )}
+    </div>
   );
 }

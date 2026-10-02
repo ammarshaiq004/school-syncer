@@ -91,6 +91,7 @@ export interface SchoolPlan {
 }
 
 export interface SeedSummary {
+  schoolId: string;
   students: number;
   staff: number;
   invoices: number;
@@ -1166,6 +1167,7 @@ export async function seedSchool(
   await prisma.notificationLog.createMany({ data: logs });
 
   return {
+    schoolId,
     students: kids.length,
     staff: staff.length,
     invoices: invoiceRows.length,

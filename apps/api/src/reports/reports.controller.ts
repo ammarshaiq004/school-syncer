@@ -6,7 +6,7 @@ import { campusScope, FEE_ROLES, SETUP_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dateRange, nextDay } from '../common/date-range.js';
 import { dayStart, localDate, startOfLocalDay } from '../common/dates.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -27,6 +27,7 @@ const sectionSelect = {
 } as const;
 
 @Controller('reports')
+@RequiresFeature('reports')
 export class ReportsController {
   constructor(private readonly prisma: PrismaService) {}
 

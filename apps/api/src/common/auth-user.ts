@@ -12,3 +12,10 @@ export interface AuthUser {
   name: string;
   roles: RoleGrant[];
 }
+
+/** A SchoolSyncer staff member signed in to the platform console. */
+export interface PlatformUser {
+  sub: string;
+  name: string;
+  platform: true;
+}

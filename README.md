@@ -87,7 +87,19 @@ pnpm dev               # API on :4000, web on :3000
 
 **Bright Future School** (school code `bright-future`, Faisalabad): a smaller single-campus school, to check that schools never see each other's data. Owner login `owner@brightfuture.pk`.
 
+**SchoolSyncer console** at `/platform/login`: sign in as `admin@schoolsyncer.pk`. City Grammar is a paying Growth customer with six months of bills, Bright Future is nine days from the end of its free trial, and five small customer schools (owner login `owner@<school code>.pk`) cover the other states: Al-Huda Academy (active, Starter), Beaconlight School (two bills overdue, so read-only), Green Valley School (suspended, can't sign in), Sunrise Montessori (trial ended, read-only) and Iqra Public School (trial just started).
+
 `docs/sample-data/` has spreadsheets for trying the student import against the demo school: `new-admissions.xlsx` (40 clean rows) and `new-admissions-with-mistakes.xlsx` (rows with the usual problems).
+
+## Running it as a service
+
+SchoolSyncer is sold to schools as a monthly subscription. SchoolSyncer staff run it from the console at `/platform`; each school sees its own plan under **Plan and billing**.
+
+- **Plans.** Starter, Growth and Enterprise, each priced per active student per month with a minimum, a student and campus limit, and a set of modules (admissions, fees, exams, homework, timetable, HR and payroll, accounts, reports). Student records, attendance, announcements, users and the parent portal come with every plan. Staff can change prices, limits and modules in the console.
+- **Trial.** A school that registers gets 30 days of Growth free. When it ends, the school can still look everything up but can't change anything until the owner picks a plan.
+- **Bills.** Staff create each month's bills from the console; every active or past-due school is billed for its active students that day. A bill unpaid 15 days after its due date makes the school read-only until it is paid. Suspended and cancelled schools can't sign in.
+- **Limits and modules** are enforced by the API: a module outside the plan returns 403 and its menu item is hidden, and adding students or campuses past the limit is refused with a message to upgrade.
+- **Support.** Staff can sign in to a school as its owner for an hour to help; it's recorded in the school's audit log and the console's history.
 
 ## Tests
 
@@ -144,6 +156,12 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET | `/dashboard/summary` | staff |
 | GET | `/parent/children` | parents |
 | GET | `/notifications` | owner, principal or admin |
+| GET, POST | `/subscription`, POST `/subscription/plan` | owner, principal, admin or accountant; choosing a plan needs the owner |
+| POST, GET | `/platform/auth/login`, `/platform/auth/me` | SchoolSyncer staff (separate login) |
+| GET | `/platform/overview`, `/platform/schools`, `/platform/schools/:id` | SchoolSyncer staff |
+| PATCH, POST | `/platform/schools/:id/subscription`, `/platform/schools/:id/support-login` | SchoolSyncer staff |
+| GET, PATCH | `/platform/plans`, `/platform/plans/:id` | SchoolSyncer staff |
+| GET, POST | `/platform/invoices`, `/platform/invoices/generate`, `/platform/invoices/:id/pay`, `/platform/invoices/:id/void` | SchoolSyncer staff |
 
 ## WhatsApp and payments setup
 

@@ -14,8 +14,9 @@ import { z } from 'zod';
 import { SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Public, Roles } from '../common/decorators.js';
+import { CurrentUser, Public, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { createStudentRecord } from '../students/student-records.js';
 
@@ -50,10 +51,12 @@ const admitSchema = z.object({
 type AdmitInput = z.infer<typeof admitSchema>;
 
 @Controller()
+@RequiresFeature('admissions')
 export class AdmissionsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   /** Online enquiry form on the school's public admission page. */
@@ -162,6 +165,7 @@ export class AdmissionsController {
     if (application.stage === ApplicationStage.ADMITTED) {
       throw new BadRequestException('This applicant is already admitted');
     }
+    await this.subscriptions.assertStudentRoom(user.schoolId, 1);
     const [firstName, ...rest] = application.childName.split(/\s+/);
     const student = await this.prisma.$transaction(async (tx) => {
       const created = await createStudentRecord(tx, {

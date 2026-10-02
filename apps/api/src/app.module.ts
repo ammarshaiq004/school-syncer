@@ -26,6 +26,10 @@ import { ClassesController } from './classes/classes.controller.js';
 import { CommonModule } from './common/common.module.js';
 import { JwtAuthGuard } from './common/jwt-auth.guard.js';
 import { RolesGuard } from './common/roles.guard.js';
+import { SubscriptionGuard } from './common/subscription.guard.js';
+import { PlatformController } from './platform/platform.controller.js';
+import { PlatformAuthController } from './platform/platform-auth.controller.js';
+import { SubscriptionController } from './platform/subscription.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SchoolController } from './school/school.controller.js';
@@ -71,12 +75,16 @@ import { UsersController } from './users/users.controller.js';
     AnnouncementsController,
     DashboardController,
     ParentController,
+    SubscriptionController,
+    PlatformAuthController,
+    PlatformController,
   ],
   providers: [
     PaymentsService,
-    // Order matters: authenticate first, then check roles.
+    // Order matters: authenticate first, then check roles, then the school's plan.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: SubscriptionGuard },
   ],
 })
 export class AppModule {}

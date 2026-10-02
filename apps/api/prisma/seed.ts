@@ -4,9 +4,10 @@
 //   pnpm prisma:seed --reset    deletes and rebuilds them (other schools are untouched)
 //
 // Every login uses the password "password123". See README "Demo data" for the list.
-import { Gender, PrismaClient, Role } from '@prisma/client';
+import { Gender, PrismaClient, Role, SubscriptionStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { localToday } from '../src/common/dates.js';
+import { CUSTOMER_SCHOOLS, PLATFORM_ADMIN, seedBilling, seedCustomerSchools, seedPlans, seedPlatformAdmin } from './demo/platform.js';
 import { seedSchool, type SchoolPlan } from './demo/school.js';
 
 const prisma = new PrismaClient();
@@ -98,6 +99,14 @@ export const DEMO_SCHOOLS: SchoolPlan[] = [
   },
 ];
 
+/** How each demo school pays SchoolSyncer. */
+const BILLING: Record<string, Parameters<typeof seedBilling>[2]> = {
+  // A paying customer for half a year.
+  'demo-school': { plan: 'growth', status: SubscriptionStatus.ACTIVE, paidMonths: 6 },
+  // Signed up three weeks ago; the trial ends soon.
+  'bright-future': { plan: 'growth', status: SubscriptionStatus.TRIAL, trialDays: 9, paidMonths: 0 },
+};
+
 /** Deletes a school and everything under it, money and history included. */
 async function deleteSchool(slug: string) {
   const school = await prisma.school.findUnique({ where: { slug } });
@@ -117,6 +126,8 @@ async function main() {
   const reset = process.argv.includes('--reset');
   const today = localToday();
   const passwordHash = await bcrypt.hash('password123', 12);
+  await seedPlans(prisma);
+  await seedPlatformAdmin(prisma, passwordHash);
   for (const plan of DEMO_SCHOOLS) {
     if (reset) await deleteSchool(plan.slug);
     else if (await prisma.school.findUnique({ where: { slug: plan.slug } })) {
@@ -129,7 +140,11 @@ async function main() {
       `Seeded ${plan.slug}: ${summary.students} students, ${summary.staff} staff, ${summary.invoices} invoices, ` +
         `${summary.attendanceRecords} attendance records in ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
+    await seedBilling(prisma, summary.schoolId, BILLING[plan.slug]);
   }
+  if (reset) for (const c of CUSTOMER_SCHOOLS) await deleteSchool(c.slug);
+  await seedCustomerSchools(prisma, passwordHash);
+  console.log(`Seeded ${CUSTOMER_SCHOOLS.length} customer schools and the console login ${PLATFORM_ADMIN.email}`);
 }
 
 await main().finally(() => prisma.$disconnect());
