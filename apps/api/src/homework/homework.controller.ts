@@ -19,7 +19,7 @@ import {
 } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart, daysBefore, localToday } from '../common/dates.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -37,6 +37,7 @@ const homeworkSchema = z.object({
 });
 
 @Controller('homework')
+@RequiresFeature('homework')
 export class HomeworkController {
   constructor(
     private readonly prisma: PrismaService,

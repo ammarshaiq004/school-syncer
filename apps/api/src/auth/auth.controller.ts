@@ -8,11 +8,15 @@ import {
   type LoginInput,
   type RegisterSchoolInput,
 } from './auth.schemas.js';
+import { SubscriptionService } from '../platform/subscription.service.js';
 import { AuthService } from './auth.service.js';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly subscriptions: SubscriptionService,
+  ) {}
 
   @Public()
   @Post('register-school')
@@ -29,8 +33,20 @@ export class AuthController {
     return this.auth.login(body);
   }
 
+  /** The signed-in user, with what their school's plan allows so the app can hide the rest. */
   @Get('me')
-  me(@CurrentUser() user: AuthUser) {
-    return user;
+  async me(@CurrentUser() user: AuthUser) {
+    const plan = await this.subscriptions.forSchool(user.schoolId);
+    return {
+      ...user,
+      plan: {
+        name: plan.planName,
+        status: plan.status,
+        trialEndsAt: plan.trialEndsAt,
+        features: plan.features,
+        access: plan.access,
+        reason: plan.reason,
+      },
+    };
   }
 }
