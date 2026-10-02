@@ -12,6 +12,7 @@ import {
 import {
   ConcessionType,
   FeeFrequency,
+  FineStatus,
   InvoiceStatus,
   PaymentMethod,
   Prisma,
@@ -206,6 +207,11 @@ export class FeesController {
     });
 
     const riders = await this.transportRiders(user.schoolId, enrollments.map((e) => e.studentId), body.period);
+    // Library fines not paid at the desk go on the voucher.
+    const fines = await this.prisma.bookLoan.findMany({
+      where: { schoolId: user.schoolId, studentId: { in: enrollments.map((e) => e.studentId) }, fineStatus: FineStatus.DUE },
+      include: { copy: { select: { book: { select: { title: true } } } } },
+    });
 
     const firstMonth = year.startsOn.toISOString().slice(0, 7) === body.period;
     const [y, m] = body.period.split('-').map(Number);
@@ -227,6 +233,10 @@ export class FeesController {
         e.student.concessions,
         firstMonth,
       );
+      const studentFines = fines.filter((f) => f.studentId === e.studentId);
+      for (const f of studentFines) {
+        lines.push({ feeHeadId: null, description: `Library fine: ${f.copy.book.title}${f.lost ? ' (lost)' : ''}`, amount: f.fine });
+      }
       const total = lines.reduce((sum, l) => sum + l.amount, 0);
       if (!lines.length) continue;
       try {
@@ -242,6 +252,12 @@ export class FeesController {
             lines: { create: lines },
           },
         });
+        if (studentFines.length) {
+          await this.prisma.bookLoan.updateMany({
+            where: { id: { in: studentFines.map((f) => f.id) }, fineStatus: FineStatus.DUE },
+            data: { fineStatus: FineStatus.BILLED, invoiceId: invoice.id },
+          });
+        }
         created.push({
           id: invoice.id,
           studentId: e.studentId,

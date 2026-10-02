@@ -68,6 +68,20 @@ export default function ChildScreen() {
             ))}
           </Card>
 
+          {(c.libraryBooks?.length ?? 0) > 0 && (
+            <Card>
+              <H2>Library books</H2>
+              {c.libraryBooks!.map((b) => (
+                <Row
+                  key={`${b.title}-${b.dueOn}`}
+                  title={b.title}
+                  subtitle={b.returned ? `Late fine ${rupees(b.fine)}` : `${b.overdue ? 'Overdue since' : 'Due'} ${day(b.dueOn, true)}`}
+                  right={b.overdue ? <Badge tone="red">late</Badge> : undefined}
+                />
+              ))}
+            </Card>
+          )}
+
           {c.transport && (
             <Card>
               <H2>School van</H2>

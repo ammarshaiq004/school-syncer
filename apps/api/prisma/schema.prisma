@@ -57,10 +57,15 @@ model School {
   accountCategories AccountCategory[]
   accountEntries    AccountEntry[]
 
-  subscription     Subscription?
-  platformInvoices PlatformInvoice[]
-  vehicles         Vehicle[]
-  transportRoutes  TransportRoute[]
+  subscription      Subscription?
+  platformInvoices  PlatformInvoice[]
+  vehicles          Vehicle[]
+  transportRoutes   TransportRoute[]
+  books             Book[]
+  certificates      Certificate[]
+  libraryLoanDays   Int               @default(14)
+  libraryFinePerDay Int               @default(5)
+  libraryMaxLoans   Int               @default(2)
 }
 
 model Campus {
@@ -81,6 +86,7 @@ model Campus {
 
   periods         Period[]
   transportRoutes TransportRoute[]
+  bookCopies      BookCopy[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -100,6 +106,7 @@ model AcademicYear {
 
   enrollments   Enrollment[]
   feeStructures FeeStructure[]
+  promotions    Promotion[]
 
   exams Exam[]
 
@@ -213,10 +220,12 @@ model User {
   timetableSlots   TimetableSlot[]
   homeworkAssigned Homework[]
 
-  staffProfile    StaffProfile?
-  staffAttendance StaffAttendance[]
-  leaveRequests   LeaveRequest[]
-  payslips        Payslip[]
+  staffProfile       StaffProfile?
+  staffAttendance    StaffAttendance[]
+  leaveRequests      LeaveRequest[]
+  payslips           Payslip[]
+  bookLoans          BookLoan[]        @relation("BookLoans")
+  certificatesIssued Certificate[]
 
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
@@ -295,9 +304,12 @@ model Student {
   concessions Concession[]
   application Application?
 
-  marks       Mark[]
-  examResults ExamResult[]
-  transport   TransportAssignment[]
+  marks        Mark[]
+  examResults  ExamResult[]
+  transport    TransportAssignment[]
+  bookLoans    BookLoan[]
+  certificates Certificate[]
+  promotions   Promotion[]
 
   @@unique([schoolId, admissionNo])
   @@index([schoolId, status])
@@ -338,6 +350,8 @@ enum EnrollmentStatus {
   PROMOTED
   TRANSFERRED
   LEFT
+  REPEATED // kept back in the same class for another year
+  GRADUATED // finished the school's last class
 }
 
 // A student's place in a section for one academic year; history is kept across years.
@@ -515,10 +529,11 @@ model Invoice {
   status    InvoiceStatus @default(UNPAID)
   createdAt DateTime      @default(now())
 
-  school   School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  student  Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  lines    InvoiceLine[]
-  payments Payment[]
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lines        InvoiceLine[]
+  payments     Payment[]
+  libraryFines BookLoan[]
 
   @@unique([studentId, period])
   @@index([schoolId, period, status])
@@ -1145,4 +1160,140 @@ model TransportAssignment {
 
   @@index([schoolId, routeId])
   @@index([studentId])
+}
+
+// ----- Library -----
+
+enum CopyStatus {
+  AVAILABLE
+  ON_LOAN
+  LOST
+  WITHDRAWN
+}
+
+enum FineStatus {
+  NONE
+  DUE // owed, not yet collected
+  PAID // paid at the library desk
+  BILLED // added to a fee voucher
+  WAIVED
+}
+
+// A title in the catalogue; the physical books are its copies.
+model Book {
+  id        String   @id @default(cuid())
+  schoolId  String
+  title     String
+  author    String?
+  isbn      String?
+  publisher String?
+  category  String? // "Fiction", "Reference", "Islamic studies"
+  language  String   @default("English")
+  shelf     String? // "B-3"
+  createdAt DateTime @default(now())
+
+  school School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  copies BookCopy[]
+
+  @@index([schoolId, title])
+}
+
+model BookCopy {
+  id          String     @id @default(cuid())
+  schoolId    String
+  bookId      String
+  accessionNo String // the number stamped inside the book
+  campusId    String?
+  status      CopyStatus @default(AVAILABLE)
+  addedOn     DateTime   @default(now()) @db.Date
+
+  book   Book       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  campus Campus?    @relation(fields: [campusId], references: [id], onDelete: SetNull)
+  loans  BookLoan[]
+
+  @@unique([schoolId, accessionNo])
+}
+
+// A copy lent to a student or a member of staff.
+model BookLoan {
+  id         String     @id @default(cuid())
+  schoolId   String
+  copyId     String
+  studentId  String?
+  userId     String? // staff borrower
+  issuedOn   DateTime   @db.Date
+  dueOn      DateTime   @db.Date
+  returnedOn DateTime?  @db.Date
+  lost       Boolean    @default(false)
+  fine       Int        @default(0) // PKR: late days, plus the replacement cost if lost
+  fineStatus FineStatus @default(NONE)
+  invoiceId  String? // the fee voucher the fine went on
+  issuedById String?
+  createdAt  DateTime   @default(now())
+
+  copy    BookCopy @relation(fields: [copyId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user    User?    @relation("BookLoans", fields: [userId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, returnedOn])
+  @@index([studentId])
+  @@index([userId])
+}
+
+enum CertificateType {
+  LEAVING // school leaving certificate, issued when a student leaves
+  CHARACTER
+  ENROLMENT // "is a bonafide student of class ..."
+}
+
+// A certificate as issued: the details printed on it are kept as they were
+// that day, so a reprint matches the original even after records change.
+model Certificate {
+  id           String          @id @default(cuid())
+  schoolId     String
+  studentId    String
+  type         CertificateType
+  serialNo     String // e.g. "SLC-2026-0007"
+  verifyCode   String          @unique // printed on the certificate; anyone can check it online
+  issuedOn     DateTime        @db.Date
+  details      Json
+  issuedById   String
+  cancelledAt  DateTime?
+  cancelReason String?
+  createdAt    DateTime        @default(now())
+
+  school   School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student  Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  issuedBy User    @relation(fields: [issuedById], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, serialNo])
+  @@index([schoolId, type])
+  @@index([studentId])
+}
+
+enum PromotionDecision {
+  PROMOTE
+  REPEAT
+  LEAVE
+  GRADUATE
+}
+
+// What happens to a student at the end of a year, decided section by section
+// and carried out together when the next year starts.
+model Promotion {
+  id          String            @id @default(cuid())
+  schoolId    String
+  fromYearId  String
+  studentId   String
+  decision    PromotionDecision
+  toSectionId String? // the next year's section, for PROMOTE and REPEAT
+  decidedById String
+  updatedAt   DateTime          @updatedAt
+
+  fromYear AcademicYear @relation(fields: [fromYearId], references: [id], onDelete: Cascade)
+  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([fromYearId, studentId])
+  @@index([schoolId])
 }

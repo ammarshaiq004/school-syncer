@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { StudentLibrary } from "@/components/student-library";
 import { StudentTransport } from "@/components/student-transport";
 import { Badge, Button, Card, ErrorText, Notice, PageTitle, rowClass, tableClass } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -60,7 +61,19 @@ export default function StudentProfilePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle action={<Badge tone={s.status === "ACTIVE" ? "green" : "gray"}>{s.status.toLowerCase()}</Badge>}>
+      <PageTitle
+        action={
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <Badge tone={s.status === "ACTIVE" ? "green" : "gray"}>{s.status.toLowerCase()}</Badge>
+            {user.plan?.features.includes("certificates") !== false && (
+              <>
+                {s.status === "ACTIVE" && <Link className="text-brand" href={`/certificates/id-cards?studentIds=${s.id}`}>ID card</Link>}
+                {hasRole(user, SETUP) && <Link className="text-brand" href={`/certificates/new?studentId=${s.id}`}>Issue certificate</Link>}
+              </>
+            )}
+          </div>
+        }
+      >
         {fullName(s)}
       </PageTitle>
       <Notice>{message}</Notice>
@@ -152,6 +165,7 @@ export default function StudentProfilePage() {
         {user.plan?.features.includes("transport") !== false && (
           <StudentTransport studentId={s.id} active={s.status === "ACTIVE"} />
         )}
+        {user.plan?.features.includes("library") !== false && <StudentLibrary studentId={s.id} />}
       </div>
     </div>
   );

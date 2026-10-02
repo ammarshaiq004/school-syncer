@@ -51,6 +51,11 @@ export class ParentController {
                   where: { status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] } },
                   orderBy: { period: 'desc' },
                 },
+                bookLoans: {
+                  where: { OR: [{ returnedOn: null }, { fineStatus: 'DUE' }] },
+                  include: { copy: { select: { book: { select: { title: true } } } } },
+                  orderBy: { dueOn: 'asc' },
+                },
                 transport: {
                   where: { endsOn: null },
                   include: { route: { include: { vehicle: true } }, stop: true },
@@ -104,6 +109,13 @@ export class ParentController {
             driverPhone: student.transport[0].route.vehicle?.driverPhone ?? null,
           }
         : null,
+      libraryBooks: student.bookLoans.map((l) => ({
+        title: l.copy.book.title,
+        dueOn: l.dueOn.toISOString().slice(0, 10),
+        returned: l.returnedOn !== null,
+        overdue: l.returnedOn === null && l.dueOn < dayStart(localToday()),
+        fine: l.fineStatus === 'DUE' ? l.fine : 0,
+      })),
       unpaidInvoices: student.invoices.map((i) => ({
         id: i.id,
         voucherNo: i.voucherNo,
