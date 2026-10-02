@@ -207,6 +207,10 @@ describe('Core operations (e2e)', () => {
       .set(otherTeacher)
       .expect(403);
 
+    const mine = await request(server).get('/api/attendance/sections').set(teacher).expect(200);
+    expect(mine.body).toEqual([expect.objectContaining({ id: sectionId, isClassTeacher: true, students: 2 })]);
+    expect((await request(server).get('/api/attendance/sections').set(otherTeacher).expect(200)).body).toEqual([]);
+
     const summary = await request(server)
       .get('/api/attendance/summary?date=2026-10-05')
       .set(owner)

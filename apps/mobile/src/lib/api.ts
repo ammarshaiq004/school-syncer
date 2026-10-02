@@ -1,0 +1,56 @@
+export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+
+export type Role =
+  | 'OWNER'
+  | 'PRINCIPAL'
+  | 'ADMIN'
+  | 'ACCOUNTANT'
+  | 'TEACHER'
+  | 'CLASS_TEACHER'
+  | 'STAFF'
+  | 'PARENT'
+  | 'STUDENT';
+
+export interface SessionUser {
+  sub: string;
+  schoolId: string;
+  name: string;
+  roles: { role: Role; campusId: string | null }[];
+}
+
+let token: string | null = null;
+export const setApiToken = (t: string | null) => {
+  token = t;
+};
+
+/** Calls the API and returns the JSON body; throws the API's message on failure. */
+export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: init.method ?? 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    });
+  } catch {
+    throw new Error('Could not reach the school server. Check your internet connection.');
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = Array.isArray(data?.message) ? data.message.join(', ') : data?.message;
+    throw new ApiError(res.status, message ?? `Request failed (${res.status})`);
+  }
+  return data as T;
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
