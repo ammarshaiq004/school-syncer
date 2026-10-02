@@ -83,13 +83,14 @@ export default function ImportStudentsPage() {
           <li>
             <span className="font-medium">Get the template</span> and copy your students into it, one per row. Class and
             section must match the ones set up under Classes (for example &ldquo;{sections.options[0]?.label ?? "Grade 1 A"}&rdquo;).
-            Leave Admission No empty to have numbers given out automatically.
+            Leave Admission No empty to have numbers given out automatically. Campus is only needed when two campuses
+            have a class with the same name.
             <div className="mt-2">
               <Button
                 variant="ghost"
                 onClick={() =>
                   downloadStudentTemplate(
-                    sections.classes.flatMap((c) => c.sections.map((s) => [c.name, s.name])),
+                    sections.classes.flatMap((c) => c.sections.map((s) => [c.campus.name, c.name, s.name])),
                   ).catch((e: Error) => setError(e.message))
                 }
               >

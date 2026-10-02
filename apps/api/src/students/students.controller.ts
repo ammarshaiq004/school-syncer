@@ -180,7 +180,11 @@ export class StudentsController {
         academicYear: { isCurrent: true },
         ...(campuses ? { class: { campusId: { in: campuses } } } : {}),
       },
-      select: { id: true, name: true, class: { select: { name: true } } },
+      select: {
+        id: true,
+        name: true,
+        class: { select: { name: true, campus: { select: { name: true } } } },
+      },
     });
     const given = body.rows.map((r) => r.admissionNo).filter(Boolean);
     const taken = await this.prisma.student.findMany({
@@ -193,7 +197,12 @@ export class StudentsController {
     });
     const rows = checkImportRows(
       body.rows,
-      sections.map((s) => ({ id: s.id, className: s.class.name, sectionName: s.name })),
+      sections.map((s) => ({
+        id: s.id,
+        campusName: s.class.campus.name,
+        className: s.class.name,
+        sectionName: s.name,
+      })),
       new Set(taken.map((t) => t.admissionNo)),
       new Set(rolls.map((r) => `${r.sectionId}|${r.rollNo}`)),
     );

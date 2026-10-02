@@ -8,8 +8,8 @@ import {
 } from './student-import.js';
 
 const sections = [
-  { id: 's1a', className: 'Grade 1', sectionName: 'A' },
-  { id: 's1b', className: 'Grade 1', sectionName: 'B' },
+  { id: 's1a', campusName: 'Main', className: 'Grade 1', sectionName: 'A' },
+  { id: 's1b', campusName: 'Main', className: 'Grade 1', sectionName: 'B' },
 ];
 const row = (over: Record<string, string> = {}) =>
   importRowSchema.parse({
@@ -157,5 +157,27 @@ describe('checkImportRows', () => {
       ['Mother', false],
     ]);
     expect(none.errors).toEqual(['Guardian name and phone are missing']);
+  });
+
+  it('needs the campus when two campuses share a class name', () => {
+    const both = [
+      ...sections,
+      {
+        id: 'j1a',
+        campusName: 'Johar Town',
+        className: 'Grade 1',
+        sectionName: 'A',
+      },
+    ];
+    const [unclear, chosen, wrong] = checkImportRows(
+      [row(), row({ campus: 'johar town' }), row({ campus: 'Gulberg' })],
+      both,
+      new Set(),
+    );
+    expect(unclear.errors).toEqual([
+      '"Grade 1 A" is at more than one campus (Main, Johar Town); fill in the Campus column',
+    ]);
+    expect(chosen.student?.sectionId).toBe('j1a');
+    expect(wrong.errors).toEqual(['No section "Grade 1 A" at Gulberg']);
   });
 });

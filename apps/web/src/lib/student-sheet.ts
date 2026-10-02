@@ -4,6 +4,7 @@ import writeXlsxFile from "write-excel-file/browser";
 /** The columns of the student import sheet, with the other names schools use for them. */
 export const STUDENT_COLUMNS = [
   { key: "admissionNo", title: "Admission No", aliases: ["admission number", "adm no", "gr no", "reg no", "registration no"], width: 14 },
+  { key: "campus", title: "Campus", aliases: ["branch", "campus name"], width: 14 },
   { key: "firstName", title: "First Name", aliases: ["student name", "name"], width: 16 },
   { key: "lastName", title: "Last Name", aliases: ["surname"], width: 14 },
   { key: "gender", title: "Gender", aliases: ["sex"], width: 9 },
@@ -109,12 +110,16 @@ export async function readStudentFile(file: File): Promise<ReadResult> {
   return gridToRows(await readSheet(file));
 }
 
-/** A ready-to-fill sheet with the right headers and two example rows from this school's classes. */
+/**
+ * A ready-to-fill sheet with the right headers and two example rows from this
+ * school's classes, as [campus, class, section]. The Campus column is only
+ * needed when campuses share class names.
+ */
 export async function downloadStudentTemplate(sections: string[][]) {
-  const [first = ["Grade 1", "A"], second = first] = sections;
+  const [first = ["", "Grade 1", "A"], second = first] = sections;
   const examples: Record<string, string>[] = [
-    { admissionNo: "", firstName: "Ahmed", lastName: "Khan", gender: "Male", dateOfBirth: "14/08/2018", class: first[0], section: first[1], rollNo: "", guardianName: "Imran Khan", guardianRelation: "Father", guardianPhone: "0300 1234567", guardianCnic: "35202-1234567-1", guardian2Name: "Sana Imran", guardian2Relation: "Mother", guardian2Phone: "0321 7654321" },
-    { admissionNo: "", firstName: "Fatima", lastName: "Ali", gender: "Female", dateOfBirth: "02/01/2017", class: second[0], section: second[1], rollNo: "", guardianName: "Asif Ali", guardianRelation: "Father", guardianPhone: "0333 1112223" },
+    { admissionNo: "", firstName: "Ahmed", lastName: "Khan", gender: "Male", dateOfBirth: "14/08/2018", campus: first[0], class: first[1], section: first[2], rollNo: "", guardianName: "Imran Khan", guardianRelation: "Father", guardianPhone: "0300 1234567", guardianCnic: "35202-1234567-1", guardian2Name: "Sana Imran", guardian2Relation: "Mother", guardian2Phone: "0321 7654321" },
+    { admissionNo: "", firstName: "Fatima", lastName: "Ali", gender: "Female", dateOfBirth: "02/01/2017", campus: second[0], class: second[1], section: second[2], rollNo: "", guardianName: "Asif Ali", guardianRelation: "Father", guardianPhone: "0333 1112223" },
   ];
   await writeXlsxFile(
     [

@@ -14,6 +14,7 @@ const cell = z
 
 export const importRowSchema = z.object({
   admissionNo: cell,
+  campus: cell,
   firstName: cell,
   lastName: cell,
   gender: cell,
@@ -35,6 +36,7 @@ export type ImportRow = z.infer<typeof importRowSchema>;
 
 export interface SectionRef {
   id: string;
+  campusName: string;
   className: string;
   sectionName: string;
 }
@@ -114,9 +116,12 @@ export function checkImportRows(
   takenRolls: Set<string> = new Set(),
   today = new Date(),
 ): CheckedRow[] {
-  const sectionIds = new Map(
-    sections.map((s) => [`${key(s.className)}|${key(s.sectionName)}`, s.id]),
-  );
+  // Campuses often reuse class names, so one "Grade 1 A" can mean several sections.
+  const sectionsByName = new Map<string, SectionRef[]>();
+  for (const s of sections) {
+    const k = `${key(s.className)}|${key(s.sectionName)}`;
+    sectionsByName.set(k, [...(sectionsByName.get(k) ?? []), s]);
+  }
   const seenAdmission = new Map<string, number>();
   const seenRoll = new Map<string, number>();
 
@@ -153,14 +158,26 @@ export function checkImportRows(
     let sectionName = r.section;
     if (!sectionName) {
       const split = /^(.*\S)\s*[-\s]\s*(\S+)$/.exec(className);
-      if (split && sectionIds.has(`${key(split[1])}|${key(split[2])}`))
+      if (split && sectionsByName.has(`${key(split[1])}|${key(split[2])}`))
         [, className, sectionName] = split;
     }
     const classSection = [className, sectionName].filter(Boolean).join(' ');
-    const sectionId = sectionIds.get(`${key(className)}|${key(sectionName)}`);
+    const named =
+      sectionsByName.get(`${key(className)}|${key(sectionName)}`) ?? [];
+    const matches = r.campus
+      ? named.filter((s) => key(s.campusName) === key(r.campus))
+      : named;
+    const sectionId = matches.length === 1 ? matches[0].id : undefined;
     if (!className) errors.push('Class is missing');
     else if (!sectionName) errors.push('Section is missing');
-    else if (!sectionId) errors.push(`No section "${classSection}" this year`);
+    else if (!named.length)
+      errors.push(`No section "${classSection}" this year`);
+    else if (!matches.length)
+      errors.push(`No section "${classSection}" at ${r.campus}`);
+    else if (matches.length > 1)
+      errors.push(
+        `"${classSection}" is at more than one campus (${matches.map((s) => s.campusName).join(', ')}); fill in the Campus column`,
+      );
 
     if (r.admissionNo) {
       const no = r.admissionNo;
