@@ -5,7 +5,7 @@ parent communication for every campus, in one place. See the
 [implementation plan](https://claude.ai/code/artifact/2d21f836-f248-4e3f-a2a9-7803a060159d)
 for the full module list and roadmap.
 
-**Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams, report cards, timetables and homework.**
+**Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams, report cards, timetables, homework, HR and payroll.**
 
 Phase 2, academics (in progress):
 
@@ -16,6 +16,8 @@ Phase 2, academics (in progress):
 - Subjects and subject teachers per section, set from the Classes screen.
 - Bell schedule per campus, and a weekly timetable per section that fills in the subject teacher and refuses to put a teacher in two classes at once. Teachers get a "my week" view; parents see their child's timetable.
 - Homework set by subject teachers, with an optional WhatsApp note to parents, and shown to parents in their portal.
+- Staff records (designation, CNIC, bank, basic salary, fixed allowances and deductions), a daily staff register, and leave requests that staff send and admins approve.
+- Monthly payroll: absent days and unpaid leave are deducted at a day's basic, drafts can be recalculated, finalised months are locked, salaries are marked paid, and staff see printable payslips.
 
 Phase 1, core operations:
 
@@ -60,7 +62,7 @@ pnpm db:seed           # optional demo school
 pnpm dev               # API on :4000, web on :3000
 ```
 
-Demo login after seeding: school code `demo-school`, email `owner@demo.pk` (or `teacher@demo.pk` to try marks entry), password `password123`. The seed adds 24 students, subject teachers, fee structures, two admission enquiries and a mid-term exam with all marks entered (ready to publish), a bell schedule, timetables and a homework item.
+Demo login after seeding: school code `demo-school`, email `owner@demo.pk` (or `teacher@demo.pk` and `accountant@demo.pk`), password `password123`. The seed adds 24 students, subject teachers, fee structures, two admission enquiries and a mid-term exam with all marks entered (ready to publish), a bell schedule, timetables, a homework item, and staff salary details ready for a payroll run.
 
 ## Tests
 
@@ -96,6 +98,11 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, PUT | `/timetable/periods`, `/timetable/sections/:id` | staff; PUT needs owner, principal or admin |
 | GET | `/timetable/me`, `/timetable/teachers/:id`, `/timetable/students/:id` | the teacher; admins; staff and the child's parents |
 | GET, POST, DELETE | `/homework` | staff can read; teachers set homework for subjects they teach |
+| GET, PUT | `/hr/staff`, `/hr/staff/:userId` | owner, principal, admin or accountant; PUT needs owner, principal or admin |
+| GET, PUT | `/hr/attendance` | owner, principal or admin |
+| GET, POST | `/hr/leave`, POST `/hr/leave/:id/decide` | staff apply and see their own; owner, principal or admin decide |
+| GET, POST | `/hr/payroll`, `/hr/payroll/:id`, `/hr/payroll/:id/finalize`, `/hr/payroll/:id/payslips/:pid/pay` | owner, principal, admin or accountant |
+| GET | `/hr/payslips/mine`, `/hr/payslips/:id` | staff, for their own finalised payslips |
 | GET, POST | `/users` | owner, principal or admin |
 | GET, POST, PATCH | `/students`, POST `/students/:id/guardians/:gid/invite` | staff; changes need owner, principal or admin |
 | GET, POST, PATCH | `/applications`, POST `/applications/:id/admit`, GET `/applications/funnel` | owner, principal or admin |

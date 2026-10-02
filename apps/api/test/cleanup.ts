@@ -1,7 +1,7 @@
 import type { PrismaService } from '../src/prisma/prisma.service.js';
 
 /**
- * Deletes test schools. Payments, exams, students and applications are removed first
+ * Deletes test schools. Payments, payroll, exams, students and applications are removed first
  * because the schema deliberately refuses to cascade-delete money and
  * enrollment history.
  */
@@ -10,6 +10,7 @@ export async function deleteSchools(prisma: PrismaService, where: { slug?: strin
   const schoolId = { in: schools.map((s) => s.id) };
   await prisma.payment.deleteMany({ where: { schoolId } });
   await prisma.exam.deleteMany({ where: { schoolId } });
+  await prisma.payrollRun.deleteMany({ where: { schoolId } });
   await prisma.application.deleteMany({ where: { schoolId } });
   await prisma.student.deleteMany({ where: { schoolId } });
   await prisma.school.deleteMany({ where: { id: schoolId } });
