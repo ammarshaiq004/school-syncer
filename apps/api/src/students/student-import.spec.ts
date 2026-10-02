@@ -179,5 +179,16 @@ describe('checkImportRows', () => {
     ]);
     expect(chosen.student?.sectionId).toBe('j1a');
     expect(wrong.errors).toEqual(['No section "Grade 1 A" at Gulberg']);
+
+    const [elsewhere] = checkImportRows(
+      [row({ campus: 'Johar Town' })],
+      sections,
+      new Set(),
+      new Set(),
+      ['Johar Town'],
+    );
+    expect(elsewhere.errors).toEqual([
+      "Your login can't add students at Johar Town",
+    ]);
   });
 });

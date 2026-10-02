@@ -114,6 +114,8 @@ export function checkImportRows(
   takenAdmissionNos: Set<string>,
   /** "sectionId|rollNo" for students already in this year's sections. */
   takenRolls: Set<string> = new Set(),
+  /** Campuses of the school this login can't add students to. */
+  otherCampuses: string[] = [],
   today = new Date(),
 ): CheckedRow[] {
   // Campuses often reuse class names, so one "Grade 1 A" can mean several sections.
@@ -173,7 +175,11 @@ export function checkImportRows(
     else if (!named.length)
       errors.push(`No section "${classSection}" this year`);
     else if (!matches.length)
-      errors.push(`No section "${classSection}" at ${r.campus}`);
+      errors.push(
+        otherCampuses.some((c) => key(c) === key(r.campus))
+          ? `Your login can't add students at ${r.campus}`
+          : `No section "${classSection}" at ${r.campus}`,
+      );
     else if (matches.length > 1)
       errors.push(
         `"${classSection}" is at more than one campus (${matches.map((s) => s.campusName).join(', ')}); fill in the Campus column`,

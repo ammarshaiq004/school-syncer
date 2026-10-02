@@ -205,6 +205,14 @@ export class StudentsController {
       })),
       new Set(taken.map((t) => t.admissionNo)),
       new Set(rolls.map((r) => `${r.sectionId}|${r.rollNo}`)),
+      campuses
+        ? (
+            await this.prisma.campus.findMany({
+              where: { schoolId: user.schoolId, id: { notIn: campuses } },
+              select: { name: true },
+            })
+          ).map((c) => c.name)
+        : [],
     );
     const invalid = rows.filter((r) => r.errors.length).length;
     const summary = {
