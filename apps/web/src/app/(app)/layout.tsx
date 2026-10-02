@@ -26,13 +26,13 @@ const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] =
   { href: "/messages", label: "Message log", roles: SETUP },
   { href: "/campuses", label: "Campuses", roles: SETUP },
   { href: "/classes", label: "Classes and sections", roles: SETUP },
+  { href: "/promotions", label: "Year-end promotions", roles: SETUP },
   { href: "/users", label: "Users and roles", roles: SETUP },
   { href: "/billing", label: "Plan and billing", roles: FEES },
   { href: "/parent", label: "My children", roles: ["PARENT"] },
 ];
 
 const COMING = [
-  { label: "Year-end promotions", phase: 3 },
   { label: "Online fee payments", phase: 3 },
 ];
 
