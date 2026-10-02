@@ -61,7 +61,19 @@ export default function StudentProfilePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle action={<Badge tone={s.status === "ACTIVE" ? "green" : "gray"}>{s.status.toLowerCase()}</Badge>}>
+      <PageTitle
+        action={
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <Badge tone={s.status === "ACTIVE" ? "green" : "gray"}>{s.status.toLowerCase()}</Badge>
+            {user.plan?.features.includes("certificates") !== false && (
+              <>
+                {s.status === "ACTIVE" && <Link className="text-brand" href={`/certificates/id-cards?studentIds=${s.id}`}>ID card</Link>}
+                {hasRole(user, SETUP) && <Link className="text-brand" href={`/certificates/new?studentId=${s.id}`}>Issue certificate</Link>}
+              </>
+            )}
+          </div>
+        }
+      >
         {fullName(s)}
       </PageTitle>
       <Notice>{message}</Notice>

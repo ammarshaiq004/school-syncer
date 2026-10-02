@@ -16,6 +16,7 @@ export const FEATURES = {
   reports: 'Reports',
   transport: 'Transport',
   library: 'Library',
+  certificates: 'Certificates and ID cards',
 } as const;
 
 export type Feature = keyof typeof FEATURES;
@@ -38,6 +39,7 @@ export const DEFAULT_PLANS = [
       'exams',
       'homework',
       'reports',
+      'certificates',
     ] as Feature[],
     sortOrder: 1,
   },

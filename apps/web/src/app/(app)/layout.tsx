@@ -19,6 +19,7 @@ const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] =
   { href: "/hr", label: "HR and payroll", roles: STAFF, feature: "hr" },
   { href: "/transport", label: "Transport", roles: STAFF, feature: "transport" },
   { href: "/library", label: "Library", roles: STAFF, feature: "library" },
+  { href: "/certificates", label: "Certificates and ID cards", roles: STAFF, feature: "certificates" },
   { href: "/accounts", label: "Accounts", roles: FEES, feature: "accounts" },
   { href: "/reports", label: "Reports", roles: FEES, feature: "reports" },
   { href: "/announcements", label: "Announcements", roles: STAFF },
@@ -31,7 +32,7 @@ const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] =
 ];
 
 const COMING = [
-  { label: "Certificates and ID cards", phase: 3 },
+  { label: "Year-end promotions", phase: 3 },
   { label: "Online fee payments", phase: 3 },
 ];
 

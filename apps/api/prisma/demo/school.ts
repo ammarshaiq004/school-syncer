@@ -30,6 +30,7 @@ import { invoiceLines, type InvoiceLineDraft } from '../../src/fees/fee-calculat
 import { calculatePayslip, workingDays } from '../../src/hr/payroll-calculator.js';
 import { daysBefore } from '../../src/common/dates.js';
 import { ridesDuring } from '../../src/transport/transport-rules.js';
+import { seedCertificates } from './certificates.js';
 import { seedLibrary } from './library.js';
 import {
   BOY_NAMES,
@@ -107,6 +108,7 @@ export interface RoutePlan {
 
 export interface SeedSummary {
   schoolId: string;
+  certificates: number;
   books: number;
   loans: number;
   students: number;
@@ -1259,8 +1261,21 @@ export async function seedSchool(
     { loanDays: 14, finePerDay: 5 },
   );
 
+  // ----- Certificates -----
+  const office =
+    (await prisma.user.findFirst({ where: { schoolId, roles: { some: { role: Role.PRINCIPAL } } } })) ?? owner;
+  const certificates = await seedCertificates(prisma, rng, {
+    schoolId,
+    issuedById: office!.id,
+    academicYearId: year.id,
+    yearStart,
+    today,
+    phone,
+  });
+
   return {
     schoolId,
+    certificates: certificates.certificates,
     books: library.copies,
     loans: library.loans,
     students: kids.length,
