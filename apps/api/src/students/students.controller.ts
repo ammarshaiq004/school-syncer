@@ -23,6 +23,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { checkImportRows, importRowSchema } from './student-import.js';
 import { createStudentRecord, guardianInputSchema } from './student-records.js';
@@ -61,6 +62,7 @@ export class StudentsController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   @Get()
@@ -155,6 +157,7 @@ export class StudentsController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(createStudentSchema)) body: CreateStudentInput,
   ) {
+    await this.subscriptions.assertStudentRoom(user.schoolId, 1);
     const student = await this.prisma.$transaction((tx) =>
       createStudentRecord(tx, { ...body, schoolId: user.schoolId }),
     );
@@ -220,6 +223,8 @@ export class StudentsController {
       invalid,
       rows: rows.map(({ row, name, classSection, errors }) => ({ row, name, classSection, errors })),
     };
+    // Once every row is fine, say up front if the plan has no room for them.
+    if (!invalid) await this.subscriptions.assertStudentRoom(user.schoolId, summary.valid);
     if (!body.commit || invalid) return { ...summary, imported: 0 };
 
     // Rows with their own admission numbers go first, so a generated number

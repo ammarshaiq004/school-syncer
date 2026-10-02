@@ -2,6 +2,8 @@ export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 
 const TOKEN_KEY = "schoolsyncer.token";
+/** The SchoolSyncer console signs in separately, so both can be open at once. */
+const PLATFORM_TOKEN_KEY = "schoolsyncer.platform-token";
 
 export type Role =
   | "OWNER"
@@ -19,24 +21,50 @@ export interface SessionUser {
   schoolId: string;
   name: string;
   roles: { role: Role; campusId: string | null }[];
+  plan?: SchoolPlan;
 }
 
-export function getToken(): string | null {
+export type Feature =
+  | "admissions"
+  | "fees"
+  | "online_payments"
+  | "exams"
+  | "homework"
+  | "timetable"
+  | "hr"
+  | "accounts"
+  | "reports";
+
+/** The school's SchoolSyncer plan, as /auth/me reports it. */
+export interface SchoolPlan {
+  name: string;
+  status: "TRIAL" | "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "CANCELLED";
+  trialEndsAt: string | null;
+  features: Feature[];
+  access: "full" | "read_only" | "blocked";
+  reason: string | null;
+}
+
+function readToken(key: string): string | null {
   try {
-    return localStorage.getItem(TOKEN_KEY);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-export function setToken(token: string | null) {
+function writeToken(key: string, token: string | null) {
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
+    if (token) localStorage.setItem(key, token);
+    else localStorage.removeItem(key);
   } catch {
     // Storage unavailable (private mode); the session lasts until reload.
   }
 }
+
+export const getToken = () => readToken(TOKEN_KEY);
+export const setToken = (token: string | null) => writeToken(TOKEN_KEY, token);
+export const setPlatformToken = (token: string | null) => writeToken(PLATFORM_TOKEN_KEY, token);
 
 export class ApiError extends Error {
   constructor(
@@ -47,12 +75,16 @@ export class ApiError extends Error {
   }
 }
 
-/** Calls the SchoolSyncer API with the stored token and JSON body. */
-export async function api<T>(
-  path: string,
-  init: { method?: string; body?: unknown } = {},
-): Promise<T> {
-  const token = getToken();
+type RequestInit = { method?: string; body?: unknown };
+
+/** Calls the SchoolSyncer API with the school login's token and JSON body. */
+export const api = <T>(path: string, init: RequestInit = {}) => request<T>(path, init, getToken());
+
+/** Calls the console's /platform endpoints with the SchoolSyncer staff token. */
+export const platformApi = <T>(path: string, init: RequestInit = {}) =>
+  request<T>(`/platform${path}`, init, readToken(PLATFORM_TOKEN_KEY));
+
+async function request<T>(path: string, init: RequestInit, token: string | null): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: init.method ?? "GET",
     headers: {

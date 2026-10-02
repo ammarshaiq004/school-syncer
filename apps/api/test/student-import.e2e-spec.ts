@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import type { Server } from 'node:http';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
+import { SubscriptionService } from '../src/platform/subscription.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
 
@@ -132,6 +133,46 @@ describe('Student import (e2e)', () => {
     expect(
       (await request(server).get('/api/students').set(owner)).body,
     ).toHaveLength(0);
+  });
+
+  it("refuses rows the school's plan has no room for", async () => {
+    const school = await prisma.school.findUniqueOrThrow({
+      where: { slug: schoolSlug },
+    });
+    const plan = await prisma.plan.create({
+      data: {
+        code: `small-${run}`,
+        name: 'Small',
+        pricePerStudent: 1,
+        minimumMonthly: 1,
+        maxStudents: 2,
+        features: [],
+        isPublic: false,
+      },
+    });
+    const growth = await prisma.subscription.findUniqueOrThrow({
+      where: { schoolId: school.id },
+    });
+    await prisma.subscription.update({
+      where: { schoolId: school.id },
+      data: { planId: plan.id },
+    });
+    app.get(SubscriptionService).forget(school.id);
+    try {
+      const res = await request(server)
+        .post('/api/students/import')
+        .set(owner)
+        .send({ rows })
+        .expect(409);
+      expect(res.body.message).toMatch(/allows 2 students/);
+    } finally {
+      await prisma.subscription.update({
+        where: { schoolId: school.id },
+        data: { planId: growth.planId },
+      });
+      await prisma.plan.delete({ where: { id: plan.id } });
+      app.get(SubscriptionService).forget(school.id);
+    }
   });
 
   it('imports every row together, sharing guardians between siblings', async () => {

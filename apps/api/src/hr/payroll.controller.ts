@@ -13,7 +13,7 @@ import { FEE_ROLES, hasAnyRole, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart } from '../common/dates.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { calculatePayslip, daysBetween, workingDays, type PayItem } from './payroll-calculator.js';
@@ -35,6 +35,7 @@ const slipInclude = {
 } as const;
 
 @Controller('hr')
+@RequiresFeature('hr')
 export class PayrollController {
   constructor(
     private readonly prisma: PrismaService,

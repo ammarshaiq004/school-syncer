@@ -14,6 +14,7 @@ import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const campusSchema = z.object({
@@ -28,6 +29,7 @@ export class CampusesController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   @Get()
@@ -45,6 +47,7 @@ export class CampusesController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(campusSchema)) body: CampusInput,
   ) {
+    await this.subscriptions.assertCampusRoom(user.schoolId);
     const campus = await this.prisma.campus.create({
       data: { ...body, schoolId: user.schoolId },
     });

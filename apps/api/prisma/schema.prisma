@@ -56,6 +56,9 @@ model School {
   payrollRuns       PayrollRun[]
   accountCategories AccountCategory[]
   accountEntries    AccountEntry[]
+
+  subscription     Subscription?
+  platformInvoices PlatformInvoice[]
 }
 
 model Campus {
@@ -955,4 +958,104 @@ model AccountEntry {
   category AccountCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   @@index([schoolId, date])
+}
+
+// ---------------------------------------------------------------------------
+// SaaS platform: plans, subscriptions, platform billing and SchoolSyncer staff
+// ---------------------------------------------------------------------------
+
+// A price plan. Schools pay per active student per month, with a minimum.
+model Plan {
+  id              String   @id @default(cuid())
+  code            String   @unique // "starter", "growth", "enterprise"
+  name            String
+  description     String?
+  pricePerStudent Int // PKR per active student per month
+  minimumMonthly  Int // PKR
+  maxStudents     Int? // null = unlimited
+  maxCampuses     Int?
+  // Feature keys from src/platform/plans.ts, e.g. ["fees", "exams"]
+  features        String[]
+  isPublic        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+model Subscription {
+  id          String             @id @default(cuid())
+  schoolId    String             @unique
+  planId      String
+  status      SubscriptionStatus @default(TRIAL)
+  trialEndsAt DateTime?
+  notes       String? // SchoolSyncer staff notes, never shown to the school
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+}
+
+enum PlatformInvoiceStatus {
+  UNPAID
+  PAID
+  VOID
+}
+
+// What SchoolSyncer bills a school for a month.
+model PlatformInvoice {
+  id        String                @id @default(cuid())
+  number    String                @unique // "SS-202610-0007"
+  schoolId  String
+  period    String // "YYYY-MM"
+  planName  String
+  students  Int
+  amount    Int
+  status    PlatformInvoiceStatus @default(UNPAID)
+  dueDate   DateTime              @db.Date
+  paidAt    DateTime?
+  method    String?
+  reference String?
+  createdAt DateTime              @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, period])
+  @@index([status])
+}
+
+// SchoolSyncer's own staff, who run the platform. Not tied to any school.
+model PlatformAdmin {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  auditLogs PlatformAuditLog[]
+}
+
+model PlatformAuditLog {
+  id        String   @id @default(cuid())
+  adminId   String?
+  action    String // e.g. "subscription.update", "school.support_login"
+  schoolId  String?
+  details   Json?
+  createdAt DateTime @default(now())
+
+  admin PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, createdAt])
 }
