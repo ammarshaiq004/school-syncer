@@ -35,6 +35,12 @@ export const TEMPLATES = {
     text: (p: Record<string, string>) =>
       `${p.schoolName} parent portal: school code ${p.schoolCode}, login ${p.login}, password ${p.password}`,
   },
+  'exam.result': {
+    whatsapp: 'exam_result',
+    params: ['studentName', 'examName', 'percent', 'grade', 'schoolName'],
+    text: (p: Record<string, string>) =>
+      `${p.examName} result for ${p.studentName}: ${p.percent}%, grade ${p.grade}. See the full report card in the parent portal. - ${p.schoolName}`,
+  },
   announcement: {
     whatsapp: 'school_announcement',
     params: ['schoolName', 'title', 'body'],

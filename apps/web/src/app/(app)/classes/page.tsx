@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Select } from "@/components/select";
 import { Button, Card, ErrorText, Field } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -14,12 +14,16 @@ interface SchoolClass {
 }
 interface Campus { id: string; name: string }
 interface AcademicYear { id: string; name: string; isCurrent: boolean }
+interface Subject { id: string; name: string }
+interface StaffUser { id: string; name: string; isActive: boolean; roles: { role: string }[] }
+interface SectionSubject { subjectId: string; teacher: { id: string } | null }
 
 export default function ClassesPage() {
   const classes = useApi<SchoolClass[]>("/classes");
   const campuses = useApi<Campus[]>("/campuses");
   const years = useApi<AcademicYear[]>("/academic-years");
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState<{ id: string; label: string } | null>(null);
   const currentYear = years.data?.find((y) => y.isCurrent) ?? years.data?.[0];
 
   async function submit(event: FormEvent<HTMLFormElement>, send: (form: FormData) => Promise<unknown>) {
@@ -52,9 +56,14 @@ export default function ClassesPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {c.sections.map((s) => (
-                  <span key={s.id} className="rounded-full bg-brand/10 px-3 py-1 text-sm text-brand">
+                  <button
+                    key={s.id}
+                    onClick={() => setEditing({ id: s.id, label: `${c.name} ${s.name}` })}
+                    title="Subjects and teachers"
+                    className={`rounded-full px-3 py-1 text-sm ${editing?.id === s.id ? "bg-brand text-white" : "bg-brand/10 text-brand"}`}
+                  >
                     {s.name}{s.capacity ? ` · ${s.capacity} seats` : ""}
-                  </span>
+                  </button>
                 ))}
               </div>
               {currentYear && (
@@ -82,9 +91,11 @@ export default function ClassesPage() {
           ))}
         </div>
         <ErrorText>{error}</ErrorText>
+        <p className="mt-2 text-xs opacity-60">Click a section to set its subjects and teachers.</p>
       </Card>
 
       <div className="flex flex-col gap-6">
+        {editing && <SectionSubjects key={editing.id} section={editing} onClose={() => setEditing(null)} />}
         <Card>
           <h2 className="mb-4 font-semibold">Add a class</h2>
           <form
@@ -107,6 +118,19 @@ export default function ClassesPage() {
             <Field label="Class name" name="name" placeholder="Grade 5" required />
             <Field label="Order" name="sortOrder" type="number" min={0} defaultValue={0} />
             <Button type="submit">Add class</Button>
+          </form>
+        </Card>
+        <Card>
+          <h2 className="mb-4 font-semibold">Add a subject</h2>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(e) =>
+              submit(e, (f) => api("/subjects", { method: "POST", body: { name: f.get("name"), code: f.get("code") || undefined } }))
+            }
+          >
+            <Field label="Subject" name="name" placeholder="Mathematics" required />
+            <Field label="Code (optional)" name="code" placeholder="MATH" />
+            <Button type="submit">Add subject</Button>
           </form>
         </Card>
         <Card>
@@ -138,5 +162,94 @@ export default function ClassesPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+const TEACHING_ROLES = ["TEACHER", "CLASS_TEACHER", "PRINCIPAL", "ADMIN", "OWNER"];
+
+/** Which subjects a section studies and who teaches each; teachers can then enter marks for them. */
+function SectionSubjects({ section, onClose }: { section: { id: string; label: string }; onClose: () => void }) {
+  const subjects = useApi<Subject[]>("/subjects");
+  const users = useApi<StaffUser[]>("/users");
+  const [rows, setRows] = useState<Record<string, string | null> | null>(null);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<SectionSubject[]>(`/classes/sections/${section.id}/subjects`)
+      .then((list) => !cancelled && setRows(Object.fromEntries(list.map((r) => [r.subjectId, r.teacher?.id ?? null]))))
+      .catch((e: Error) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [section.id]);
+
+  const teachers = (users.data ?? []).filter((u) => u.isActive && u.roles.some((r) => TEACHING_ROLES.includes(r.role)));
+
+  async function save() {
+    if (!rows) return;
+    try {
+      await api(`/classes/sections/${section.id}/subjects`, {
+        method: "PUT",
+        body: { subjects: Object.entries(rows).map(([subjectId, teacherId]) => ({ subjectId, teacherId })) },
+      });
+      setError("");
+      setSaved(true);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <Card>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold">{section.label}: subjects and teachers</h2>
+        <button className="text-sm opacity-60" onClick={onClose}>Close</button>
+      </div>
+      {rows && (
+        <div className="flex flex-col gap-2">
+          {subjects.data?.map((s) => {
+            const on = s.id in rows;
+            return (
+              <div key={s.id} className="flex items-center gap-2 text-sm">
+                <label className="flex w-32 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => {
+                      setSaved(false);
+                      setRows((r) => {
+                        const next = { ...r };
+                        if (e.target.checked) next[s.id] = null;
+                        else delete next[s.id];
+                        return next;
+                      });
+                    }}
+                  />
+                  {s.name}
+                </label>
+                <select
+                  disabled={!on}
+                  value={rows[s.id] ?? ""}
+                  onChange={(e) => {
+                    setSaved(false);
+                    setRows((r) => ({ ...r, [s.id]: e.target.value || null }));
+                  }}
+                  aria-label={`Teacher for ${s.name}`}
+                  className="flex-1 rounded-lg border border-black/15 bg-transparent px-2 py-1 disabled:opacity-40 dark:border-white/20"
+                >
+                  <option value="">No teacher yet</option>
+                  {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+            );
+          })}
+          {subjects.data?.length === 0 && <p className="text-sm opacity-70">Add subjects first.</p>}
+          <Button onClick={save} className="mt-2">{saved ? "Saved" : "Save subjects"}</Button>
+        </div>
+      )}
+      <ErrorText>{error}</ErrorText>
+    </Card>
   );
 }

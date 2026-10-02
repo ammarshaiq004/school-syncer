@@ -5,7 +5,15 @@ parent communication for every campus, in one place. See the
 [implementation plan](https://claude.ai/code/artifact/2d21f836-f248-4e3f-a2a9-7803a060159d)
 for the full module list and roadmap.
 
-**Built so far: Phase 0 (Foundation) and Phase 1 (Core operations).**
+**Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams and report cards.**
+
+Phase 2, academics (in progress):
+
+- Exams with per-class papers (total and pass marks), and a school grading scale.
+- Marks entry by subject teachers, only for the subjects they teach; administrators can fill any sheet and see what is still missing.
+- Publishing freezes totals, grades, pass/fail and class positions, and can tell parents on WhatsApp. Unpublishing reopens marks for corrections and keeps remarks.
+- Printable report cards with teacher and principal remarks and attendance, visible to parents in their portal.
+- Subjects and subject teachers per section, set from the Classes screen.
 
 Phase 1, core operations:
 
@@ -50,7 +58,7 @@ pnpm db:seed           # optional demo school
 pnpm dev               # API on :4000, web on :3000
 ```
 
-Demo login after seeding: school code `demo-school`, email `owner@demo.pk`, password `password123`. The seed adds 24 students, fee structures and two admission enquiries.
+Demo login after seeding: school code `demo-school`, email `owner@demo.pk` (or `teacher@demo.pk` to try marks entry), password `password123`. The seed adds 24 students, subject teachers, fee structures, two admission enquiries and a mid-term exam with all marks entered, ready to publish.
 
 ## Tests
 
@@ -76,6 +84,13 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, POST | `/academic-years` | same |
 | GET, POST | `/classes`, POST `/classes/:id/sections` | same |
 | GET, POST | `/subjects` | same |
+| GET, PUT | `/classes/sections/:id/subjects` | staff; PUT needs owner, principal or admin |
+| GET, PUT | `/exams/grade-bands` | staff; PUT needs owner, principal or admin |
+| GET, POST | `/exams`, GET `/exams/:id`, PUT `/exams/:id/papers`, DELETE `/exams/:id/papers/:pid` | staff; changes need owner, principal or admin |
+| GET, PUT | `/exams/:id/marks`, GET `/exams/:id/progress` | admins, and teachers for subjects they teach |
+| POST | `/exams/:id/publish`, `/exams/:id/unpublish` | school-wide owner, principal or admin |
+| GET, PUT | `/exams/:id/results`, `/exams/:id/results/:sid/remarks` | staff; remarks by the class teacher or admins |
+| GET | `/exams/:id/report-cards/:sid` | staff, and parents for their own children once published |
 | GET, POST | `/users` | owner, principal or admin |
 | GET, POST, PATCH | `/students`, POST `/students/:id/guardians/:gid/invite` | staff; changes need owner, principal or admin |
 | GET, POST, PATCH | `/applications`, POST `/applications/:id/admit`, GET `/applications/funnel` | owner, principal or admin |
@@ -95,7 +110,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 By default messages are only written to the API log and the in-app message log (`NOTIFY_DRIVER=log`), so nothing is sent while developing. To send real WhatsApp messages:
 
 1. Create a WhatsApp Business account in Meta Business Manager and get a permanent token and phone number id.
-2. Create and get approval for these message templates (names and parameter order must match `apps/api/src/notifications/templates.ts`): `attendance_absent`, `fee_voucher`, `fee_reminder`, `fee_paid`, `parent_invite`, `school_announcement`.
+2. Create and get approval for these message templates (names and parameter order must match `apps/api/src/notifications/templates.ts`): `attendance_absent`, `fee_voucher`, `fee_reminder`, `fee_paid`, `parent_invite`, `exam_result`, `school_announcement`.
 3. Set `NOTIFY_DRIVER=whatsapp`, `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
 
 Payment gateways post to `/api/payments/webhook/<jazzcash|easypaisa|onebill|card>` with `{ voucherNo, amount, reference }` and an `X-Signature` header holding the HMAC-SHA256 of the raw body, using `PAYMENT_WEBHOOK_SECRET_<PROVIDER>`. Each gateway's own callback format still needs a small adapter once its merchant account is approved.
