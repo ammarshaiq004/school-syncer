@@ -2,6 +2,16 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { AdmissionsController } from './admissions/admissions.controller.js';
+import { AnnouncementsController } from './announcements/announcements.controller.js';
+import { AttendanceController } from './attendance/attendance.controller.js';
+import { DashboardController } from './dashboard/dashboard.controller.js';
+import { FeesController } from './fees/fees.controller.js';
+import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
+import { PaymentsService } from './fees/payments.service.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import { ParentController } from './parent/parent.controller.js';
+import { StudentsController } from './students/students.controller.js';
 import { AcademicYearsController } from './academic-years/academic-years.controller.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CampusesController } from './campuses/campuses.controller.js';
@@ -29,6 +39,7 @@ import { UsersController } from './users/users.controller.js';
     PrismaModule,
     CommonModule,
     AuthModule,
+    NotificationsModule,
   ],
   controllers: [
     HealthController,
@@ -38,8 +49,17 @@ import { UsersController } from './users/users.controller.js';
     ClassesController,
     SubjectsController,
     UsersController,
+    StudentsController,
+    AdmissionsController,
+    AttendanceController,
+    FeesController,
+    PaymentWebhookController,
+    AnnouncementsController,
+    DashboardController,
+    ParentController,
   ],
   providers: [
+    PaymentsService,
     // Order matters: authenticate first, then check roles.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
