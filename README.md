@@ -19,6 +19,7 @@ Phase 2, academics (in progress):
 - Staff records (designation, CNIC, bank, basic salary, fixed allowances and deductions), a daily staff register, and leave requests that staff send and admins approve.
 - Accounts: other income and expenses by category, and a cash book that pulls in fee receipts and paid salaries with opening and closing balances.
 - Reports: income and expenditure, fee collection by day, method and class, outstanding fees by class and student, and monthly attendance with students below a threshold. Every list downloads as a CSV for Excel.
+- Student import from Excel (.xlsx or CSV) for moving a school over: a downloadable template, every row checked first with plain-language problems listed per row (unknown class, bad phone, duplicate admission or roll number), then all rows imported together or none. Siblings share guardian records by phone.
 - Monthly payroll: absent days and unpaid leave are deducted at a day's basic, drafts can be recalculated, finalised months are locked, salaries are marked paid, and staff see printable payslips.
 
 Phase 1, core operations:
@@ -110,6 +111,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET | `/reports/attendance` | owner, principal or admin |
 | GET, POST | `/users` | owner, principal or admin |
 | GET, POST, PATCH | `/students`, POST `/students/:id/guardians/:gid/invite` | staff; changes need owner, principal or admin |
+| POST | `/students/import` (`commit: false` only checks the rows) | owner, principal or admin |
 | GET, POST, PATCH | `/applications`, POST `/applications/:id/admit`, GET `/applications/funnel` | owner, principal or admin |
 | POST | `/public/:school/enquiries`, GET `/public/:school/admission-options` | anyone |
 | GET, PUT | `/attendance/sheet`, GET `/attendance/summary`, GET `/attendance/students/:id` | admins, and teachers for their own sections |

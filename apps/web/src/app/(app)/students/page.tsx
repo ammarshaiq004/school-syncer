@@ -68,7 +68,18 @@ export default function StudentsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle action={canEdit && <Button onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "Add student"}</Button>}>
+      <PageTitle
+        action={
+          canEdit && (
+            <div className="flex gap-2">
+              <Link href="/students/import" className="rounded-lg border border-black/15 px-4 py-2 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10">
+                Import from Excel
+              </Link>
+              <Button onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "Add student"}</Button>
+            </div>
+          )
+        }
+      >
         Students
       </PageTitle>
 

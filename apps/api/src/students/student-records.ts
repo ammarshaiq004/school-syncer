@@ -17,6 +17,7 @@ export interface NewStudent {
   schoolId: string;
   sectionId: string;
   admissionNo?: string;
+  rollNo?: number;
   firstName: string;
   lastName?: string;
   gender: Gender;
@@ -79,7 +80,7 @@ export async function createStudentRecord(
           schoolId: input.schoolId,
           sectionId: section.id,
           academicYearId: section.academicYearId,
-          rollNo: (lastRoll._max.rollNo ?? 0) + 1,
+          rollNo: input.rollNo ?? (lastRoll._max.rollNo ?? 0) + 1,
         },
       },
     },

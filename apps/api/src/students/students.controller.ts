@@ -24,6 +24,7 @@ import { CurrentUser, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { checkImportRows, importRowSchema } from './student-import.js';
 import { createStudentRecord, guardianInputSchema } from './student-records.js';
 
 const createStudentSchema = z.object({
@@ -45,6 +46,13 @@ const updateStudentSchema = createStudentSchema
   .partial()
   .extend({ status: z.enum(StudentStatus).optional() });
 type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
+
+const importSchema = z.object({
+  rows: z.array(importRowSchema).min(1).max(3000),
+  // false checks the rows and reports problems without saving anything.
+  commit: z.boolean().default(false),
+});
+type ImportInput = z.infer<typeof importSchema>;
 
 @Controller('students')
 @Roles(...STAFF_ROLES)
@@ -152,6 +160,64 @@ export class StudentsController {
     );
     await this.audit.record(user, 'student.create', 'Student', student.id, { after: student });
     return student;
+  }
+
+  /**
+   * Bulk admission from a spreadsheet, for moving a school over from another
+   * system. All rows go in together or none do, so a half-imported class never
+   * needs cleaning up.
+   */
+  @Post('import')
+  @Roles(...SETUP_ROLES)
+  async import(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
+  ) {
+    const campuses = campusScope(user);
+    const sections = await this.prisma.section.findMany({
+      where: {
+        schoolId: user.schoolId,
+        academicYear: { isCurrent: true },
+        ...(campuses ? { class: { campusId: { in: campuses } } } : {}),
+      },
+      select: { id: true, name: true, class: { select: { name: true } } },
+    });
+    const given = body.rows.map((r) => r.admissionNo).filter(Boolean);
+    const taken = await this.prisma.student.findMany({
+      where: { schoolId: user.schoolId, admissionNo: { in: given } },
+      select: { admissionNo: true },
+    });
+    const rolls = await this.prisma.enrollment.findMany({
+      where: { sectionId: { in: sections.map((s) => s.id) }, status: 'ACTIVE', rollNo: { not: null } },
+      select: { sectionId: true, rollNo: true },
+    });
+    const rows = checkImportRows(
+      body.rows,
+      sections.map((s) => ({ id: s.id, className: s.class.name, sectionName: s.name })),
+      new Set(taken.map((t) => t.admissionNo)),
+      new Set(rolls.map((r) => `${r.sectionId}|${r.rollNo}`)),
+    );
+    const invalid = rows.filter((r) => r.errors.length).length;
+    const summary = {
+      valid: rows.length - invalid,
+      invalid,
+      rows: rows.map(({ row, name, classSection, errors }) => ({ row, name, classSection, errors })),
+    };
+    if (!body.commit || invalid) return { ...summary, imported: 0 };
+
+    // Rows with their own admission numbers go first, so a generated number
+    // never takes one that a later row asks for.
+    const students = rows
+      .map((r) => r.student!)
+      .sort((a, b) => Number(!a.admissionNo) - Number(!b.admissionNo));
+    await this.prisma.$transaction(
+      async (tx) => {
+        for (const s of students) await createStudentRecord(tx, { ...s, schoolId: user.schoolId });
+      },
+      { timeout: 300_000, maxWait: 10_000 },
+    );
+    await this.audit.record(user, 'student.import', 'Student', null, { after: { count: students.length } });
+    return { ...summary, imported: students.length };
   }
 
   @Patch(':id')
