@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { StudentLibrary } from "@/components/student-library";
 import { StudentTransport } from "@/components/student-transport";
 import { Badge, Button, Card, ErrorText, Notice, PageTitle, rowClass, tableClass } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -152,6 +153,7 @@ export default function StudentProfilePage() {
         {user.plan?.features.includes("transport") !== false && (
           <StudentTransport studentId={s.id} active={s.status === "ACTIVE"} />
         )}
+        {user.plan?.features.includes("library") !== false && <StudentLibrary studentId={s.id} />}
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ export const FEATURES = {
   accounts: 'Accounts and cash book',
   reports: 'Reports',
   transport: 'Transport',
+  library: 'Library',
 } as const;
 
 export type Feature = keyof typeof FEATURES;

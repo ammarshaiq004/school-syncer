@@ -34,7 +34,8 @@ export type Feature =
   | "hr"
   | "accounts"
   | "reports"
-  | "transport";
+  | "transport"
+  | "library";
 
 /** The school's SchoolSyncer plan, as /auth/me reports it. */
 export interface SchoolPlan {

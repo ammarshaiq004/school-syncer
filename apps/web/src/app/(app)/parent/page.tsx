@@ -15,6 +15,7 @@ interface Child {
   homework: { id: string; subject: string; title: string; details: string | null; dueDate: string }[];
   results: { examId: string; exam: string; percent: number; grade: string; position: number; passed: boolean }[];
   unpaidInvoices: { id: string; voucherNo: string; period: string; dueDate: string; balance: number }[];
+  libraryBooks?: { title: string; dueOn: string; returned: boolean; overdue: boolean; fine: number }[];
   transport: {
     route: string;
     stop: string | null;
@@ -76,6 +77,21 @@ export default function ParentPage() {
                     <li key={r.examId} className="flex justify-between gap-3">
                       <Link href={`/parent/results/${r.examId}/${c.id}`} className="text-brand hover:underline">{r.exam}</Link>
                       <span>{r.percent}% · grade {r.grade} · position {r.position}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(c.libraryBooks?.length ?? 0) > 0 && (
+              <div className="mt-4">
+                <h3 className="mb-1 text-sm font-semibold">Library books</h3>
+                <ul className="text-sm">
+                  {c.libraryBooks!.map((b) => (
+                    <li key={`${b.title}-${b.dueOn}`} className="flex justify-between gap-2">
+                      <span>{b.title}</span>
+                      <span className={b.overdue ? "text-red-600" : "opacity-70"}>
+                        {b.returned ? `late fine ${rupees(b.fine)}` : `${b.overdue ? "overdue since" : "due"} ${day(b.dueOn)}`}
+                      </span>
                     </li>
                   ))}
                 </ul>

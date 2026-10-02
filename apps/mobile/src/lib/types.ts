@@ -9,6 +9,7 @@ export interface Child {
   homework: { id: string; subject: string; title: string; details: string | null; dueDate: string }[];
   results: { examId: string; exam: string; percent: number; grade: string; position: number; passed: boolean }[];
   unpaidInvoices: { id: string; voucherNo: string; period: string; dueDate: string; balance: number }[];
+  libraryBooks?: { title: string; dueOn: string; returned: boolean; overdue: boolean; fine: number }[];
   transport?: {
     route: string;
     stop: string | null;

@@ -10,6 +10,7 @@ for the full module list and roadmap.
 Phase 3, extensions (in progress):
 
 - Transport: vans and buses with their drivers and seats, routes with ordered stops and pick-up and drop times, and riders by stop. A full van refuses new riders, a printable driver's list has every parent's number, the monthly fee (a stop can charge more) goes on the fee voucher, moves and stops keep a history, and parents see the route, stop, times and driver's number on the web and in the app.
+- Library: a catalogue of books with numbered copies, an issue desk that finds a copy by its number and a student or teacher by name, due dates from the school's loan period, a limit on books per student, and no new books for a student with one overdue. Late returns are fined per day, lost books can be charged, and unpaid fines go on the next fee voucher. Parents see the books their child has out on the web and in the app.
 
 Phase 2, academics:
 
@@ -79,7 +80,7 @@ pnpm dev               # API on :4000, web on :3000
 - daily attendance with a few chronic absentees, and today's registers partly taken;
 - monthly fee vouchers with sibling, staff-child and merit concessions, payments by cash, bank, JazzCash, Easypaisa and 1Bill, some late or part payments, and a few defaulting families;
 - a published first-term exam with positions and remarks, and a monthly test still being marked;
-- timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, four van routes with about 55 riders, an admissions pipeline, announcements and a message log.
+- timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, four van routes with about 55 riders, a library of about 70 titles with books out, a few overdue and some small fines owed, an admissions pipeline, announcements and a message log.
 
 | Login | Role |
 | --- | --- |
@@ -173,6 +174,8 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET | `/notifications` | owner, principal or admin |
 | GET, POST, PATCH | `/transport/vehicles`, `/transport/routes`, PUT `/transport/routes/:id/stops`, GET `/transport/routes/:id` | staff can read; changes need owner, principal or admin |
 | GET, POST | `/transport/students/:id`, `/transport/assignments`, `/transport/assignments/:id/end` | staff can read; changes need owner, principal or admin |
+| GET, POST, PATCH | `/library/books`, `/library/books/:id`, `/library/books/:id/copies`, `/library/copies/:id`, `/library/settings` | staff can read and lend; rules need owner, principal or admin |
+| GET, POST | `/library/copies/:accessionNo`, `/library/borrowers`, `/library/loans`, `/library/loans/:id/return`, `/library/loans/:id/lost`, `/library/loans/:id/fine` | staff; letting a fine off needs owner, principal, admin or accountant |
 | GET, POST | `/subscription`, POST `/subscription/plan` | owner, principal, admin or accountant; choosing a plan needs the owner |
 | POST, GET | `/platform/auth/login`, `/platform/auth/me` | SchoolSyncer staff (separate login) |
 | GET | `/platform/overview`, `/platform/schools`, `/platform/schools/:id` | SchoolSyncer staff |
