@@ -53,6 +53,7 @@ model School {
   announcements Announcement[]
   gradeBands    GradeBand[]
   exams         Exam[]
+  payrollRuns   PayrollRun[]
 }
 
 model Campus {
@@ -203,6 +204,11 @@ model User {
 
   timetableSlots   TimetableSlot[]
   homeworkAssigned Homework[]
+
+  staffProfile    StaffProfile?
+  staffAttendance StaffAttendance[]
+  leaveRequests   LeaveRequest[]
+  payslips        Payslip[]
 
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
@@ -764,4 +770,136 @@ model Homework {
 
   @@index([sectionId, dueDate])
   @@index([schoolId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: HR, staff attendance and payroll
+// ---------------------------------------------------------------------------
+
+enum StaffStatus {
+  ACTIVE
+  LEFT
+}
+
+// Employment details for a staff user. Amounts are whole rupees per month.
+model StaffProfile {
+  id          String      @id @default(cuid())
+  schoolId    String
+  userId      String      @unique
+  employeeNo  String
+  designation String
+  department  String?
+  joinedOn    DateTime?   @db.Date
+  cnic        String?
+  basicSalary Int         @default(0)
+  bankName    String?
+  bankAccount String?
+  status      StaffStatus @default(ACTIVE)
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payItems StaffPayItem[]
+
+  @@unique([schoolId, employeeNo])
+}
+
+enum PayItemType {
+  ALLOWANCE
+  DEDUCTION
+}
+
+// A fixed monthly allowance or deduction, e.g. "House rent" or "Provident fund".
+model StaffPayItem {
+  id        String      @id @default(cuid())
+  profileId String
+  name      String
+  type      PayItemType
+  amount    Int
+
+  profile StaffProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model StaffAttendance {
+  id         String           @id @default(cuid())
+  schoolId   String
+  userId     String
+  date       DateTime         @db.Date
+  status     AttendanceStatus
+  note       String?
+  markedById String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([schoolId, date])
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  ANNUAL
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model LeaveRequest {
+  id          String      @id @default(cuid())
+  schoolId    String
+  userId      String
+  type        LeaveType
+  fromDate    DateTime    @db.Date
+  toDate      DateTime    @db.Date
+  reason      String?
+  status      LeaveStatus @default(PENDING)
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, status])
+}
+
+enum PayrollStatus {
+  DRAFT
+  FINALIZED
+}
+
+model PayrollRun {
+  id          String        @id @default(cuid())
+  schoolId    String
+  period      String // "YYYY-MM"
+  status      PayrollStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  finalizedAt DateTime?
+
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  payslips Payslip[]
+
+  @@unique([schoolId, period])
+}
+
+model Payslip {
+  id              String    @id @default(cuid())
+  runId           String
+  userId          String
+  basic           Int
+  allowances      Int
+  deductions      Int
+  unpaidDays      Int
+  unpaidDeduction Int
+  net             Int
+  // [{ name, type, amount }] as calculated
+  lines           Json
+  paidAt          DateTime?
+  paymentMethod   String?
+
+  run  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([runId, userId])
 }

@@ -1,6 +1,6 @@
 // Seeds a demo school so the web app has something to log in to.
-// Login: school "demo-school", email owner@demo.pk (or teacher@demo.pk), password "password123".
-import { FeeFrequency, Gender, PrismaClient, Role, type Period, type Subject } from '@prisma/client';
+// Login: school "demo-school", email owner@demo.pk (or teacher@demo.pk, accountant@demo.pk), password "password123".
+import { FeeFrequency, Gender, LeaveType, PayItemType, PrismaClient, Role, type Period, type Subject } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -206,6 +206,7 @@ async function main() {
   const firstSection = classes[0].sections[0];
   const tomorrow = new Date();
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  const tomorrowDate = new Date(tomorrow.toISOString().slice(0, 10));
   await prisma.homework.create({
     data: {
       schoolId: school.id,
@@ -214,7 +215,57 @@ async function main() {
       assignedById: teacher.id,
       title: 'Exercise 3.1, questions 1 to 10',
       details: 'Show working in the notebook.',
-      dueDate: new Date(tomorrow.toISOString().slice(0, 10)),
+      dueDate: tomorrowDate,
+    },
+  });
+
+  // Staff records and pay, so payroll can be run from the HR screen.
+  // Login: accountant@demo.pk / password123.
+  const accountant = await prisma.user.create({
+    data: {
+      schoolId: school.id,
+      name: 'Demo Accountant',
+      email: 'accountant@demo.pk',
+      passwordHash: await bcrypt.hash('password123', 12),
+      roles: { create: { role: Role.ACCOUNTANT } },
+    },
+  });
+  await prisma.staffProfile.create({
+    data: {
+      schoolId: school.id,
+      userId: teacher.id,
+      employeeNo: 'EMP-0001',
+      designation: 'Senior teacher',
+      department: 'Primary',
+      basicSalary: 45000,
+      bankName: 'Meezan Bank',
+      payItems: {
+        create: [
+          { name: 'House rent', type: PayItemType.ALLOWANCE, amount: 8000 },
+          { name: 'Conveyance', type: PayItemType.ALLOWANCE, amount: 3000 },
+          { name: 'Provident fund', type: PayItemType.DEDUCTION, amount: 2250 },
+        ],
+      },
+    },
+  });
+  await prisma.staffProfile.create({
+    data: {
+      schoolId: school.id,
+      userId: accountant.id,
+      employeeNo: 'EMP-0002',
+      designation: 'Accountant',
+      department: 'Administration',
+      basicSalary: 60000,
+    },
+  });
+  await prisma.leaveRequest.create({
+    data: {
+      schoolId: school.id,
+      userId: teacher.id,
+      type: LeaveType.CASUAL,
+      fromDate: tomorrowDate,
+      toDate: tomorrowDate,
+      reason: 'Family event',
     },
   });
 

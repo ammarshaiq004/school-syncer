@@ -15,6 +15,7 @@ const NAV: { href: string; label: string; roles: Role[] }[] = [
   { href: "/homework", label: "Homework", roles: TEACHING },
   { href: "/exams", label: "Exams and results", roles: TEACHING },
   { href: "/fees", label: "Fees", roles: FEES },
+  { href: "/hr", label: "HR and payroll", roles: STAFF },
   { href: "/announcements", label: "Announcements", roles: STAFF },
   { href: "/messages", label: "Message log", roles: SETUP },
   { href: "/campuses", label: "Campuses", roles: SETUP },
@@ -24,7 +25,7 @@ const NAV: { href: string; label: string; roles: Role[] }[] = [
 ];
 
 const COMING = [
-  { label: "HR and payroll", phase: 2 },
+  { label: "Accounts and reports", phase: 2 },
   { label: "Transport", phase: 3 },
 ];
 
@@ -87,7 +88,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {COMING.map((m) => (
                 <div key={m.label} className="flex justify-between px-3 py-1 text-sm opacity-50">
                   <span>{m.label}</span>
-                  <span className="text-xs">Phase {m.phase}</span>
+                  <span className="shrink-0 text-xs">Phase {m.phase}</span>
                 </div>
               ))}
             </div>
