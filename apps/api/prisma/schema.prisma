@@ -71,6 +71,8 @@ model Campus {
   students     Student[]
   applications Application[]
 
+  periods Period[]
+
   @@unique([schoolId, name])
   @@index([schoolId])
 }
@@ -137,6 +139,9 @@ model Section {
 
   examResults ExamResult[]
 
+  timetable TimetableSlot[]
+  homework  Homework[]
+
   @@unique([classId, academicYearId, name])
   @@index([schoolId])
 }
@@ -152,6 +157,9 @@ model Subject {
   sections SectionSubject[]
 
   examPapers ExamPaper[]
+
+  timetableSlots TimetableSlot[]
+  homework       Homework[]
 
   @@unique([schoolId, name])
 }
@@ -192,6 +200,9 @@ model User {
   attendanceTaken   AttendanceSession[]
   paymentsReceived  Payment[]
   announcementsSent Announcement[]
+
+  timetableSlots   TimetableSlot[]
+  homeworkAssigned Homework[]
 
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
@@ -690,4 +701,67 @@ model ExamResult {
 
   @@unique([examId, studentId])
   @@index([sectionId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: timetable and homework
+// ---------------------------------------------------------------------------
+
+// A campus's bell schedule: the periods of a school day, in order.
+model Period {
+  id        String  @id @default(cuid())
+  schoolId  String
+  campusId  String
+  name      String // e.g. "Period 1", "Break"
+  startTime String // "08:00", campus local time
+  endTime   String
+  sortOrder Int
+  isBreak   Boolean @default(false)
+
+  campus Campus          @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  slots  TimetableSlot[]
+
+  @@unique([campusId, sortOrder])
+  @@index([schoolId])
+}
+
+// What a section studies in one period on one weekday.
+model TimetableSlot {
+  id        String  @id @default(cuid())
+  schoolId  String
+  sectionId String
+  dayOfWeek Int // 1 = Monday ... 7 = Sunday
+  periodId  String
+  subjectId String
+  teacherId String?
+  room      String?
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  period  Period  @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher User?   @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  @@unique([sectionId, dayOfWeek, periodId])
+  // A teacher can only be in one class at a time.
+  @@unique([teacherId, dayOfWeek, periodId])
+  @@index([schoolId])
+}
+
+model Homework {
+  id           String   @id @default(cuid())
+  schoolId     String
+  sectionId    String
+  subjectId    String
+  assignedById String?
+  title        String
+  details      String?
+  dueDate      DateTime @db.Date
+  createdAt    DateTime @default(now())
+
+  section    Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject    Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  assignedBy User?   @relation(fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@index([sectionId, dueDate])
+  @@index([schoolId])
 }

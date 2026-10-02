@@ -5,7 +5,7 @@ parent communication for every campus, in one place. See the
 [implementation plan](https://claude.ai/code/artifact/2d21f836-f248-4e3f-a2a9-7803a060159d)
 for the full module list and roadmap.
 
-**Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams and report cards.**
+**Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams, report cards, timetables and homework.**
 
 Phase 2, academics (in progress):
 
@@ -14,6 +14,8 @@ Phase 2, academics (in progress):
 - Publishing freezes totals, grades, pass/fail and class positions, and can tell parents on WhatsApp. Unpublishing reopens marks for corrections and keeps remarks.
 - Printable report cards with teacher and principal remarks and attendance, visible to parents in their portal.
 - Subjects and subject teachers per section, set from the Classes screen.
+- Bell schedule per campus, and a weekly timetable per section that fills in the subject teacher and refuses to put a teacher in two classes at once. Teachers get a "my week" view; parents see their child's timetable.
+- Homework set by subject teachers, with an optional WhatsApp note to parents, and shown to parents in their portal.
 
 Phase 1, core operations:
 
@@ -58,7 +60,7 @@ pnpm db:seed           # optional demo school
 pnpm dev               # API on :4000, web on :3000
 ```
 
-Demo login after seeding: school code `demo-school`, email `owner@demo.pk` (or `teacher@demo.pk` to try marks entry), password `password123`. The seed adds 24 students, subject teachers, fee structures, two admission enquiries and a mid-term exam with all marks entered, ready to publish.
+Demo login after seeding: school code `demo-school`, email `owner@demo.pk` (or `teacher@demo.pk` to try marks entry), password `password123`. The seed adds 24 students, subject teachers, fee structures, two admission enquiries and a mid-term exam with all marks entered (ready to publish), a bell schedule, timetables and a homework item.
 
 ## Tests
 
@@ -91,6 +93,9 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | POST | `/exams/:id/publish`, `/exams/:id/unpublish` | school-wide owner, principal or admin |
 | GET, PUT | `/exams/:id/results`, `/exams/:id/results/:sid/remarks` | staff; remarks by the class teacher or admins |
 | GET | `/exams/:id/report-cards/:sid` | staff, and parents for their own children once published |
+| GET, PUT | `/timetable/periods`, `/timetable/sections/:id` | staff; PUT needs owner, principal or admin |
+| GET | `/timetable/me`, `/timetable/teachers/:id`, `/timetable/students/:id` | the teacher; admins; staff and the child's parents |
+| GET, POST, DELETE | `/homework` | staff can read; teachers set homework for subjects they teach |
 | GET, POST | `/users` | owner, principal or admin |
 | GET, POST, PATCH | `/students`, POST `/students/:id/guardians/:gid/invite` | staff; changes need owner, principal or admin |
 | GET, POST, PATCH | `/applications`, POST `/applications/:id/admit`, GET `/applications/funnel` | owner, principal or admin |
@@ -110,7 +115,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 By default messages are only written to the API log and the in-app message log (`NOTIFY_DRIVER=log`), so nothing is sent while developing. To send real WhatsApp messages:
 
 1. Create a WhatsApp Business account in Meta Business Manager and get a permanent token and phone number id.
-2. Create and get approval for these message templates (names and parameter order must match `apps/api/src/notifications/templates.ts`): `attendance_absent`, `fee_voucher`, `fee_reminder`, `fee_paid`, `parent_invite`, `exam_result`, `school_announcement`.
+2. Create and get approval for these message templates (names and parameter order must match `apps/api/src/notifications/templates.ts`): `attendance_absent`, `fee_voucher`, `fee_reminder`, `fee_paid`, `parent_invite`, `exam_result`, `homework_assigned`, `school_announcement`.
 3. Set `NOTIFY_DRIVER=whatsapp`, `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
 
 Payment gateways post to `/api/payments/webhook/<jazzcash|easypaisa|onebill|card>` with `{ voucherNo, amount, reference }` and an `X-Signature` header holding the HMAC-SHA256 of the raw body, using `PAYMENT_WEBHOOK_SECRET_<PROVIDER>`. Each gateway's own callback format still needs a small adapter once its merchant account is approved.

@@ -7,6 +7,8 @@ import { AnnouncementsController } from './announcements/announcements.controlle
 import { AttendanceController } from './attendance/attendance.controller.js';
 import { DashboardController } from './dashboard/dashboard.controller.js';
 import { ExamsController } from './exams/exams.controller.js';
+import { HomeworkController } from './homework/homework.controller.js';
+import { TimetableController } from './timetable/timetable.controller.js';
 import { FeesController } from './fees/fees.controller.js';
 import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
 import { PaymentsService } from './fees/payments.service.js';
@@ -55,6 +57,8 @@ import { UsersController } from './users/users.controller.js';
     AttendanceController,
     FeesController,
     ExamsController,
+    TimetableController,
+    HomeworkController,
     PaymentWebhookController,
     AnnouncementsController,
     DashboardController,

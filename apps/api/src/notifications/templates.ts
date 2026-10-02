@@ -41,6 +41,12 @@ export const TEMPLATES = {
     text: (p: Record<string, string>) =>
       `${p.examName} result for ${p.studentName}: ${p.percent}%, grade ${p.grade}. See the full report card in the parent portal. - ${p.schoolName}`,
   },
+  'homework.assigned': {
+    whatsapp: 'homework_assigned',
+    params: ['className', 'subject', 'title', 'dueDate', 'schoolName'],
+    text: (p: Record<string, string>) =>
+      `New ${p.subject} homework for ${p.className}: ${p.title}. Due ${p.dueDate}. - ${p.schoolName}`,
+  },
   announcement: {
     whatsapp: 'school_announcement',
     params: ['schoolName', 'title', 'body'],
