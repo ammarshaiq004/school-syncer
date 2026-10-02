@@ -44,16 +44,18 @@ model School {
   lateFeePerDay Int            @default(0)
   feeDueDay     Int            @default(10)
 
-  students      Student[]
-  guardians     Guardian[]
-  applications  Application[]
-  feeHeads      FeeHead[]
-  invoices      Invoice[]
-  notifications NotificationLog[]
-  announcements Announcement[]
-  gradeBands    GradeBand[]
-  exams         Exam[]
-  payrollRuns   PayrollRun[]
+  students          Student[]
+  guardians         Guardian[]
+  applications      Application[]
+  feeHeads          FeeHead[]
+  invoices          Invoice[]
+  notifications     NotificationLog[]
+  announcements     Announcement[]
+  gradeBands        GradeBand[]
+  exams             Exam[]
+  payrollRuns       PayrollRun[]
+  accountCategories AccountCategory[]
+  accountEntries    AccountEntry[]
 }
 
 model Campus {
@@ -902,4 +904,55 @@ model Payslip {
   user User       @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([runId, userId])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: accounts
+// ---------------------------------------------------------------------------
+
+enum EntryKind {
+  INCOME
+  EXPENSE
+}
+
+enum EntryMethod {
+  CASH
+  BANK
+  CHEQUE
+}
+
+// e.g. "Utilities" (expense) or "Canteen rent" (income). Fees and salaries are
+// tracked by their own modules and appear in the cash book automatically.
+model AccountCategory {
+  id       String    @id @default(cuid())
+  schoolId String
+  name     String
+  kind     EntryKind
+
+  school  School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  entries AccountEntry[]
+
+  @@unique([schoolId, kind, name])
+}
+
+// Money in or out that isn't a fee or a salary. Amounts are whole rupees.
+model AccountEntry {
+  id          String      @id @default(cuid())
+  schoolId    String
+  campusId    String?
+  categoryId  String
+  kind        EntryKind
+  amount      Int
+  date        DateTime    @db.Date
+  party       String? // paid to / received from
+  method      EntryMethod @default(CASH)
+  reference   String?
+  note        String?
+  createdById String?
+  createdAt   DateTime    @default(now())
+
+  school   School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  category AccountCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, date])
 }

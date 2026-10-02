@@ -1,6 +1,6 @@
 // Seeds a demo school so the web app has something to log in to.
 // Login: school "demo-school", email owner@demo.pk (or teacher@demo.pk, accountant@demo.pk), password "password123".
-import { FeeFrequency, Gender, LeaveType, PayItemType, PrismaClient, Role, type Period, type Subject } from '@prisma/client';
+import { EntryKind, EntryMethod, FeeFrequency, Gender, LeaveType, PayItemType, PrismaClient, Role, type Period, type Subject } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -267,6 +267,28 @@ async function main() {
       toDate: tomorrowDate,
       reason: 'Family event',
     },
+  });
+
+  // A few months of other income and expenses for the cash book and reports.
+  const category = async (name: string, kind: EntryKind) =>
+    (await prisma.accountCategory.create({ data: { schoolId: school.id, name, kind } })).id;
+  const utilities = await category('Utilities', EntryKind.EXPENSE);
+  const repairs = await category('Repairs and maintenance', EntryKind.EXPENSE);
+  const stationery = await category('Stationery', EntryKind.EXPENSE);
+  const canteen = await category('Canteen rent', EntryKind.INCOME);
+  const daysAgo = (n: number) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - n);
+    return new Date(d.toISOString().slice(0, 10));
+  };
+  await prisma.accountEntry.createMany({
+    data: [
+      { categoryId: canteen, kind: EntryKind.INCOME, amount: 15000, date: daysAgo(30), party: 'Canteen contractor' },
+      { categoryId: utilities, kind: EntryKind.EXPENSE, amount: 18450, date: daysAgo(25), party: 'LESCO', method: EntryMethod.BANK },
+      { categoryId: repairs, kind: EntryKind.EXPENSE, amount: 6500, date: daysAgo(12), party: 'Plumber' },
+      { categoryId: stationery, kind: EntryKind.EXPENSE, amount: 3200, date: daysAgo(3), party: 'Al-Fatah Stationers' },
+      { categoryId: canteen, kind: EntryKind.INCOME, amount: 15000, date: daysAgo(1), party: 'Canteen contractor' },
+    ].map((e) => ({ ...e, schoolId: school.id })),
   });
 
   await prisma.application.createMany({
