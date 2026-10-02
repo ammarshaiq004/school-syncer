@@ -51,6 +51,8 @@ model School {
   invoices      Invoice[]
   notifications NotificationLog[]
   announcements Announcement[]
+  gradeBands    GradeBand[]
+  exams         Exam[]
 }
 
 model Campus {
@@ -88,6 +90,8 @@ model AcademicYear {
   enrollments   Enrollment[]
   feeStructures FeeStructure[]
 
+  exams Exam[]
+
   @@unique([schoolId, name])
   @@index([schoolId])
 }
@@ -106,6 +110,8 @@ model Class {
 
   applications  Application[]
   feeStructures FeeStructure[]
+
+  examPapers ExamPaper[]
 
   @@unique([campusId, name])
   @@index([schoolId])
@@ -129,6 +135,8 @@ model Section {
   enrollments        Enrollment[]
   attendanceSessions AttendanceSession[]
 
+  examResults ExamResult[]
+
   @@unique([classId, academicYearId, name])
   @@index([schoolId])
 }
@@ -142,6 +150,8 @@ model Subject {
 
   school   School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   sections SectionSubject[]
+
+  examPapers ExamPaper[]
 
   @@unique([schoolId, name])
 }
@@ -259,6 +269,9 @@ model Student {
   invoices    Invoice[]
   concessions Concession[]
   application Application?
+
+  marks       Mark[]
+  examResults ExamResult[]
 
   @@unique([schoolId, admissionNo])
   @@index([schoolId, status])
@@ -576,4 +589,105 @@ model Announcement {
   createdBy User?  @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([schoolId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: exams, marks and report cards
+// ---------------------------------------------------------------------------
+
+// Percentage bands that turn a score into a grade, e.g. 80% and above is "A".
+model GradeBand {
+  id         String  @id @default(cuid())
+  schoolId   String
+  grade      String
+  minPercent Float
+  remark     String?
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, grade])
+}
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Exam {
+  id             String     @id @default(cuid())
+  schoolId       String
+  academicYearId String
+  name           String // e.g. "Mid-term 2026"
+  startsOn       DateTime?  @db.Date
+  endsOn         DateTime?  @db.Date
+  status         ExamStatus @default(DRAFT)
+  publishedAt    DateTime?
+  createdAt      DateTime   @default(now())
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  papers       ExamPaper[]
+  results      ExamResult[]
+
+  @@unique([academicYearId, name])
+  @@index([schoolId])
+}
+
+// One subject's paper for one class in an exam.
+model ExamPaper {
+  id        String    @id @default(cuid())
+  examId    String
+  classId   String
+  subjectId String
+  maxMarks  Float
+  passMarks Float
+  date      DateTime? @db.Date
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  marks   Mark[]
+
+  @@unique([examId, classId, subjectId])
+}
+
+model Mark {
+  id          String   @id @default(cuid())
+  paperId     String
+  studentId   String
+  marks       Float?
+  isAbsent    Boolean  @default(false)
+  enteredById String?
+  updatedAt   DateTime @updatedAt
+
+  paper   ExamPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  student Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([paperId, studentId])
+}
+
+// A student's result, frozen when the exam is published.
+model ExamResult {
+  id              String   @id @default(cuid())
+  examId          String
+  studentId       String
+  sectionId       String
+  obtained        Float
+  maxTotal        Float
+  percent         Float
+  grade           String
+  position        Int
+  passed          Boolean
+  // Per-subject marks as published: [{ subject, max, pass, marks, absent, passed }]
+  subjects        Json
+  teacherRemark   String?
+  principalRemark String?
+  createdAt       DateTime @default(now())
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, studentId])
+  @@index([sectionId])
 }

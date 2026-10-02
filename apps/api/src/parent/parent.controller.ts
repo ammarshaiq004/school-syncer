@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 export class ParentController {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** A parent's children with this month's attendance and any unpaid fees. */
+  /** A parent's children with this month's attendance, published results and any unpaid fees. */
   @Get('children')
   async children(@CurrentUser() user: AuthUser) {
     const monthStart = dayStart(`${localToday().slice(0, 7)}-01`);
@@ -28,6 +28,11 @@ export class ParentController {
                 attendance: {
                   where: { session: { date: { gte: monthStart } } },
                   select: { status: true, session: { select: { date: true } } },
+                },
+                examResults: {
+                  where: { exam: { status: 'PUBLISHED' } },
+                  include: { exam: { select: { name: true, publishedAt: true } } },
+                  orderBy: { exam: { publishedAt: 'desc' } },
                 },
                 invoices: {
                   where: { status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] } },
@@ -56,6 +61,14 @@ export class ParentController {
           .filter((a) => a.status === 'ABSENT')
           .map((a) => a.session.date.toISOString().slice(0, 10)),
       },
+      results: student.examResults.map((r) => ({
+        examId: r.examId,
+        exam: r.exam.name,
+        percent: r.percent,
+        grade: r.grade,
+        position: r.position,
+        passed: r.passed,
+      })),
       unpaidInvoices: student.invoices.map((i) => ({
         id: i.id,
         voucherNo: i.voucherNo,

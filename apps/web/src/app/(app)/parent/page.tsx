@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Badge, Card, ErrorText, PageTitle } from "@/components/ui";
 import { day, rupees } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
@@ -11,6 +12,7 @@ interface Child {
   admissionNo: string;
   class: string | null;
   attendanceThisMonth: { present: number; absent: number; leave: number; absentDates: string[] };
+  results: { examId: string; exam: string; percent: number; grade: string; position: number; passed: boolean }[];
   unpaidInvoices: { id: string; voucherNo: string; period: string; dueDate: string; balance: number }[];
 }
 
@@ -38,6 +40,19 @@ export default function ParentPage() {
             </div>
             {c.attendanceThisMonth.absentDates.length > 0 && (
               <p className="mt-2 text-xs opacity-70">Absent on {c.attendanceThisMonth.absentDates.map((d) => day(d)).join(", ")}</p>
+            )}
+            {c.results.length > 0 && (
+              <div className="mt-4">
+                <h3 className="mb-1 text-sm font-semibold">Results</h3>
+                <ul className="text-sm">
+                  {c.results.map((r) => (
+                    <li key={r.examId} className="flex justify-between gap-3">
+                      <Link href={`/parent/results/${r.examId}/${c.id}`} className="text-brand hover:underline">{r.exam}</Link>
+                      <span>{r.percent}% · grade {r.grade} · position {r.position}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {c.unpaidInvoices.length > 0 && (
               <div className="mt-4">

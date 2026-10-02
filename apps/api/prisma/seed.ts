@@ -1,5 +1,5 @@
 // Seeds a demo school so the web app has something to log in to.
-// Login: school "demo-school", email owner@demo.pk, password "password123".
+// Login: school "demo-school", email owner@demo.pk (or teacher@demo.pk), password "password123".
 import { FeeFrequency, Gender, PrismaClient, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -52,9 +52,21 @@ async function main() {
       },
     });
   }
+  const subjects = [];
   for (const name of ['English', 'Urdu', 'Mathematics', 'Science', 'Islamiat']) {
-    await prisma.subject.create({ data: { schoolId: school.id, name } });
+    subjects.push(await prisma.subject.create({ data: { schoolId: school.id, name } }));
   }
+  // One teacher who teaches every subject, so marks entry can be tried as a teacher.
+  // Login: teacher@demo.pk / password123.
+  const teacher = await prisma.user.create({
+    data: {
+      schoolId: school.id,
+      name: 'Demo Teacher',
+      email: 'teacher@demo.pk',
+      passwordHash: await bcrypt.hash('password123', 12),
+      roles: { create: { role: Role.TEACHER } },
+    },
+  });
 
   // Fees: monthly tuition and an annual charge per class.
   const tuition = await prisma.feeHead.create({ data: { schoolId: school.id, name: 'Tuition' } });
@@ -109,6 +121,49 @@ async function main() {
         });
         seq++;
       }
+    }
+  }
+
+  // Every section studies every subject with the demo teacher.
+  for (const c of classes) {
+    for (const section of c.sections) {
+      await prisma.sectionSubject.createMany({
+        data: subjects.map((sub) => ({
+          schoolId: school.id,
+          sectionId: section.id,
+          subjectId: sub.id,
+          teacherId: teacher.id,
+        })),
+      });
+    }
+  }
+
+  // A mid-term with every mark entered, ready to publish from the Exams screen.
+  const exam = await prisma.exam.create({
+    data: {
+      schoolId: school.id,
+      academicYearId: year.id,
+      name: 'Mid-term 2026',
+      startsOn: new Date('2026-09-14'),
+      endsOn: new Date('2026-09-25'),
+    },
+  });
+  const enrolled = await prisma.enrollment.findMany({ where: { academicYearId: year.id } });
+  for (const c of classes) {
+    for (const sub of subjects) {
+      const paper = await prisma.examPaper.create({
+        data: { examId: exam.id, classId: c.id, subjectId: sub.id, maxMarks: 100, passMarks: 33 },
+      });
+      const sectionIds = c.sections.map((x) => x.id);
+      await prisma.mark.createMany({
+        data: enrolled
+          .filter((e) => sectionIds.includes(e.sectionId))
+          .map((e, n) => ({
+            paperId: paper.id,
+            studentId: e.studentId,
+            marks: 45 + ((n * 17 + sub.name.length * 7) % 55),
+          })),
+      });
     }
   }
 
