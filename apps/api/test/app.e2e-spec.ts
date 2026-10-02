@@ -4,12 +4,14 @@ import type { Server } from 'node:http';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { deleteSchools } from './cleanup.js';
 
 // Runs against the database in DATABASE_URL; each run uses unique emails.
 describe('SchoolSyncer API (e2e)', () => {
   let app: INestApplication;
   let server: Server;
-  const run = Date.now();
+  // Test files run in parallel; a random suffix keeps their schools apart.
+  const run = `${Date.now()}${Math.floor(Math.random() * 1e6)}`;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -23,7 +25,7 @@ describe('SchoolSyncer API (e2e)', () => {
 
   afterAll(async () => {
     const prisma = app.get(PrismaService);
-    await prisma.school.deleteMany({ where: { email: { endsWith: `+${run}@test.pk` } } });
+    await deleteSchools(prisma, { email: { endsWith: `+${run}@test.pk` } });
     await app.close();
   });
 
