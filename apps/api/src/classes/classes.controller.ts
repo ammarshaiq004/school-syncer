@@ -49,13 +49,22 @@ export class ClassesController {
   ) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query('campusId') campusId?: string) {
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query('campusId') campusId?: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    // Sections belong to a year: this year's unless another is asked for, so
+    // next year's (set up before promotions) don't show twice in pickers.
     return this.prisma.class.findMany({
       where: { schoolId: user.schoolId, ...(campusId ? { campusId } : {}) },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       include: {
         campus: { select: { id: true, name: true } },
         sections: {
+          where: academicYearId
+            ? { academicYearId }
+            : { academicYear: { isCurrent: true } },
           orderBy: { name: 'asc' },
           include: { classTeacher: { select: { id: true, name: true } } },
         },

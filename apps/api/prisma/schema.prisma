@@ -106,6 +106,7 @@ model AcademicYear {
 
   enrollments   Enrollment[]
   feeStructures FeeStructure[]
+  promotions    Promotion[]
 
   exams Exam[]
 
@@ -308,6 +309,7 @@ model Student {
   transport    TransportAssignment[]
   bookLoans    BookLoan[]
   certificates Certificate[]
+  promotions   Promotion[]
 
   @@unique([schoolId, admissionNo])
   @@index([schoolId, status])
@@ -348,6 +350,8 @@ enum EnrollmentStatus {
   PROMOTED
   TRANSFERRED
   LEFT
+  REPEATED // kept back in the same class for another year
+  GRADUATED // finished the school's last class
 }
 
 // A student's place in a section for one academic year; history is kept across years.
@@ -1266,4 +1270,30 @@ model Certificate {
   @@unique([schoolId, serialNo])
   @@index([schoolId, type])
   @@index([studentId])
+}
+
+enum PromotionDecision {
+  PROMOTE
+  REPEAT
+  LEAVE
+  GRADUATE
+}
+
+// What happens to a student at the end of a year, decided section by section
+// and carried out together when the next year starts.
+model Promotion {
+  id          String            @id @default(cuid())
+  schoolId    String
+  fromYearId  String
+  studentId   String
+  decision    PromotionDecision
+  toSectionId String? // the next year's section, for PROMOTE and REPEAT
+  decidedById String
+  updatedAt   DateTime          @updatedAt
+
+  fromYear AcademicYear @relation(fields: [fromYearId], references: [id], onDelete: Cascade)
+  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([fromYearId, studentId])
+  @@index([schoolId])
 }

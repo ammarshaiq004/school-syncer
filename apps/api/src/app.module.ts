@@ -15,6 +15,7 @@ import {
   CertificatesController,
   VerifyController,
 } from './certificates/certificates.controller.js';
+import { PromotionsController } from './promotions/promotions.controller.js';
 import { HrController } from './hr/hr.controller.js';
 import { PayrollController } from './hr/payroll.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
@@ -76,6 +77,7 @@ import { UsersController } from './users/users.controller.js';
     LibraryController,
     CertificatesController,
     VerifyController,
+    PromotionsController,
     HomeworkController,
     HrController,
     PayrollController,

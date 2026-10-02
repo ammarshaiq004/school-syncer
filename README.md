@@ -12,6 +12,7 @@ Phase 3, extensions (in progress):
 - Transport: vans and buses with their drivers and seats, routes with ordered stops and pick-up and drop times, and riders by stop. A full van refuses new riders, a printable driver's list has every parent's number, the monthly fee (a stop can charge more) goes on the fee voucher, moves and stops keep a history, and parents see the route, stop, times and driver's number on the web and in the app.
 - Library: a catalogue of books with numbered copies, an issue desk that finds a copy by its number and a student or teacher by name, due dates from the school's loan period, a limit on books per student, and no new books for a student with one overdue. Late returns are fined per day, lost books can be charged, and unpaid fines go on the next fee voucher. Parents see the books their child has out on the web and in the app.
 - Certificates and ID cards: school leaving, character and enrolment certificates filled in from the student's record (date of birth in words, father's name, class admitted and class left), numbered per year (`SLC-2026-0007`) and printed on A4 with the school's letterhead. A leaving certificate waits for library books to come back and for fees to be cleared (or shows the amount outstanding), then takes the student off the rolls and the van. Every certificate carries a QR code and a ten-character code that anyone can check at `/verify` without signing in; cancelling a certificate makes it stop checking out. Student ID cards for a class and staff ID cards print ten to an A4 sheet at credit-card size.
+- Year-end promotions: one step sets up next year with the same classes and sections, class and subject teachers, and fee amounts. The school then goes class by class, with the annual result beside each name, deciding who moves up, stays back, leaves or finishes school; the top class of a junior campus moves on to the campus that teaches the next class. Starting the new year carries every decision out at once, numbers the new classes alphabetically, moves the timetable over and makes the new year current.
 
 Phase 2, academics:
 
@@ -180,6 +181,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, POST | `/certificates`, `/certificates/students/:id/draft`, `/certificates/:id`, `/certificates/:id/cancel` | staff can read; issuing and cancelling need owner, principal or admin |
 | GET | `/certificates/id-cards/students?sectionId=`, `/certificates/id-cards/staff` | staff; staff cards need owner, principal or admin |
 | GET | `/verify/:code` | public: checks a certificate's code |
+| GET, POST, PUT | `/promotions`, `/promotions/next-year`, `/promotions/sections/:sectionId`, `/promotions/start-year` | owner, principal or admin; setting up and starting a year need a school-wide role |
 | GET, POST | `/subscription`, POST `/subscription/plan` | owner, principal, admin or accountant; choosing a plan needs the owner |
 | POST, GET | `/platform/auth/login`, `/platform/auth/me` | SchoolSyncer staff (separate login) |
 | GET | `/platform/overview`, `/platform/schools`, `/platform/schools/:id` | SchoolSyncer staff |
