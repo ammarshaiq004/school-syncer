@@ -5,7 +5,7 @@ parent communication for every campus, in one place. See the
 [implementation plan](https://claude.ai/code/artifact/2d21f836-f248-4e3f-a2a9-7803a060159d)
 for the full module list and roadmap.
 
-**Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams, report cards, timetables, homework, HR, payroll, accounts and reports.**
+**Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams, report cards, timetables, homework, HR, payroll, accounts, reports and the parent and teacher mobile app.**
 
 Phase 2, academics (in progress):
 
@@ -19,6 +19,7 @@ Phase 2, academics (in progress):
 - Staff records (designation, CNIC, bank, basic salary, fixed allowances and deductions), a daily staff register, and leave requests that staff send and admins approve.
 - Accounts: other income and expenses by category, and a cash book that pulls in fee receipts and paid salaries with opening and closing balances.
 - Reports: income and expenditure, fee collection by day, method and class, outstanding fees by class and student, and monthly attendance with students below a threshold. Every list downloads as a CSV for Excel.
+- Mobile app for Android and iOS (Expo). Parents see attendance, homework, results with report cards, the timetable and fees due for each child. Teachers see today's classes, take attendance with one tap per absent child, and set homework.
 - Monthly payroll: absent days and unpaid leave are deducted at a day's basic, drafts can be recalculated, finalised months are locked, salaries are marked paid, and staff see printable payslips.
 
 Phase 1, core operations:
@@ -48,6 +49,7 @@ Phase 0, foundation:
 | --- | --- |
 | `apps/api` | NestJS API (TypeScript), Prisma ORM, PostgreSQL |
 | `apps/web` | Next.js web app (React, Tailwind CSS) |
+| `apps/mobile` | Expo (React Native) app for parents and teachers |
 | `docker-compose.yml` | Local PostgreSQL and Redis |
 
 ## Run it locally
@@ -65,6 +67,15 @@ pnpm dev               # API on :4000, web on :3000
 ```
 
 Demo login after seeding: school code `demo-school`, email `owner@demo.pk` (or `teacher@demo.pk` and `accountant@demo.pk`), password `password123`. The seed adds 24 students, subject teachers, fee structures, two admission enquiries and a mid-term exam with all marks entered (ready to publish), a bell schedule, timetables, a homework item, staff salary details ready for a payroll run, and a few months of other income and expenses.
+
+## Mobile app
+
+```bash
+cp apps/mobile/.env.example apps/mobile/.env.local   # point EXPO_PUBLIC_API_URL at the API
+pnpm --filter mobile start                           # scan the QR code with Expo Go
+```
+
+On a phone, the API URL must be your computer's network address (for example `http://192.168.1.20:4000/api`), not `localhost`. To preview the app in a browser, run `pnpm --filter mobile web` and add `http://localhost:8081` to `WEB_ORIGIN` in `apps/api/.env` (it takes a comma-separated list). Store builds are made with EAS (`npx eas-cli build`), which needs an Expo account.
 
 ## Tests
 

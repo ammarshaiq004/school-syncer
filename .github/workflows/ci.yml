@@ -30,6 +30,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm --filter mobile typecheck
       - name: Apply database migrations
         run: pnpm --filter api prisma:deploy
       - run: pnpm --filter api test

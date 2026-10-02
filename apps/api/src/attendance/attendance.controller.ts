@@ -51,6 +51,38 @@ export class AttendanceController {
     private readonly notifications: NotificationsService,
   ) {}
 
+  /** Sections this user can take attendance for this year: all of them for admins, otherwise the ones they teach. */
+  @Get('sections')
+  @Roles(...ATTENDANCE_ROLES)
+  async mySections(@CurrentUser() user: AuthUser) {
+    const scope = campusScope(user);
+    const admin = hasAnyRole(user, SETUP_ROLES);
+    const sections = await this.prisma.section.findMany({
+      where: {
+        schoolId: user.schoolId,
+        academicYear: { isCurrent: true },
+        ...(scope ? { class: { campusId: { in: scope } } } : {}),
+        ...(admin
+          ? {}
+          : { OR: [{ classTeacherId: user.sub }, { subjects: { some: { teacherId: user.sub } } }] }),
+      },
+      include: {
+        class: { select: { name: true, sortOrder: true } },
+        subjects: { where: { teacherId: user.sub }, select: { subject: { select: { id: true, name: true } } } },
+        _count: { select: { enrollments: { where: { status: 'ACTIVE' } } } },
+      },
+    });
+    return sections
+      .sort((a, b) => a.class.sortOrder - b.class.sortOrder || a.name.localeCompare(b.name))
+      .map((s) => ({
+        id: s.id,
+        name: `${s.class.name} ${s.name}`,
+        students: s._count.enrollments,
+        isClassTeacher: s.classTeacherId === user.sub,
+        mySubjects: s.subjects.map((x) => x.subject),
+      }));
+  }
+
   /** The register for one section and day: every enrolled student and their status, if taken. */
   @Get('sheet')
   @Roles(...ATTENDANCE_ROLES)
