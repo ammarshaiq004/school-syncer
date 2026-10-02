@@ -62,6 +62,7 @@ model School {
   vehicles          Vehicle[]
   transportRoutes   TransportRoute[]
   books             Book[]
+  certificates      Certificate[]
   libraryLoanDays   Int               @default(14)
   libraryFinePerDay Int               @default(5)
   libraryMaxLoans   Int               @default(2)
@@ -105,6 +106,7 @@ model AcademicYear {
 
   enrollments   Enrollment[]
   feeStructures FeeStructure[]
+  promotions    Promotion[]
 
   exams Exam[]
 
@@ -218,11 +220,12 @@ model User {
   timetableSlots   TimetableSlot[]
   homeworkAssigned Homework[]
 
-  staffProfile    StaffProfile?
-  staffAttendance StaffAttendance[]
-  leaveRequests   LeaveRequest[]
-  payslips        Payslip[]
-  bookLoans       BookLoan[]        @relation("BookLoans")
+  staffProfile       StaffProfile?
+  staffAttendance    StaffAttendance[]
+  leaveRequests      LeaveRequest[]
+  payslips           Payslip[]
+  bookLoans          BookLoan[]        @relation("BookLoans")
+  certificatesIssued Certificate[]
 
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
@@ -301,10 +304,12 @@ model Student {
   concessions Concession[]
   application Application?
 
-  marks       Mark[]
-  examResults ExamResult[]
-  transport   TransportAssignment[]
-  bookLoans   BookLoan[]
+  marks        Mark[]
+  examResults  ExamResult[]
+  transport    TransportAssignment[]
+  bookLoans    BookLoan[]
+  certificates Certificate[]
+  promotions   Promotion[]
 
   @@unique([schoolId, admissionNo])
   @@index([schoolId, status])
@@ -345,6 +350,8 @@ enum EnrollmentStatus {
   PROMOTED
   TRANSFERRED
   LEFT
+  REPEATED // kept back in the same class for another year
+  GRADUATED // finished the school's last class
 }
 
 // A student's place in a section for one academic year; history is kept across years.
@@ -1232,4 +1239,61 @@ model BookLoan {
   @@index([schoolId, returnedOn])
   @@index([studentId])
   @@index([userId])
+}
+
+enum CertificateType {
+  LEAVING // school leaving certificate, issued when a student leaves
+  CHARACTER
+  ENROLMENT // "is a bonafide student of class ..."
+}
+
+// A certificate as issued: the details printed on it are kept as they were
+// that day, so a reprint matches the original even after records change.
+model Certificate {
+  id           String          @id @default(cuid())
+  schoolId     String
+  studentId    String
+  type         CertificateType
+  serialNo     String // e.g. "SLC-2026-0007"
+  verifyCode   String          @unique // printed on the certificate; anyone can check it online
+  issuedOn     DateTime        @db.Date
+  details      Json
+  issuedById   String
+  cancelledAt  DateTime?
+  cancelReason String?
+  createdAt    DateTime        @default(now())
+
+  school   School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student  Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  issuedBy User    @relation(fields: [issuedById], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, serialNo])
+  @@index([schoolId, type])
+  @@index([studentId])
+}
+
+enum PromotionDecision {
+  PROMOTE
+  REPEAT
+  LEAVE
+  GRADUATE
+}
+
+// What happens to a student at the end of a year, decided section by section
+// and carried out together when the next year starts.
+model Promotion {
+  id          String            @id @default(cuid())
+  schoolId    String
+  fromYearId  String
+  studentId   String
+  decision    PromotionDecision
+  toSectionId String? // the next year's section, for PROMOTE and REPEAT
+  decidedById String
+  updatedAt   DateTime          @updatedAt
+
+  fromYear AcademicYear @relation(fields: [fromYearId], references: [id], onDelete: Cascade)
+  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([fromYearId, studentId])
+  @@index([schoolId])
 }

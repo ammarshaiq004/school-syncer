@@ -204,7 +204,7 @@ async function main() {
     const summary = await seedSchool(prisma, plan, passwordHash, today);
     console.log(
       `Seeded ${plan.slug}: ${summary.students} students, ${summary.staff} staff, ${summary.invoices} invoices, ` +
-        `${summary.attendanceRecords} attendance records, ${summary.books} library books, ${summary.loans} loans in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+        `${summary.attendanceRecords} attendance records, ${summary.books} library books, ${summary.loans} loans, ${summary.certificates} certificates in ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
     await seedBilling(prisma, summary.schoolId, BILLING[plan.slug]);
   }

@@ -19,19 +19,20 @@ const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] =
   { href: "/hr", label: "HR and payroll", roles: STAFF, feature: "hr" },
   { href: "/transport", label: "Transport", roles: STAFF, feature: "transport" },
   { href: "/library", label: "Library", roles: STAFF, feature: "library" },
+  { href: "/certificates", label: "Certificates and ID cards", roles: STAFF, feature: "certificates" },
   { href: "/accounts", label: "Accounts", roles: FEES, feature: "accounts" },
   { href: "/reports", label: "Reports", roles: FEES, feature: "reports" },
   { href: "/announcements", label: "Announcements", roles: STAFF },
   { href: "/messages", label: "Message log", roles: SETUP },
   { href: "/campuses", label: "Campuses", roles: SETUP },
   { href: "/classes", label: "Classes and sections", roles: SETUP },
+  { href: "/promotions", label: "Year-end promotions", roles: SETUP },
   { href: "/users", label: "Users and roles", roles: SETUP },
   { href: "/billing", label: "Plan and billing", roles: FEES },
   { href: "/parent", label: "My children", roles: ["PARENT"] },
 ];
 
 const COMING = [
-  { label: "Certificates and ID cards", phase: 3 },
   { label: "Online fee payments", phase: 3 },
 ];
 
