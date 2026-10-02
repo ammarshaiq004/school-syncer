@@ -12,6 +12,7 @@ interface Child {
   admissionNo: string;
   class: string | null;
   attendanceThisMonth: { present: number; absent: number; leave: number; absentDates: string[] };
+  homework: { id: string; subject: string; title: string; details: string | null; dueDate: string }[];
   results: { examId: string; exam: string; percent: number; grade: string; position: number; passed: boolean }[];
   unpaidInvoices: { id: string; voucherNo: string; period: string; dueDate: string; balance: number }[];
 }
@@ -40,6 +41,23 @@ export default function ParentPage() {
             </div>
             {c.attendanceThisMonth.absentDates.length > 0 && (
               <p className="mt-2 text-xs opacity-70">Absent on {c.attendanceThisMonth.absentDates.map((d) => day(d)).join(", ")}</p>
+            )}
+            {c.homework.length > 0 && (
+              <div className="mt-4">
+                <h3 className="mb-1 text-sm font-semibold">Homework</h3>
+                <ul className="flex flex-col gap-1 text-sm">
+                  {c.homework.map((h) => (
+                    <li key={h.id}>
+                      <span className="font-medium">{h.subject}:</span> {h.title}
+                      <span className="opacity-60"> · due {day(h.dueDate)}</span>
+                      {h.details && <div className="text-xs opacity-70">{h.details}</div>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {c.class && (
+              <Link href={`/parent/timetable/${c.id}`} className="mt-4 inline-block text-sm text-brand hover:underline">View timetable</Link>
             )}
             {c.results.length > 0 && (
               <div className="mt-4">

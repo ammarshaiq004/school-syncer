@@ -11,6 +11,13 @@ export function localToday(timeZone = SCHOOL_TIMEZONE): string {
 /** A YYYY-MM-DD day as the UTC-midnight Date that @db.Date columns store. */
 export const dayStart = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
+/** The YYYY-MM-DD day `days` days before another. */
+export function daysBefore(iso: string, days: number): string {
+  const d = dayStart(iso);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** The instant a local day began in the school's timezone, for timestamp columns. */
 export function startOfLocalDay(iso: string, timeZone = SCHOOL_TIMEZONE): Date {
   const utcMidnight = dayStart(iso);

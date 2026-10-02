@@ -1,6 +1,6 @@
 // Seeds a demo school so the web app has something to log in to.
 // Login: school "demo-school", email owner@demo.pk (or teacher@demo.pk), password "password123".
-import { FeeFrequency, Gender, PrismaClient, Role } from '@prisma/client';
+import { FeeFrequency, Gender, PrismaClient, Role, type Period, type Subject } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -52,7 +52,7 @@ async function main() {
       },
     });
   }
-  const subjects = [];
+  const subjects: Subject[] = [];
   for (const name of ['English', 'Urdu', 'Mathematics', 'Science', 'Islamiat']) {
     subjects.push(await prisma.subject.create({ data: { schoolId: school.id, name } }));
   }
@@ -166,6 +166,57 @@ async function main() {
       });
     }
   }
+
+  // A bell schedule and a Monday-to-Friday timetable. Only Grade 1 A has the demo
+  // teacher on it, since one teacher can't be in six rooms at once.
+  const bell = [
+    ['Period 1', '08:00', '08:40'],
+    ['Period 2', '08:40', '09:20'],
+    ['Period 3', '09:20', '10:00'],
+    ['Break', '10:00', '10:30'],
+    ['Period 4', '10:30', '11:10'],
+    ['Period 5', '11:10', '11:50'],
+  ] as const;
+  const periods: Period[] = [];
+  for (const [i, [name, startTime, endTime]] of bell.entries()) {
+    periods.push(
+      await prisma.period.create({
+        data: { schoolId: school.id, campusId: campus.id, name, startTime, endTime, sortOrder: i + 1, isBreak: name === 'Break' },
+      }),
+    );
+  }
+  const teaching = periods.filter((p) => !p.isBreak);
+  for (const [ci, c] of classes.entries()) {
+    for (const [si, section] of c.sections.entries()) {
+      const withTeacher = ci === 0 && si === 0;
+      await prisma.timetableSlot.createMany({
+        data: [1, 2, 3, 4, 5].flatMap((day) =>
+          teaching.map((period, k) => ({
+            schoolId: school.id,
+            sectionId: section.id,
+            dayOfWeek: day,
+            periodId: period.id,
+            subjectId: subjects[(day + k + ci) % subjects.length].id,
+            teacherId: withTeacher ? teacher.id : null,
+          })),
+        ),
+      });
+    }
+  }
+  const firstSection = classes[0].sections[0];
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  await prisma.homework.create({
+    data: {
+      schoolId: school.id,
+      sectionId: firstSection.id,
+      subjectId: subjects[2].id,
+      assignedById: teacher.id,
+      title: 'Exercise 3.1, questions 1 to 10',
+      details: 'Show working in the notebook.',
+      dueDate: new Date(tomorrow.toISOString().slice(0, 10)),
+    },
+  });
 
   await prisma.application.createMany({
     data: [
