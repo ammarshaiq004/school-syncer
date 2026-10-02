@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
+import { StudentTransport } from "@/components/student-transport";
 import { Badge, Button, Card, ErrorText, Notice, PageTitle, rowClass, tableClass } from "@/components/ui";
 import { api } from "@/lib/api";
 import { day, fullName, rupees } from "@/lib/format";
@@ -147,6 +148,9 @@ export default function StudentProfilePage() {
             </table>
             {s.invoices.length === 0 && <p className="text-sm opacity-60">No invoices yet.</p>}
           </Card>
+        )}
+        {user.plan?.features.includes("transport") !== false && (
+          <StudentTransport studentId={s.id} active={s.status === "ACTIVE"} />
         )}
       </div>
     </div>

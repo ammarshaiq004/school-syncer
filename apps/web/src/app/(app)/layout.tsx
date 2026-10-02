@@ -17,6 +17,7 @@ const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] =
   { href: "/exams", label: "Exams and results", roles: TEACHING, feature: "exams" },
   { href: "/fees", label: "Fees", roles: FEES, feature: "fees" },
   { href: "/hr", label: "HR and payroll", roles: STAFF, feature: "hr" },
+  { href: "/transport", label: "Transport", roles: STAFF, feature: "transport" },
   { href: "/accounts", label: "Accounts", roles: FEES, feature: "accounts" },
   { href: "/reports", label: "Reports", roles: FEES, feature: "reports" },
   { href: "/announcements", label: "Announcements", roles: STAFF },
@@ -29,7 +30,9 @@ const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] =
 ];
 
 const COMING = [
-  { label: "Transport", phase: 3 },
+  { label: "Library", phase: 3 },
+  { label: "Certificates and ID cards", phase: 3 },
+  { label: "Online fee payments", phase: 3 },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

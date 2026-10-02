@@ -25,7 +25,9 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { invoiceLines, lateFine } from './fee-calculator.js';
+import { dayStart } from '../common/dates.js';
+import { monthBounds, riderFee } from '../transport/transport-rules.js';
+import { invoiceLines, lateFine, type StructureRow } from './fee-calculator.js';
 import { voucherNo } from './invoice-codes.js';
 import { PaymentsService } from './payments.service.js';
 
@@ -203,6 +205,8 @@ export class FeesController {
       include: { feeHead: true },
     });
 
+    const riders = await this.transportRiders(user.schoolId, enrollments.map((e) => e.studentId), body.period);
+
     const firstMonth = year.startsOn.toISOString().slice(0, 7) === body.period;
     const [y, m] = body.period.split('-').map(Number);
     const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -218,7 +222,8 @@ export class FeesController {
             feeHeadName: s.feeHead.name,
             frequency: s.feeHead.frequency,
             amount: s.amount,
-          })),
+          }))
+          .concat(riders.get(e.studentId) ?? []),
         e.student.concessions,
         firstMonth,
       );
@@ -432,4 +437,38 @@ export class FeesController {
     );
     return { invoices: unpaid.length, messages: sent };
   }
+
+  /**
+   * A Transport line for each student who rode a school van during the
+   * month, at their stop's fee. Concessions on the Transport head apply.
+   */
+  private async transportRiders(schoolId: string, studentIds: string[], period: string) {
+    const { first, last } = monthBounds(period);
+    const rides = await this.prisma.transportAssignment.findMany({
+      where: {
+        schoolId,
+        studentId: { in: studentIds },
+        startsOn: { lte: dayStart(last) },
+        OR: [{ endsOn: null }, { endsOn: { gte: dayStart(first) } }],
+      },
+      include: { route: true, stop: true },
+      orderBy: { startsOn: 'desc' },
+    });
+    const rows = new Map<string, StructureRow[]>();
+    if (!rides.length) return rows;
+    const head = await this.prisma.feeHead.upsert({
+      where: { schoolId_name: { schoolId, name: 'Transport' } },
+      create: { schoolId, name: 'Transport', frequency: FeeFrequency.MONTHLY },
+      update: {},
+    });
+    // A student who changed routes mid-month pays the latest route's fee once.
+    for (const r of rides) {
+      if (rows.has(r.studentId)) continue;
+      rows.set(r.studentId, [
+        { feeHeadId: head.id, feeHeadName: 'Transport', frequency: FeeFrequency.MONTHLY, amount: riderFee(r.route, r.stop) },
+      ]);
+    }
+    return rows;
+  }
+
 }

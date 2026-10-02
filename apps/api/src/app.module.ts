@@ -9,6 +9,7 @@ import { DashboardController } from './dashboard/dashboard.controller.js';
 import { ExamsController } from './exams/exams.controller.js';
 import { HomeworkController } from './homework/homework.controller.js';
 import { TimetableController } from './timetable/timetable.controller.js';
+import { TransportController } from './transport/transport.controller.js';
 import { HrController } from './hr/hr.controller.js';
 import { PayrollController } from './hr/payroll.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
@@ -66,6 +67,7 @@ import { UsersController } from './users/users.controller.js';
     FeesController,
     ExamsController,
     TimetableController,
+    TransportController,
     HomeworkController,
     HrController,
     PayrollController,

@@ -59,6 +59,8 @@ model School {
 
   subscription     Subscription?
   platformInvoices PlatformInvoice[]
+  vehicles         Vehicle[]
+  transportRoutes  TransportRoute[]
 }
 
 model Campus {
@@ -77,7 +79,8 @@ model Campus {
   students     Student[]
   applications Application[]
 
-  periods Period[]
+  periods         Period[]
+  transportRoutes TransportRoute[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -294,6 +297,7 @@ model Student {
 
   marks       Mark[]
   examResults ExamResult[]
+  transport   TransportAssignment[]
 
   @@unique([schoolId, admissionNo])
   @@index([schoolId, status])
@@ -1058,4 +1062,87 @@ model PlatformAuditLog {
   admin PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, createdAt])
+}
+
+// ----- Transport -----
+
+enum VehicleType {
+  VAN
+  COASTER
+  BUS
+  CAR
+}
+
+// A school van or bus and who drives it.
+model Vehicle {
+  id             String      @id @default(cuid())
+  schoolId       String
+  registrationNo String // "LEA-1234"
+  type           VehicleType @default(VAN)
+  capacity       Int // seats for students
+  driverName     String
+  driverPhone    String
+  driverCnic     String?
+  conductorName  String?
+  conductorPhone String?
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+
+  school School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  routes TransportRoute[]
+
+  @@unique([schoolId, registrationNo])
+}
+
+// A pick-up and drop-off run, with the fee it charges each month.
+model TransportRoute {
+  id         String   @id @default(cuid())
+  schoolId   String
+  campusId   String?
+  name       String // "Route 3: DHA Phase 5"
+  vehicleId  String?
+  monthlyFee Int // PKR, unless the rider's stop sets its own
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  school      School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  campus      Campus?               @relation(fields: [campusId], references: [id], onDelete: SetNull)
+  vehicle     Vehicle?              @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  stops       RouteStop[]
+  assignments TransportAssignment[]
+
+  @@unique([schoolId, name])
+}
+
+model RouteStop {
+  id         String  @id @default(cuid())
+  routeId    String
+  name       String
+  position   Int
+  pickupTime String? // "07:05"
+  dropTime   String? // "14:20"
+  monthlyFee Int? // overrides the route's fee for far stops
+
+  route       TransportRoute        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  assignments TransportAssignment[]
+}
+
+// A student riding a route from one day until another. endsOn is null while
+// they still ride; older rows are the history.
+model TransportAssignment {
+  id        String    @id @default(cuid())
+  schoolId  String
+  studentId String
+  routeId   String
+  stopId    String?
+  startsOn  DateTime  @db.Date
+  endsOn    DateTime? @db.Date
+  createdAt DateTime  @default(now())
+
+  student Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  route   TransportRoute @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  stop    RouteStop?     @relation(fields: [stopId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, routeId])
+  @@index([studentId])
 }

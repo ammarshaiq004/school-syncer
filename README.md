@@ -7,7 +7,11 @@ for the full module list and roadmap.
 
 **Built so far: Phase 0 (Foundation), Phase 1 (Core operations) and, from Phase 2, exams, report cards, timetables, homework, HR, payroll, accounts, reports and the parent and teacher mobile app.**
 
-Phase 2, academics (in progress):
+Phase 3, extensions (in progress):
+
+- Transport: vans and buses with their drivers and seats, routes with ordered stops and pick-up and drop times, and riders by stop. A full van refuses new riders, a printable driver's list has every parent's number, the monthly fee (a stop can charge more) goes on the fee voucher, moves and stops keep a history, and parents see the route, stop, times and driver's number on the web and in the app.
+
+Phase 2, academics:
 
 - Exams with per-class papers (total and pass marks), and a school grading scale.
 - Marks entry by subject teachers, only for the subjects they teach; administrators can fill any sheet and see what is still missing.
@@ -75,7 +79,7 @@ pnpm dev               # API on :4000, web on :3000
 - daily attendance with a few chronic absentees, and today's registers partly taken;
 - monthly fee vouchers with sibling, staff-child and merit concessions, payments by cash, bank, JazzCash, Easypaisa and 1Bill, some late or part payments, and a few defaulting families;
 - a published first-term exam with positions and remarks, and a monthly test still being marked;
-- timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, an admissions pipeline, announcements and a message log.
+- timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, four van routes with about 55 riders, an admissions pipeline, announcements and a message log.
 
 | Login | Role |
 | --- | --- |
@@ -167,6 +171,8 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET | `/dashboard/summary` | staff |
 | GET | `/parent/children` | parents |
 | GET | `/notifications` | owner, principal or admin |
+| GET, POST, PATCH | `/transport/vehicles`, `/transport/routes`, PUT `/transport/routes/:id/stops`, GET `/transport/routes/:id` | staff can read; changes need owner, principal or admin |
+| GET, POST | `/transport/students/:id`, `/transport/assignments`, `/transport/assignments/:id/end` | staff can read; changes need owner, principal or admin |
 | GET, POST | `/subscription`, POST `/subscription/plan` | owner, principal, admin or accountant; choosing a plan needs the owner |
 | POST, GET | `/platform/auth/login`, `/platform/auth/me` | SchoolSyncer staff (separate login) |
 | GET | `/platform/overview`, `/platform/schools`, `/platform/schools/:id` | SchoolSyncer staff |

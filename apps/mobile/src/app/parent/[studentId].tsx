@@ -1,5 +1,5 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { View } from 'react-native';
+import { Linking, View } from 'react-native';
 import { Badge, Body, Button, Card, ErrorText, H1, H2, Loading, Muted, Row, Screen, Stat } from '@/components/ui';
 import { day, rupees, todayIso } from '@/lib/format';
 import type { Child } from '@/lib/types';
@@ -67,6 +67,25 @@ export default function ChildScreen() {
               />
             ))}
           </Card>
+
+          {c.transport && (
+            <Card>
+              <H2>School van</H2>
+              <Row
+                title={c.transport.stop ? `${c.transport.route} · ${c.transport.stop}` : c.transport.route}
+                subtitle={[c.transport.pickupTime && `Picked up ${c.transport.pickupTime}`, c.transport.dropTime && `dropped ${c.transport.dropTime}`]
+                  .filter(Boolean)
+                  .join(', ')}
+              />
+              {c.transport.driverName && (
+                <Row
+                  title={`Driver ${c.transport.driverName}`}
+                  subtitle={`${c.transport.vehicle ?? ''} · tap to call ${c.transport.driverPhone}`}
+                  onPress={() => Linking.openURL(`tel:${c.transport!.driverPhone}`)}
+                />
+              )}
+            </Card>
+          )}
 
           <Card>
             <H2>Fees</H2>

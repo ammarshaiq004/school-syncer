@@ -51,6 +51,10 @@ export class ParentController {
                   where: { status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] } },
                   orderBy: { period: 'desc' },
                 },
+                transport: {
+                  where: { endsOn: null },
+                  include: { route: { include: { vehicle: true } }, stop: true },
+                },
               },
             },
           },
@@ -89,6 +93,17 @@ export class ParentController {
         position: r.position,
         passed: r.passed,
       })),
+      transport: student.transport[0]
+        ? {
+            route: student.transport[0].route.name,
+            stop: student.transport[0].stop?.name ?? null,
+            pickupTime: student.transport[0].stop?.pickupTime ?? null,
+            dropTime: student.transport[0].stop?.dropTime ?? null,
+            vehicle: student.transport[0].route.vehicle?.registrationNo ?? null,
+            driverName: student.transport[0].route.vehicle?.driverName ?? null,
+            driverPhone: student.transport[0].route.vehicle?.driverPhone ?? null,
+          }
+        : null,
       unpaidInvoices: student.invoices.map((i) => ({
         id: i.id,
         voucherNo: i.voucherNo,
