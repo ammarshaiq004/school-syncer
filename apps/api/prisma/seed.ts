@@ -4,7 +4,7 @@
 //   pnpm prisma:seed --reset    deletes and rebuilds them (other schools are untouched)
 //
 // Every login uses the password "password123". See README "Demo data" for the list.
-import { Gender, PrismaClient, Role, SubscriptionStatus } from '@prisma/client';
+import { Gender, PrismaClient, Role, SubscriptionStatus, VehicleType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { localToday } from '../src/common/dates.js';
 import { CUSTOMER_SCHOOLS, PLATFORM_ADMIN, seedBilling, seedCustomerSchools, seedPlans, seedPlatformAdmin } from './demo/platform.js';
@@ -68,6 +68,56 @@ export const DEMO_SCHOOLS: SchoolPlan[] = [
     tuitionStep: 500,
     annualCharges: 9000,
     phonePrefix: '0300',
+    transport: {
+      share: 0.25,
+      routes: [
+        {
+          campus: 'Model Town campus',
+          name: 'Route 1: Garden Town and Faisal Town',
+          fee: 4500,
+          vehicle: { registrationNo: 'LEB-2187', type: VehicleType.VAN, capacity: 14 },
+          stops: [
+            ['Kalma Chowk', '06:55', '14:40'],
+            ['Garden Town, Ali Block', '07:05', '14:30'],
+            ['Faisal Town, Peco Road', '07:15', '14:20'],
+          ],
+        },
+        {
+          campus: 'Model Town campus',
+          name: 'Route 2: DHA',
+          fee: 6000,
+          vehicle: { registrationNo: 'LEC-5530', type: VehicleType.COASTER, capacity: 22 },
+          stops: [
+            ['DHA Phase 6, Main Boulevard', '06:40', '14:55', 7000],
+            ['DHA Phase 5, Y Block', '06:50', '14:45'],
+            ['DHA Phase 3, Defence Road', '07:00', '14:35'],
+            ['Walton Road', '07:12', '14:25', 5000],
+          ],
+        },
+        {
+          campus: 'Model Town campus',
+          name: 'Route 3: Township and Green Town',
+          fee: 4000,
+          vehicle: { registrationNo: 'LED-9042', type: VehicleType.VAN, capacity: 14 },
+          stops: [
+            ['Green Town', '06:50', '14:45'],
+            ['Township, Sector A2', '07:00', '14:35'],
+            ['Akbar Chowk', '07:10', '14:25'],
+          ],
+        },
+        {
+          campus: 'Johar Town campus',
+          name: 'Route 4: Wapda Town and Valencia',
+          fee: 4500,
+          vehicle: { registrationNo: 'LEA-7716', type: VehicleType.VAN, capacity: 14 },
+          stops: [
+            ['Valencia Town', '06:55', '14:40', 5500],
+            ['Wapda Town roundabout', '07:05', '14:30'],
+            ['Shaukat Khanum', '07:15', '14:20'],
+          ],
+        },
+      ],
+    },
   },
   {
     // A second, smaller tenant to show schools never see each other's data.
@@ -96,6 +146,22 @@ export const DEMO_SCHOOLS: SchoolPlan[] = [
     tuitionStep: 250,
     annualCharges: 5000,
     phonePrefix: '0321',
+    transport: {
+      share: 0.2,
+      routes: [
+        {
+          campus: 'Main campus',
+          name: 'Route 1: Peoples Colony and Madina Town',
+          fee: 3500,
+          vehicle: { registrationNo: 'FDA-3315', type: VehicleType.VAN, capacity: 12 },
+          stops: [
+            ['Peoples Colony No. 1', '07:00', '13:50'],
+            ['Madina Town, Susan Road', '07:10', '13:40'],
+            ['D Ground', '07:18', '13:32'],
+          ],
+        },
+      ],
+    },
   },
 ];
 
@@ -138,7 +204,7 @@ async function main() {
     const summary = await seedSchool(prisma, plan, passwordHash, today);
     console.log(
       `Seeded ${plan.slug}: ${summary.students} students, ${summary.staff} staff, ${summary.invoices} invoices, ` +
-        `${summary.attendanceRecords} attendance records in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+        `${summary.attendanceRecords} attendance records, ${summary.books} library books, ${summary.loans} loans, ${summary.certificates} certificates in ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
     await seedBilling(prisma, summary.schoolId, BILLING[plan.slug]);
   }

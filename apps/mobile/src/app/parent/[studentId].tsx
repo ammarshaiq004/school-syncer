@@ -1,5 +1,5 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
-import { View } from 'react-native';
+import { Linking, View } from 'react-native';
 import { Badge, Body, Button, Card, ErrorText, H1, H2, Loading, Muted, Row, Screen, Stat } from '@/components/ui';
 import { day, rupees, todayIso } from '@/lib/format';
 import type { Child } from '@/lib/types';
@@ -67,6 +67,39 @@ export default function ChildScreen() {
               />
             ))}
           </Card>
+
+          {(c.libraryBooks?.length ?? 0) > 0 && (
+            <Card>
+              <H2>Library books</H2>
+              {c.libraryBooks!.map((b) => (
+                <Row
+                  key={`${b.title}-${b.dueOn}`}
+                  title={b.title}
+                  subtitle={b.returned ? `Late fine ${rupees(b.fine)}` : `${b.overdue ? 'Overdue since' : 'Due'} ${day(b.dueOn, true)}`}
+                  right={b.overdue ? <Badge tone="red">late</Badge> : undefined}
+                />
+              ))}
+            </Card>
+          )}
+
+          {c.transport && (
+            <Card>
+              <H2>School van</H2>
+              <Row
+                title={c.transport.stop ? `${c.transport.route} · ${c.transport.stop}` : c.transport.route}
+                subtitle={[c.transport.pickupTime && `Picked up ${c.transport.pickupTime}`, c.transport.dropTime && `dropped ${c.transport.dropTime}`]
+                  .filter(Boolean)
+                  .join(', ')}
+              />
+              {c.transport.driverName && (
+                <Row
+                  title={`Driver ${c.transport.driverName}`}
+                  subtitle={`${c.transport.vehicle ?? ''} · tap to call ${c.transport.driverPhone}`}
+                  onPress={() => Linking.openURL(`tel:${c.transport!.driverPhone}`)}
+                />
+              )}
+            </Card>
+          )}
 
           <Card>
             <H2>Fees</H2>
