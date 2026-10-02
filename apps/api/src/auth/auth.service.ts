@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -7,6 +8,8 @@ import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import type { AuthUser } from '../common/auth-user.js';
+import { TRIAL_DAYS, TRIAL_PLAN } from '../platform/plans.js';
+import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { LoginInput, RegisterSchoolInput } from './auth.schemas.js';
 import { slugify } from './slug.js';
@@ -18,9 +21,13 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
-  /** Creates a school, its first campus and its owner account in one transaction. */
+  /**
+   * Creates a school, its first campus, its owner account and a free trial
+   * in one transaction.
+   */
   async registerSchool(input: RegisterSchoolInput) {
     const slug = await this.uniqueSlug(slugify(input.schoolName) || 'school');
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
@@ -37,6 +44,14 @@ export class AuthService {
       });
       await tx.campus.create({
         data: { schoolId: school.id, name: 'Main campus' },
+      });
+      const plan = await tx.plan.findUniqueOrThrow({ where: { code: TRIAL_PLAN } });
+      await tx.subscription.create({
+        data: {
+          schoolId: school.id,
+          planId: plan.id,
+          trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000),
+        },
       });
       return tx.user.create({
         data: {
@@ -76,6 +91,8 @@ export class AuthService {
     if (!user || !valid) {
       throw new UnauthorizedException('Wrong school, login or password');
     }
+    const plan = await this.subscriptions.forSchool(user.schoolId);
+    if (plan.access === 'blocked') throw new ForbiddenException(plan.reason);
 
     await this.prisma.user.update({
       where: { id: user.id },

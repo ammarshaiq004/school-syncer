@@ -23,6 +23,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { createStudentRecord, guardianInputSchema } from './student-records.js';
 
@@ -53,6 +54,7 @@ export class StudentsController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly subscriptions: SubscriptionService,
   ) {}
 
   @Get()
@@ -147,6 +149,7 @@ export class StudentsController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(createStudentSchema)) body: CreateStudentInput,
   ) {
+    await this.subscriptions.assertStudentRoom(user.schoolId, 1);
     const student = await this.prisma.$transaction((tx) =>
       createStudentRecord(tx, { ...body, schoolId: user.schoolId }),
     );

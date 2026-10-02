@@ -49,6 +49,10 @@ export default function RegisterPage() {
           <p className="mb-4">
             Your school code is <strong>{schoolCode}</strong>. Staff use it to sign in.
           </p>
+          <p className="mb-4 text-sm opacity-70">
+            You have 30 days of the Growth plan free, with every module. Pick a plan under Plan and billing whenever you
+            are ready.
+          </p>
           <Button onClick={() => router.push("/dashboard")}>Go to dashboard</Button>
         </Card>
       </main>
@@ -58,7 +62,8 @@ export default function RegisterPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
       <Card>
-        <h1 className="mb-4 text-2xl font-semibold">Register your school</h1>
+        <h1 className="mb-1 text-2xl font-semibold">Register your school</h1>
+        <p className="mb-4 text-sm opacity-70">Free for 30 days with every module. No card needed.</p>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <Field label="School name" name="schoolName" required />
           <Field label="City" name="city" />
