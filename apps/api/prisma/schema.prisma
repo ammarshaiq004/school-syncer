@@ -1,0 +1,190 @@
+// SchoolSyncer data model, Phase 0: tenancy, people, access and academic structure.
+// Every tenant-owned table carries schoolId; services always filter by it.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  PRINCIPAL
+  ADMIN
+  ACCOUNTANT
+  TEACHER
+  CLASS_TEACHER
+  PARENT
+  STUDENT
+  STAFF
+}
+
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  city      String?
+  phone     String?
+  email     String?
+  logoUrl   String?
+  locale    String   @default("en")
+  currency  String   @default("PKR")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campuses      Campus[]
+  academicYears AcademicYear[]
+  classes       Class[]
+  subjects      Subject[]
+  users         User[]
+  auditLogs     AuditLog[]
+}
+
+model Campus {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school      School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  classes     Class[]
+  assignments RoleAssignment[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String // e.g. "2026-27"
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections Section[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+model Class {
+  id        String   @id @default(cuid())
+  schoolId  String
+  campusId  String
+  name      String // e.g. "Grade 5"
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  campus   Campus    @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  sections Section[]
+
+  @@unique([campusId, name])
+  @@index([schoolId])
+}
+
+model Section {
+  id             String   @id @default(cuid())
+  schoolId       String
+  classId        String
+  academicYearId String
+  name           String // e.g. "A"
+  capacity       Int?
+  classTeacherId String?
+  createdAt      DateTime @default(now())
+
+  class        Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear     @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  classTeacher User?            @relation("ClassTeacher", fields: [classTeacherId], references: [id], onDelete: SetNull)
+  subjects     SectionSubject[]
+
+  @@unique([classId, academicYearId, name])
+  @@index([schoolId])
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  code      String?
+  createdAt DateTime @default(now())
+
+  school   School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  sections SectionSubject[]
+
+  @@unique([schoolId, name])
+}
+
+model SectionSubject {
+  id        String  @id @default(cuid())
+  schoolId  String
+  sectionId String
+  subjectId String
+  teacherId String?
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher User?   @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  @@unique([sectionId, subjectId])
+  @@index([schoolId])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  schoolId     String
+  name         String
+  email        String?
+  phone        String?
+  passwordHash String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  roles           RoleAssignment[]
+  classTeacherOf  Section[]        @relation("ClassTeacher")
+  teachesSubjects SectionSubject[]
+
+  @@unique([schoolId, email])
+  @@unique([schoolId, phone])
+}
+
+// A role held by a user, either school-wide (campusId null) or at one campus.
+model RoleAssignment {
+  id       String  @id @default(cuid())
+  userId   String
+  role     Role
+  campusId String?
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campus Campus? @relation(fields: [campusId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role, campusId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  schoolId  String
+  userId    String?
+  action    String // e.g. "campus.create"
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+}
