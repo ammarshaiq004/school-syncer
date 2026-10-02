@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { InvoiceStatus, Role } from '@prisma/client';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Roles } from '../common/decorators.js';
+import { dayStart, localToday } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Controller('parent')
@@ -12,7 +13,7 @@ export class ParentController {
   /** A parent's children with this month's attendance and any unpaid fees. */
   @Get('children')
   async children(@CurrentUser() user: AuthUser) {
-    const monthStart = new Date(new Date().toISOString().slice(0, 7) + '-01T00:00:00.000Z');
+    const monthStart = dayStart(`${localToday().slice(0, 7)}-01`);
     const guardian = await this.prisma.guardian.findUnique({
       where: { userId: user.sub },
       include: {

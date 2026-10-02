@@ -3,27 +3,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 
-/** Loads a GET endpoint and exposes reload() for after a change. */
-export function useApi<T>(path: string) {
+/** Loads a GET endpoint (skipped when path is null) and exposes reload() for after a change. */
+export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState("");
 
-  const load = useCallback(
-    () =>
-      api<T>(path).then(
-        (result) => {
-          setData(result);
-          setError("");
-        },
-        (e: Error) => setError(e.message),
-      ),
-    [path],
-  );
+  const reload = useCallback(async () => {
+    if (!path) return;
+    try {
+      setData(await api<T>(path));
+      setError("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [path]);
 
   useEffect(() => {
+    if (!path) return;
     let cancelled = false;
     api<T>(path).then(
-      (result) => !cancelled && setData(result),
+      (result) => !cancelled && (setData(result), setError("")),
       (e: Error) => !cancelled && setError(e.message),
     );
     return () => {
@@ -31,5 +30,5 @@ export function useApi<T>(path: string) {
     };
   }, [path]);
 
-  return { data, error, reload: load };
+  return { data, error, reload };
 }

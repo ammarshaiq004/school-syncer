@@ -3,6 +3,7 @@ import { InvoiceStatus } from '@prisma/client';
 import { campusScope, STAFF_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Roles } from '../common/decorators.js';
+import { dayStart, localToday, startOfLocalDay } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Controller('dashboard')
@@ -16,8 +17,9 @@ export class DashboardController {
     const schoolId = user.schoolId;
     const scope = campusScope(user);
     const campusFilter = scope ? { campusId: { in: scope } } : {};
-    const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z');
-    const period = today.toISOString().slice(0, 7);
+    const todayIso = localToday();
+    const today = dayStart(todayIso);
+    const period = todayIso.slice(0, 7);
 
     const [students, attendance, invoices, collectedToday, applications] = await Promise.all([
       this.prisma.student.count({ where: { schoolId, status: 'ACTIVE', ...campusFilter } }),
@@ -32,7 +34,7 @@ export class DashboardController {
         _count: true,
       }),
       this.prisma.payment.aggregate({
-        where: { schoolId, receivedAt: { gte: today }, invoice: { student: campusFilter } },
+        where: { schoolId, receivedAt: { gte: startOfLocalDay(todayIso) }, invoice: { student: campusFilter } },
         _sum: { amount: true },
       }),
       this.prisma.application.groupBy({
@@ -63,3 +65,4 @@ export class DashboardController {
     };
   }
 }
+

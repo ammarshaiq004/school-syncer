@@ -22,6 +22,7 @@ import { CurrentUser, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
+import { dayStart } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
@@ -41,7 +42,7 @@ const sheetSchema = z.object({
 });
 type SheetInput = z.infer<typeof sheetSchema>;
 
-const asDate = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+const asDate = dayStart;
 
 @Controller('attendance')
 export class AttendanceController {
