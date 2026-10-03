@@ -66,7 +66,7 @@ export default function CertificatePage() {
       {c.cancelledAt && (
         <Card className="print:hidden">
           <p className="text-sm">
-            Cancelled on {day(c.cancelledAt)}: {c.cancelReason}. Anyone checking code {c.verifyCode} is told it is no longer valid.
+            Cancelled on {new Date(c.cancelledAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}: {c.cancelReason}. Anyone checking code {c.verifyCode} is told it is no longer valid.
           </p>
         </Card>
       )}
