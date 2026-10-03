@@ -23,10 +23,15 @@ import {
   Prisma,
   PrismaClient,
   Role,
+  VehicleType,
 } from '@prisma/client';
 import { DEFAULT_BANDS, positions, studentResult } from '../../src/exams/result-calculator.js';
 import { invoiceLines, type InvoiceLineDraft } from '../../src/fees/fee-calculator.js';
 import { calculatePayslip, workingDays } from '../../src/hr/payroll-calculator.js';
+import { daysBefore } from '../../src/common/dates.js';
+import { ridesDuring } from '../../src/transport/transport-rules.js';
+import { seedCertificates } from './certificates.js';
+import { seedLibrary } from './library.js';
 import {
   BOY_NAMES,
   FATHER_NAMES,
@@ -88,10 +93,24 @@ export interface SchoolPlan {
   annualCharges: number;
   /** A fixed start for phone numbers so schools don't collide, e.g. "0300". */
   phonePrefix: string;
+  /** School vans: about this share of families at the route's campus ride one. */
+  transport?: { share: number; routes: RoutePlan[] };
+}
+
+export interface RoutePlan {
+  campus: string;
+  name: string;
+  fee: number;
+  vehicle: { registrationNo: string; type: VehicleType; capacity: number };
+  /** Name, pick-up time, drop time and, for far stops, their own fee. */
+  stops: [string, string, string, number?][];
 }
 
 export interface SeedSummary {
   schoolId: string;
+  certificates: number;
+  books: number;
+  loans: number;
   students: number;
   staff: number;
   invoices: number;
@@ -604,6 +623,66 @@ export async function seedSchool(
     await prisma.guardian.update({ where: { id: f.guardianId }, data: { userId: parent.id } });
   }
 
+  // ----- Transport: vans, routes and the families who use them -----
+  // A family rides from one stop; rides are billed on every voucher below.
+  const rides = new Map<string, { startsOn: string; endsOn: string | null; fee: number }>();
+  if (plan.transport) {
+    const kidsByFamilyIndex = new Map<number, Kid[]>();
+    for (const k of kids) kidsByFamilyIndex.set(k.familyIndex, [...(kidsByFamilyIndex.get(k.familyIndex) ?? []), k]);
+    const familyCampus = (fi: number) => sections.find((x) => x.id === kidsByFamilyIndex.get(fi)![0].sectionId)!.campusIndex;
+    const takenFamilies = new Set<number>();
+    for (const r of plan.transport.routes) {
+      const campusIndex = plan.campuses.findIndex((c) => c.name === r.campus);
+      const vehicle = await prisma.vehicle.create({
+        data: {
+          schoolId,
+          ...r.vehicle,
+          driverName: `${rng.pick(FATHER_NAMES)} ${rng.pick(SURNAMES)}`,
+          driverPhone: phone(),
+          driverCnic: cnic(),
+          conductorName: r.vehicle.type === VehicleType.VAN ? null : `${rng.pick(FATHER_NAMES)} ${rng.pick(SURNAMES)}`,
+        },
+      });
+      const route = await prisma.transportRoute.create({
+        data: { schoolId, campusId: campuses[campusIndex].id, name: r.name, vehicleId: vehicle.id, monthlyFee: r.fee },
+      });
+      const stops = await prisma.routeStop.createManyAndReturn({
+        data: r.stops.map(([name, pickupTime, dropTime, fee], position) => ({
+          routeId: route.id,
+          name,
+          position,
+          pickupTime,
+          dropTime,
+          monthlyFee: fee ?? null,
+        })),
+      });
+      stops.sort((a, b) => a.position - b.position);
+      // Fill the van to roughly the school's share, family by family; the demo family rides the first route.
+      const candidates = [...kidsByFamilyIndex.keys()].filter((fi) => familyCampus(fi) === campusIndex && !takenFamilies.has(fi));
+      const order = [...(candidates.includes(0) && !takenFamilies.size ? [0] : []), ...rng.shuffle(candidates.filter((fi) => fi !== 0))];
+      const seats = Math.min(r.vehicle.capacity - 1, Math.round(r.vehicle.capacity * (0.75 + rng.next() * 0.25)));
+      const rows: Prisma.TransportAssignmentCreateManyInput[] = [];
+      for (const fi of order) {
+        const members = kidsByFamilyIndex.get(fi)!;
+        if (rows.length + members.length > seats) continue;
+        if (fi !== 0 && !rng.chance(plan.transport.share * 3)) continue;
+        takenFamilies.add(fi);
+        const stop = rng.pick(stops);
+        // Most started with the year; some joined later and a few have since stopped.
+        const joined = daysBefore(today, rng.int(20, 150));
+        const startsOn = rng.chance(0.8) || joined < yearStart ? yearStart : joined;
+        const stopped = fi !== 0 && rng.chance(0.06) && startsOn < daysBefore(today, 40);
+        const endsOn = stopped ? daysBefore(today, rng.int(10, 35)) : null;
+        for (const k of members) {
+          rows.push({ schoolId, studentId: k.id, routeId: route.id, stopId: stop.id, startsOn: day(startsOn), endsOn: endsOn ? day(endsOn) : null });
+          rides.set(k.id, { startsOn, endsOn, fee: stop.monthlyFee ?? r.fee });
+        }
+      }
+      await prisma.transportAssignment.createMany({ data: rows });
+    }
+  }
+  const transportHead = rides.size ? await prisma.feeHead.create({ data: { schoolId, name: 'Transport' } }) : null;
+
   // ----- Fees -----
   const tuition = await prisma.feeHead.create({ data: { schoolId, name: 'Tuition' } });
   const annual = await prisma.feeHead.create({ data: { schoolId, name: 'Annual charges', frequency: FeeFrequency.ANNUAL } });
@@ -669,8 +748,12 @@ export async function seedSchool(
     const family = families[k.familyIndex];
     const unpaidFrom = family.defaulter ? months.length - 1 - rng.int(1, 3) : Infinity;
     for (const [mi, period] of months.entries()) {
+      const ride = rides.get(k.id);
+      const rode = ride && ridesDuring({ startsOn: day(ride.startsOn), endsOn: ride.endsOn ? day(ride.endsOn) : null }, period);
       const lines = invoiceLines(
-        structures.filter((s) => s.classId === section.classId),
+        structures
+          .filter((s) => s.classId === section.classId)
+          .concat(rode && transportHead ? [{ classId: section.classId, feeHeadId: transportHead.id, feeHeadName: 'Transport', frequency: FeeFrequency.MONTHLY, amount: ride.fee }] : []),
         (studentConcessions.get(k.id) ?? []).map((c) => ({ feeHeadId: c.feeHeadId, type: c.type, value: c.value })),
         mi === 0,
       );
@@ -1166,8 +1249,35 @@ export async function seedSchool(
   }
   await prisma.notificationLog.createMany({ data: logs });
 
+  // ----- Library -----
+  const library = await seedLibrary(
+    prisma,
+    rng,
+    schoolId,
+    kids.map((k) => ({ id: k.id, level: k.level, ability: k.ability })),
+    rng.shuffle(staff.filter((m) => m.salary > 0).map((m) => m.id)),
+    yearStart,
+    today,
+    { loanDays: 14, finePerDay: 5 },
+  );
+
+  // ----- Certificates -----
+  const office =
+    (await prisma.user.findFirst({ where: { schoolId, roles: { some: { role: Role.PRINCIPAL } } } })) ?? owner;
+  const certificates = await seedCertificates(prisma, rng, {
+    schoolId,
+    issuedById: office!.id,
+    academicYearId: year.id,
+    yearStart,
+    today,
+    phone,
+  });
+
   return {
     schoolId,
+    certificates: certificates.certificates,
+    books: library.copies,
+    loans: library.loans,
     students: kids.length,
     staff: staff.length,
     invoices: invoiceRows.length,

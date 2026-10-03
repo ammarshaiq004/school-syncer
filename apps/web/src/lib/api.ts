@@ -33,7 +33,10 @@ export type Feature =
   | "timetable"
   | "hr"
   | "accounts"
-  | "reports";
+  | "reports"
+  | "transport"
+  | "library"
+  | "certificates";
 
 /** The school's SchoolSyncer plan, as /auth/me reports it. */
 export interface SchoolPlan {
