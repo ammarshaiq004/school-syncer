@@ -2,8 +2,31 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
+import { Archive, ClipboardCheck, Inbox, SquareKanban, Phone, Plus, Save, Send, UserCheck, UserPlus } from "lucide-react";
 import { EnquiryFields, enquiryBody, type CampusOption } from "@/components/enquiry-fields";
-import { Badge, Button, Card, ErrorText, Notice, PageTitle } from "@/components/ui";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  CountBadge,
+  DataTable,
+  Drawer,
+  EmptyState,
+  ErrorState,
+  KpiCard,
+  NativeSelect,
+  PageHeader,
+  SearchInput,
+  Skeleton,
+  StatGrid,
+  StatusPill,
+  TabPanel,
+  Tabs,
+  useToast,
+  type Column,
+  type Tone,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { day } from "@/lib/format";
 import { useSectionOptions } from "@/lib/sections";
@@ -27,18 +50,40 @@ interface Application {
 }
 
 const STAGES = ["ENQUIRY", "TEST_SCHEDULED", "TEST_DONE", "INTERVIEW", "OFFERED"];
-const label = (s: string) => s.replace("_", " ").toLowerCase();
+const ALL_STAGES = [...STAGES, "REJECTED", "WITHDRAWN"];
+const STAGE_TONE: Record<string, Tone> = {
+  ENQUIRY: "neutral",
+  TEST_SCHEDULED: "info",
+  TEST_DONE: "primary",
+  INTERVIEW: "warning",
+  OFFERED: "success",
+  ADMITTED: "success",
+  REJECTED: "danger",
+  WITHDRAWN: "neutral",
+};
+const label = (s: string) => {
+  const t = s.replace(/_/g, " ").toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+const FORM_ID = "new-enquiry-form";
+
+function StagePill({ stage }: { stage: string }) {
+  return <StatusPill status={stage} tone={STAGE_TONE[stage] ?? "neutral"} label={label(stage)} />;
+}
 
 export default function AdmissionsPage() {
+  const toast = useToast();
   const applications = useApi<Application[]>("/applications");
   const campuses = useApi<{ id: string; name: string }[]>("/campuses");
   const classes = useApi<{ id: string; name: string; campus: { id: string } }[]>("/classes");
   const sections = useSectionOptions();
   const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState("");
   const [campusId, setCampusId] = useState("");
-  const [showClosed, setShowClosed] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [tab, setTab] = useState("pipeline");
+  const [search, setSearch] = useState("");
+  const [formError, setFormError] = useState("");
 
   const campusOptions: CampusOption[] = (campuses.data ?? []).map((c) => ({
     ...c,
@@ -46,111 +91,277 @@ export default function AdmissionsPage() {
   }));
   const selectedCampus = campusId || campusOptions[0]?.id || "";
 
-  async function run(action: () => Promise<unknown>, done?: string) {
+  async function run(id: string, action: () => Promise<unknown>, done?: string) {
+    setBusy(id);
     try {
       await action();
-      setError("");
-      setNotice(done ?? "");
+      if (done) toast.success(done);
       await applications.reload();
     } catch (e) {
-      setError((e as Error).message);
+      toast.error("Could not update the application", (e as Error).message);
+    } finally {
+      setBusy("");
     }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formEl = event.currentTarget;
-    await run(async () => {
+    setSaving(true);
+    try {
       await api("/applications", { method: "POST", body: enquiryBody(new FormData(formEl)) });
       formEl.reset();
+      setFormError("");
       setAdding(false);
-    }, "Enquiry added.");
+      toast.success("Enquiry added.");
+      await applications.reload();
+    } catch (e) {
+      setFormError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  const open = applications.data?.filter((a) => STAGES.includes(a.stage)) ?? [];
-  const closed = applications.data?.filter((a) => !STAGES.includes(a.stage)) ?? [];
+  const q = search.trim().toLowerCase();
+  const matches = (a: Application) =>
+    !q || `${a.childName} ${a.guardianName} ${a.guardianPhone} ${a.class.name}`.toLowerCase().includes(q);
+  const all = applications.data ?? [];
+  const open = all.filter((a) => STAGES.includes(a.stage));
+  const closed = all.filter((a) => !STAGES.includes(a.stage));
+  const shownOpen = open.filter(matches);
+  const loading = !applications.data && !applications.error;
+  const count = (pred: (a: Application) => boolean) => (loading ? "" : all.filter(pred).length.toLocaleString("en-PK"));
+
+  const closedColumns: Column<Application>[] = [
+    {
+      id: "child",
+      header: "Child",
+      sortValue: (a) => a.childName,
+      cell: (a) => (
+        <div className="flex items-center gap-3">
+          <Avatar name={a.childName} size="sm" />
+          {a.studentId ? (
+            <Link href={`/students/${a.studentId}`} className="font-medium text-fg hover:text-brand">
+              {a.childName}
+            </Link>
+          ) : (
+            <span className="font-medium text-fg">{a.childName}</span>
+          )}
+        </div>
+      ),
+    },
+    { id: "class", header: "Class", sortValue: (a) => a.class.name, cell: (a) => a.class.name },
+    { id: "campus", header: "Campus", cell: (a) => a.campus.name, hideBelow: "md" },
+    { id: "guardian", header: "Guardian", cell: (a) => `${a.guardianName}, ${a.guardianPhone}`, hideBelow: "lg" },
+    { id: "date", header: "Received", sortValue: (a) => a.createdAt, cell: (a) => day(a.createdAt), hideBelow: "sm" },
+    {
+      id: "stage",
+      header: "Outcome",
+      sortValue: (a) => (a.studentId ? "ADMITTED" : a.stage),
+      cell: (a) => <StagePill stage={a.studentId ? "ADMITTED" : a.stage} />,
+    },
+  ];
+
+  const newButton = (
+    <Button icon={<Plus />} onClick={() => setAdding(true)}>
+      New enquiry
+    </Button>
+  );
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle action={<Button onClick={() => setAdding((a) => !a)}>{adding ? "Close" : "New enquiry"}</Button>}>
-        Admissions
-      </PageTitle>
-      <Notice>{notice}</Notice>
-      <ErrorText>{error || applications.error}</ErrorText>
+      <PageHeader
+        title="Admissions"
+        description="Track every enquiry from first call to admission."
+        breadcrumbs={[{ label: "People" }, { label: "Admissions" }]}
+        actions={newButton}
+      />
 
-      {adding && (
-        <Card>
-          <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <EnquiryFields campuses={campusOptions} campusId={selectedCampus} onCampusChange={setCampusId} />
-            <div className="flex items-end"><Button type="submit">Save enquiry</Button></div>
-          </form>
-        </Card>
-      )}
+      <StatGrid>
+        <KpiCard label="Open enquiries" value={count((a) => STAGES.includes(a.stage))} icon={<Inbox />} loading={loading} />
+        <KpiCard
+          label="In testing or interview"
+          value={count((a) => ["TEST_SCHEDULED", "TEST_DONE", "INTERVIEW"].includes(a.stage))}
+          icon={<ClipboardCheck />}
+          tone="info"
+          loading={loading}
+        />
+        <KpiCard label="Offered a seat" value={count((a) => a.stage === "OFFERED")} icon={<Send />} tone="warning" loading={loading} />
+        <KpiCard label="Admitted" value={count((a) => !!a.studentId)} icon={<UserCheck />} tone="success" loading={loading} />
+      </StatGrid>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {STAGES.map((stage) => {
-          const items = open.filter((a) => a.stage === stage);
-          return (
-            <div key={stage} className="flex flex-col gap-3">
-              <div className="flex items-center justify-between text-sm font-semibold capitalize">
-                {label(stage)} <Badge>{items.length}</Badge>
-              </div>
-              {items.map((a) => (
-                <Card key={a.id} className="p-4">
-                  <div className="font-medium">{a.childName}</div>
-                  <div className="text-xs opacity-70">{a.class.name} · {a.campus.name}</div>
-                  <div className="mt-1 text-xs opacity-70">{a.guardianName} · {a.guardianPhone}</div>
-                  <div className="mt-1 text-xs opacity-50">{a.source ?? "Walk-in"} · {day(a.createdAt)}{a.testScore !== null ? ` · test ${a.testScore}` : ""}</div>
-                  <div className="mt-3 flex flex-col gap-2">
-                    <select
-                      value={a.stage}
-                      onChange={(e) => run(() => api(`/applications/${a.id}`, { method: "PATCH", body: { stage: e.target.value } }))}
-                      className="rounded-lg border border-black/15 bg-transparent px-2 py-1 text-xs dark:border-white/20"
-                    >
-                      {[...STAGES, "REJECTED", "WITHDRAWN"].map((s) => <option key={s} value={s}>{label(s)}</option>)}
-                    </select>
-                    <form
-                      className="flex gap-2"
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        const sectionId = new FormData(e.currentTarget).get("sectionId");
-                        run(() => api(`/applications/${a.id}/admit`, { method: "POST", body: { sectionId } }), `${a.childName} admitted.`);
-                      }}
-                    >
-                      <select name="sectionId" required className="min-w-0 flex-1 rounded-lg border border-black/15 bg-transparent px-2 py-1 text-xs dark:border-white/20">
-                        {sections.options.filter((o) => o.classId === a.classId).map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                      <button className="text-xs font-medium text-brand">Admit</button>
-                    </form>
-                  </div>
-                </Card>
+      <Tabs
+        value={tab}
+        onValueChange={setTab}
+        aria-label="Admissions views"
+        tabs={[
+          { value: "pipeline", label: "Pipeline", icon: <SquareKanban />, count: applications.data ? open.length : undefined },
+          { value: "closed", label: "Admitted, rejected and withdrawn", icon: <Archive />, count: applications.data ? closed.length : undefined },
+        ]}
+      >
+        <TabPanel value="pipeline">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <SearchInput
+              placeholder="Search child, guardian or phone"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClear={() => setSearch("")}
+              wrapperClassName="w-full sm:w-80"
+            />
+          </div>
+          {applications.error ? (
+            <ErrorState message={applications.error} onRetry={applications.reload} />
+          ) : loading ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              {STAGES.map((s) => (
+                <div key={s} className="flex flex-col gap-3 rounded-xl bg-surface-2 p-3">
+                  <Skeleton className="h-5 w-28" />
+                  <Skeleton className="h-28 w-full rounded-lg" />
+                  <Skeleton className="h-28 w-full rounded-lg" />
+                </div>
               ))}
             </div>
-          );
-        })}
-      </div>
+          ) : open.length === 0 ? (
+            <EmptyState
+              icon={<UserPlus />}
+              title="No open enquiries"
+              description="Add enquiries from phone calls and walk-ins, or share your public admission form with parents."
+              action={newButton}
+            />
+          ) : (
+            <div className="-mx-4 overflow-x-auto px-4 pb-2 md:mx-0 md:px-0">
+              <div className="grid auto-cols-[minmax(260px,1fr)] grid-flow-col gap-4 xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-5">
+                {STAGES.map((stage) => {
+                  const items = shownOpen.filter((a) => a.stage === stage);
+                  return (
+                    <section key={stage} aria-label={label(stage)} className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-surface-2 p-3">
+                      <header className="flex items-center justify-between gap-2 px-1">
+                        <StagePill stage={stage} />
+                        <CountBadge count={items.length} />
+                      </header>
+                      {items.length === 0 && (
+                        <p className="rounded-lg border border-dashed border-border-strong px-3 py-6 text-center text-xs text-fg-muted">
+                          {q ? "No matches" : "Nobody at this stage"}
+                        </p>
+                      )}
+                      {items.map((a) => {
+                        const sectionOpts = sections.options.filter((o) => o.classId === a.classId);
+                        return (
+                          <article key={a.id} className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3 shadow-card">
+                            <div className="flex items-start gap-2.5">
+                              <Avatar name={a.childName} size="sm" />
+                              <div className="min-w-0 flex-1">
+                                <h3 className="truncate text-sm font-semibold text-fg">{a.childName}</h3>
+                                <p className="truncate text-xs text-fg-muted">
+                                  {a.class.name} · {a.campus.name}
+                                </p>
+                              </div>
+                              {a.testScore !== null && <Badge tone="primary">Test {a.testScore}</Badge>}
+                            </div>
+                            <div className="flex flex-col gap-1 text-xs text-fg-secondary">
+                              <span className="truncate">{a.guardianName}</span>
+                              <a href={`tel:${a.guardianPhone}`} className="inline-flex w-fit items-center gap-1.5 tabular-nums hover:text-brand">
+                                <Phone className="size-3 text-fg-muted" aria-hidden />
+                                {a.guardianPhone}
+                              </a>
+                              <span className="text-fg-muted">
+                                {a.source ?? "Walk-in"} · {day(a.createdAt)}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-2 border-t border-border pt-3">
+                              <NativeSelect
+                                aria-label={`Stage for ${a.childName}`}
+                                value={a.stage}
+                                disabled={busy === a.id}
+                                onChange={(e) => {
+                                  const stageValue = e.target.value;
+                                  void run(a.id, () => api(`/applications/${a.id}`, { method: "PATCH", body: { stage: stageValue } }));
+                                }}
+                                options={ALL_STAGES.map((s) => ({ value: s, label: label(s) }))}
+                                className="h-8 text-xs"
+                              />
+                              <form
+                                className="flex gap-2"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  const sectionId = new FormData(e.currentTarget).get("sectionId");
+                                  void run(a.id, () => api(`/applications/${a.id}/admit`, { method: "POST", body: { sectionId } }), `${a.childName} admitted.`);
+                                }}
+                              >
+                                <NativeSelect
+                                  name="sectionId"
+                                  required
+                                  aria-label={`Section to admit ${a.childName} into`}
+                                  options={sectionOpts}
+                                  placeholder={sectionOpts.length ? undefined : "No sections"}
+                                  wrapperClassName="min-w-0 flex-1"
+                                  className="h-8 text-xs"
+                                />
+                                <Button type="submit" size="sm" icon={<UserCheck />} loading={busy === a.id} disabled={!sectionOpts.length}>
+                                  Admit
+                                </Button>
+                              </form>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </section>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </TabPanel>
 
-      <button className="self-start text-sm text-brand" onClick={() => setShowClosed((s) => !s)}>
-        {showClosed ? "Hide" : "Show"} admitted, rejected and withdrawn ({closed.length})
-      </button>
-      {showClosed && (
-        <Card>
-          <ul className="flex flex-col divide-y divide-black/5 text-sm dark:divide-white/10">
-            {closed.map((a) => (
-              <li key={a.id} className="flex justify-between py-2">
-                <span>{a.childName} · {a.class.name}</span>
-                {a.studentId ? (
-                  <Link className="text-brand" href={`/students/${a.studentId}`}>admitted</Link>
-                ) : (
-                  <span className="opacity-60">{label(a.stage)}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+        <TabPanel value="closed">
+          <DataTable
+            label="Closed applications"
+            columns={closedColumns}
+            data={applications.data ? closed : null}
+            getRowId={(a) => a.id}
+            error={applications.error}
+            onRetry={applications.reload}
+            getSearchText={(a) => `${a.childName} ${a.guardianName} ${a.guardianPhone} ${a.class.name}`}
+            searchPlaceholder="Search child, guardian or phone"
+            defaultSort={{ id: "date", dir: "desc" }}
+            empty={{ title: "Nothing closed yet", description: "Admitted, rejected and withdrawn applications show up here." }}
+          />
+        </TabPanel>
+      </Tabs>
+
+      <Drawer
+        open={adding}
+        onOpenChange={(o) => {
+          setAdding(o);
+          if (!o) setFormError("");
+        }}
+        title="New enquiry"
+        description="Record a phone call or walk-in. It starts in the Enquiry stage."
+        size="lg"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setAdding(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form={FORM_ID} loading={saving} icon={<Save />}>
+              Save enquiry
+            </Button>
+          </>
+        }
+      >
+        {campuses.error || classes.error ? (
+          <ErrorState message={campuses.error || classes.error} onRetry={() => void Promise.all([campuses.reload(), classes.reload()])} compact />
+        ) : (
+          <form id={FORM_ID} onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
+            <EnquiryFields campuses={campusOptions} campusId={selectedCampus} onCampusChange={setCampusId} />
+            {formError && (
+              <Alert tone="danger" className="col-span-full">
+                {formError}
+              </Alert>
+            )}
+          </form>
+        )}
+      </Drawer>
     </div>
   );
 }

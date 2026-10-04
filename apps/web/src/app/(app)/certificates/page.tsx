@@ -1,9 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { Award, BadgeCheck, FilePlus2, IdCard, Printer, Scissors, Users } from "lucide-react";
 import { Select } from "@/components/select";
-import { Badge, Card, ErrorText, PageTitle, rowClass, tableClass } from "@/components/ui";
+import {
+  Avatar,
+  buttonClass,
+  Card,
+  CardHeader,
+  DataTable,
+  ErrorState,
+  NativeSelect,
+  PageHeader,
+  Skeleton,
+  StatusPill,
+  TabPanel,
+  Tabs,
+  type Column,
+} from "@/components/ui";
 import { CERTIFICATE_SHORT, type CertificateRow, type CertificateType } from "@/lib/certificates";
 import { day } from "@/lib/format";
 import { useSectionOptions } from "@/lib/sections";
@@ -11,42 +26,46 @@ import { hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 type Tab = "issued" | "students" | "staff";
-const inputClass = "rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20";
 
 /** The certificate register and the way into printing ID cards. */
 export default function CertificatesPage() {
   const user = useSession();
   const canIssue = hasRole(user, SETUP);
   const [tab, setTab] = useState<Tab>("issued");
-  const tabs: [Tab, string][] = [
-    ["issued", "Certificates issued"],
-    ["students", "Student ID cards"],
-    ...(canIssue ? ([["staff", "Staff ID cards"]] as [Tab, string][]) : []),
+  const tabs = [
+    { value: "issued", label: "Certificates issued", icon: <Award /> },
+    { value: "students", label: "Student ID cards", icon: <IdCard /> },
+    ...(canIssue ? [{ value: "staff", label: "Staff ID cards", icon: <Users /> }] : []),
   ];
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle
-        action={
+      <PageHeader
+        title="Certificates and ID cards"
+        description="Leaving, character and enrolment certificates, each with a code anyone can check online, and printable ID cards."
+        breadcrumbs={[{ label: "Students" }, { label: "Certificates" }]}
+        actions={
           canIssue && (
-            <Link href="/certificates/new" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
+            <Link href="/certificates/new" className={buttonClass("primary")}>
+              <FilePlus2 aria-hidden />
               Issue a certificate
             </Link>
           )
         }
-      >
-        Certificates and ID cards
-      </PageTitle>
-      <div className="flex gap-1 border-b border-black/10 dark:border-white/10">
-        {tabs.map(([t, label]) => (
-          <button key={t} onClick={() => setTab(t)} className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === t ? "border-brand font-medium text-brand" : "border-transparent opacity-70"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "issued" && <Register />}
-      {tab === "students" && <StudentCards />}
-      {tab === "staff" && <StaffCards />}
+      />
+      <Tabs tabs={tabs} value={tab} onValueChange={(v) => setTab(v as Tab)} aria-label="Certificates and ID cards">
+        <TabPanel value="issued">
+          <Register />
+        </TabPanel>
+        <TabPanel value="students">
+          <StudentCards />
+        </TabPanel>
+        {canIssue && (
+          <TabPanel value="staff">
+            <StaffCards />
+          </TabPanel>
+        )}
+      </Tabs>
     </div>
   );
 }
@@ -58,43 +77,92 @@ function Register() {
   const params = new URLSearchParams({ ...(type ? { type } : {}), ...(q.length >= 2 ? { search: q } : {}) });
   const rows = useApi<CertificateRow[]>(`/certificates?${params}`);
 
+  const columns: Column<CertificateRow>[] = [
+    {
+      id: "serial",
+      header: "Serial No.",
+      sortValue: (c) => c.serialNo,
+      cell: (c) => (
+        <Link className="font-mono text-[13px] font-medium text-brand hover:underline" href={`/certificates/${c.id}`}>
+          {c.serialNo}
+        </Link>
+      ),
+    },
+    { id: "kind", header: "Kind", sortValue: (c) => CERTIFICATE_SHORT[c.type], cell: (c) => CERTIFICATE_SHORT[c.type] },
+    {
+      id: "student",
+      header: "Student",
+      sortValue: (c) => c.student.name,
+      cell: (c) => (
+        <span className="flex items-center gap-2.5">
+          <Avatar name={c.student.name} size="xs" />
+          <span className="min-w-0">
+            <Link className="block font-medium text-fg hover:text-brand" href={`/students/${c.student.id}`}>
+              {c.student.name}
+            </Link>
+            <span className="text-xs text-fg-muted">{c.student.admissionNo}</span>
+          </span>
+        </span>
+      ),
+    },
+    { id: "class", header: "Class", cell: (c) => c.className ?? <span className="text-fg-muted">Not recorded</span>, hideBelow: "md" },
+    { id: "issued", header: "Issued", align: "right", sortValue: (c) => new Date(c.issuedOn), cell: (c) => day(c.issuedOn) },
+    { id: "by", header: "By", cell: (c) => <span className="text-fg-secondary">{c.issuedBy}</span>, hideBelow: "lg" },
+    {
+      id: "status",
+      header: "Status",
+      cell: (c) => (c.cancelled ? <StatusPill status="CANCELLED" tone="danger" /> : <StatusPill status="VALID" tone="success" />),
+    },
+  ];
+
   return (
-    <Card>
-      <div className="mb-4 flex flex-wrap gap-2">
-        <input className={`${inputClass} min-w-64 flex-1`} placeholder="Search by student, admission or serial number" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search certificates" />
-        <select className={inputClass} value={type} onChange={(e) => setType(e.target.value as "" | CertificateType)} aria-label="Kind of certificate">
-          <option value="">All kinds</option>
-          {(Object.keys(CERTIFICATE_SHORT) as CertificateType[]).map((t) => (
-            <option key={t} value={t}>{CERTIFICATE_SHORT[t]}</option>
-          ))}
-        </select>
-      </div>
-      <ErrorText>{rows.error}</ErrorText>
-      {rows.data && rows.data.length === 0 ? (
-        <p className="text-sm opacity-60">No certificates {q || type ? "match" : "issued yet"}.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className={tableClass}>
-            <thead className="opacity-60">
-              <tr><th className="py-2">Serial No.</th><th>Kind</th><th>Student</th><th>Class</th><th>Issued</th><th>By</th><th /></tr>
-            </thead>
-            <tbody>
-              {rows.data?.map((c) => (
-                <tr key={c.id} className={rowClass}>
-                  <td className="py-2"><Link className="font-mono text-brand" href={`/certificates/${c.id}`}>{c.serialNo}</Link></td>
-                  <td>{CERTIFICATE_SHORT[c.type]}</td>
-                  <td><Link className="hover:text-brand" href={`/students/${c.student.id}`}>{c.student.name}</Link> <span className="opacity-60">{c.student.admissionNo}</span></td>
-                  <td>{c.className ?? "–"}</td>
-                  <td>{day(c.issuedOn)}</td>
-                  <td>{c.issuedBy}</td>
-                  <td>{c.cancelled && <Badge tone="red">cancelled</Badge>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
+    <DataTable
+      label="Certificates issued"
+      columns={columns}
+      data={rows.data}
+      getRowId={(c) => c.id}
+      error={rows.error}
+      onRetry={rows.reload}
+      search={search}
+      onSearchChange={setSearch}
+      manualFiltering
+      searchPlaceholder="Search by student, admission or serial number"
+      filters={
+        <NativeSelect
+          aria-label="Kind of certificate"
+          placeholder="All kinds"
+          value={type}
+          onChange={(e) => setType(e.target.value as "" | CertificateType)}
+          options={(Object.keys(CERTIFICATE_SHORT) as CertificateType[]).map((t) => ({ value: t, label: CERTIFICATE_SHORT[t] }))}
+          wrapperClassName="w-44"
+        />
+      }
+      filtered={!!type || q.length >= 2}
+      defaultSort={{ id: "issued", dir: "desc" }}
+      empty={{
+        icon: <Award />,
+        title: q || type ? "No certificates match" : "No certificates issued yet",
+        description: q || type ? "Try another name, number or kind." : "Certificates you issue are listed here with their serial numbers.",
+      }}
+    />
+  );
+}
+
+function PrintSteps({ steps }: { steps: { icon: ReactNode; text: string }[] }) {
+  return (
+    <ol className="grid gap-3 sm:grid-cols-3">
+      {steps.map((s, i) => (
+        <li key={s.text} className="flex items-start gap-3 rounded-lg border border-border bg-surface-2 p-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary-tint text-brand [&_svg]:size-4" aria-hidden>
+            {s.icon}
+          </span>
+          <span className="text-[13px] text-fg-secondary">
+            <span className="font-medium text-fg">Step {i + 1}. </span>
+            {s.text}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -103,21 +171,34 @@ function StudentCards() {
   const [sectionId, setSectionId] = useState("");
   return (
     <Card>
-      <p className="mb-4 text-sm opacity-70">
-        Cards print ten to an A4 sheet, credit-card size, with the student&apos;s photo where one is on record, class, roll number and a parent&apos;s phone. Cut them out and laminate, or send the sheet to a card printer.
-      </p>
-      <ErrorText>{sections.error}</ErrorText>
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-56">
-          <Select label="Class" value={sectionId} onChange={(e) => setSectionId(e.target.value)} options={[{ value: "", label: "Choose a class" }, ...sections.options]} />
-        </div>
+      <CardHeader
+        icon={<IdCard />}
+        title="Student ID cards"
+        description="Cards print ten to an A4 sheet, credit-card size, with the student's photo where one is on record, class, roll number and a parent's phone."
+      />
+      <PrintSteps
+        steps={[
+          { icon: <Users />, text: "Choose the class to make cards for." },
+          { icon: <Printer />, text: "Print at actual size (100%), not fit to page." },
+          { icon: <Scissors />, text: "Cut out and laminate, or send the sheet to a card printer." },
+        ]}
+      />
+      <div className="mt-5 flex flex-wrap items-end gap-3">
+        {sections.error ? (
+          <ErrorState message={sections.error} compact className="w-full" />
+        ) : (
+          <div className="w-full sm:w-64">
+            <Select label="Class" value={sectionId} onChange={(e) => setSectionId(e.target.value)} options={[{ value: "", label: "Choose a class" }, ...sections.options]} />
+          </div>
+        )}
         {sectionId && (
-          <Link href={`/certificates/id-cards?sectionId=${sectionId}`} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
+          <Link href={`/certificates/id-cards?sectionId=${sectionId}`} className={buttonClass("primary")}>
+            <Printer aria-hidden />
             Show cards to print
           </Link>
         )}
       </div>
-      <p className="mt-3 text-xs opacity-60">For one student, use &ldquo;ID card&rdquo; on their page.</p>
+      <p className="mt-3 text-xs text-fg-muted">For one student, use &ldquo;ID card&rdquo; on their page.</p>
     </Card>
   );
 }
@@ -127,18 +208,29 @@ function StaffCards() {
   const [campusId, setCampusId] = useState("");
   return (
     <Card>
-      <p className="mb-4 text-sm opacity-70">Cards for everyone on the payroll, with their employee number and designation.</p>
-      <ErrorText>{campuses.error}</ErrorText>
-      <div className="flex flex-wrap items-end gap-3">
-        {(campuses.data?.length ?? 0) > 1 && (
-          <div className="min-w-56">
-            <Select label="Campus" value={campusId} onChange={(e) => setCampusId(e.target.value)} options={[{ value: "", label: "Every campus" }, ...(campuses.data ?? []).map((c) => ({ value: c.id, label: c.name }))]} />
-          </div>
-        )}
-        <Link href={`/certificates/id-cards?staff=1${campusId ? `&campusId=${campusId}` : ""}`} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
-          Show cards to print
-        </Link>
-      </div>
+      <CardHeader icon={<BadgeCheck />} title="Staff ID cards" description="Cards for everyone on the payroll, with their employee number and designation." />
+      {campuses.error ? (
+        <ErrorState message={campuses.error} onRetry={campuses.reload} compact />
+      ) : !campuses.data ? (
+        <Skeleton className="h-9 w-64" />
+      ) : (
+        <div className="flex flex-wrap items-end gap-3">
+          {campuses.data.length > 1 && (
+            <div className="w-full sm:w-64">
+              <Select
+                label="Campus"
+                value={campusId}
+                onChange={(e) => setCampusId(e.target.value)}
+                options={[{ value: "", label: "Every campus" }, ...campuses.data.map((c) => ({ value: c.id, label: c.name }))]}
+              />
+            </div>
+          )}
+          <Link href={`/certificates/id-cards?staff=1${campusId ? `&campusId=${campusId}` : ""}`} className={buttonClass("primary")}>
+            <Printer aria-hidden />
+            Show cards to print
+          </Link>
+        </div>
+      )}
     </Card>
   );
 }

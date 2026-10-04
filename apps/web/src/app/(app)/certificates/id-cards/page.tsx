@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, type CSSProperties, type ReactNode } from "react";
-import { Button, ErrorText } from "@/components/ui";
+import { IdCard, Printer } from "lucide-react";
+import { Alert, Button, buttonClass, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { day } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
@@ -75,16 +76,47 @@ function IdCards() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div>
-          <Link href="/certificates" className="text-sm text-brand">Certificates and ID cards</Link>
-          <h1 className="text-2xl font-semibold">{staff ? "Staff" : "Student"} ID cards</h1>
-          {data && <p className="text-sm opacity-70">{data.cards.length} card{data.cards.length === 1 ? "" : "s"}. Print at actual size (100%), not &ldquo;fit to page&rdquo;.</p>}
+      <PageHeader
+        title={`${staff ? "Staff" : "Student"} ID cards`}
+        breadcrumbs={[{ label: "Certificates and ID cards", href: "/certificates" }, { label: `${staff ? "Staff" : "Student"} ID cards` }]}
+        description={
+          data ? `${data.cards.length} card${data.cards.length === 1 ? "" : "s"}, ten to an A4 sheet.` : "Preparing the cards."
+        }
+        actions={
+          <Button type="button" icon={<Printer />} onClick={() => window.print()} disabled={!data?.cards.length}>
+            Print
+          </Button>
+        }
+      />
+      {data && data.cards.length > 0 && (
+        <Alert tone="info" className="print:hidden">
+          Print at actual size (100%), not &ldquo;fit to page&rdquo;, so each card comes out credit-card size.
+        </Alert>
+      )}
+      {cards.error ? (
+        <Card padding="none" className="print:hidden">
+          <ErrorState message={cards.error} onRetry={cards.reload} />
+        </Card>
+      ) : !data ? (
+        <div className="grid grid-cols-[repeat(auto-fill,85.6mm)] justify-center gap-[4mm] print:hidden" aria-busy>
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton key={i} className="h-[54mm] w-[85.6mm] rounded-[3mm]" />
+          ))}
         </div>
-        <Button onClick={() => window.print()} disabled={!data?.cards.length}>Print</Button>
-      </div>
-      <ErrorText>{cards.error}</ErrorText>
-      {data && data.cards.length === 0 && <p className="text-sm opacity-60">No one to make cards for.</p>}
+      ) : data.cards.length === 0 ? (
+        <Card padding="none" className="print:hidden">
+          <EmptyState
+            icon={<IdCard />}
+            title="No one to make cards for"
+            description={staff ? "No staff are on the payroll for this campus." : "No students are enrolled in this class."}
+            action={
+              <Link href="/certificates" className={buttonClass("secondary")}>
+                Back to certificates
+              </Link>
+            }
+          />
+        </Card>
+      ) : null}
       {data?.school && (
         <div className="grid grid-cols-[repeat(auto-fill,85.6mm)] justify-center gap-[4mm] print:grid-cols-[85.6mm_85.6mm] print:gap-x-[6mm] print:gap-y-[2mm]">
           {data.cards.map((c) =>

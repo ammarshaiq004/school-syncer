@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Button, Card, ErrorText, Field } from "@/components/ui";
+import { CircleCheck } from "lucide-react";
+import { AuthShell } from "@/components/auth-shell";
+import { Alert, Button, TextField } from "@/components/ui";
 import { api, setToken } from "@/lib/api";
 
 export default function RegisterPage() {
@@ -18,20 +20,17 @@ export default function RegisterPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await api<{ accessToken: string; schoolSlug: string }>(
-        "/auth/register-school",
-        {
-          method: "POST",
-          body: {
-            schoolName: form.get("schoolName"),
-            city: form.get("city") || undefined,
-            ownerName: form.get("ownerName"),
-            email: form.get("email"),
-            phone: form.get("phone") || undefined,
-            password: form.get("password"),
-          },
+      const res = await api<{ accessToken: string; schoolSlug: string }>("/auth/register-school", {
+        method: "POST",
+        body: {
+          schoolName: form.get("schoolName"),
+          city: form.get("city") || undefined,
+          ownerName: form.get("ownerName"),
+          email: form.get("email"),
+          phone: form.get("phone") || undefined,
+          password: form.get("password"),
         },
-      );
+      });
       setToken(res.accessToken);
       setSchoolCode(res.schoolSlug);
     } catch (e) {
@@ -43,41 +42,55 @@ export default function RegisterPage() {
 
   if (schoolCode) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-        <Card>
-          <h1 className="mb-2 text-2xl font-semibold">Your school is ready</h1>
-          <p className="mb-4">
-            Your school code is <strong>{schoolCode}</strong>. Staff use it to sign in.
+      <AuthShell title="Your school is ready" description="Staff use the school code below to sign in.">
+        <div className="flex flex-col gap-5">
+          <div className="rounded-xl border border-border bg-surface p-5 shadow-card">
+            <p className="text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">School code</p>
+            <p className="mt-1 font-mono text-xl font-semibold text-fg">{schoolCode}</p>
+          </div>
+          <p className="flex items-start gap-2 text-sm text-fg-secondary">
+            <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+            You have 30 days of the Growth plan free, with every module. Pick a plan under Plan and billing whenever you are
+            ready.
           </p>
-          <p className="mb-4 text-sm opacity-70">
-            You have 30 days of the Growth plan free, with every module. Pick a plan under Plan and billing whenever you
-            are ready.
-          </p>
-          <Button onClick={() => router.push("/dashboard")}>Go to dashboard</Button>
-        </Card>
-      </main>
+          <Button type="button" className="w-full" onClick={() => router.push("/dashboard")}>
+            Go to dashboard
+          </Button>
+        </div>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
-      <Card>
-        <h1 className="mb-1 text-2xl font-semibold">Register your school</h1>
-        <p className="mb-4 text-sm opacity-70">Free for 30 days with every module. No card needed.</p>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <Field label="School name" name="schoolName" required />
-          <Field label="City" name="city" />
-          <Field label="Your name" name="ownerName" required />
-          <Field label="Email" name="email" type="email" required />
-          <Field label="Phone" name="phone" placeholder="03001234567" />
-          <Field label="Password" name="password" type="password" minLength={8} required />
-          <ErrorText>{error}</ErrorText>
-          <Button type="submit" disabled={busy}>{busy ? "Creating..." : "Create school"}</Button>
-        </form>
-        <p className="mt-4 text-sm opacity-70">
-          Already registered? <Link href="/login" className="text-brand underline">Sign in</Link>
-        </p>
-      </Card>
-    </main>
+    <AuthShell
+      width="md"
+      title="Register your school"
+      description="Free for 30 days with every module. No card needed."
+      footer={
+        <>
+          Already registered?{" "}
+          <Link href="/login" className="font-medium text-brand hover:underline">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
+        <TextField label="School name" name="schoolName" placeholder="Al-Noor Grammar School" required wrapperClassName="sm:col-span-2" />
+        <TextField label="City" name="city" placeholder="Lahore" />
+        <TextField label="Your name" name="ownerName" placeholder="Farah Siddiqui" required />
+        <TextField label="Email" name="email" type="email" autoComplete="email" required wrapperClassName="sm:col-span-2" />
+        <TextField label="Phone" name="phone" placeholder="03001234567" autoComplete="tel" />
+        <TextField label="Password" name="password" type="password" minLength={8} autoComplete="new-password" hint="At least 8 characters" required />
+        {error && (
+          <Alert tone="danger" className="sm:col-span-2">
+            {error}
+          </Alert>
+        )}
+        <Button type="submit" loading={busy} className="w-full sm:col-span-2">
+          {busy ? "Creating..." : "Create school"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

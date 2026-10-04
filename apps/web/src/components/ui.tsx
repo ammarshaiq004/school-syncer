@@ -1,90 +1,76 @@
-import type {
-  ButtonHTMLAttributes,
-  InputHTMLAttributes,
-  ReactNode,
-  TextareaHTMLAttributes,
-} from "react";
+/**
+ * Legacy barrel. Old pages import Card, Button, Field, TextArea, ErrorText, Notice, PageTitle, Badge,
+ * tableClass and rowClass from here; they keep working, restyled with the design tokens.
+ * Everything in the kit is re-exported too, so new code can import from "@/components/ui" or "@/components/kit".
+ */
+import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import { cn } from "@/lib/cn";
+import { inputClass } from "./kit/styles";
 
-export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return (
-    <div className={`rounded-xl border border-black/10 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/5 ${className}`}>
-      {children}
-    </div>
-  );
-}
+export * from "./kit";
 
-export function Button({
-  className = "",
-  variant = "primary",
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" }) {
-  const look =
-    variant === "primary"
-      ? "bg-brand text-white hover:opacity-90"
-      : "border border-black/15 hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10";
+export function Field({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
   return (
-    <button
-      className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${look} ${className}`}
-      {...props}
-    />
-  );
-}
-
-export function Field({ label, ...props }: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="font-medium">{label}</span>
-      <input
-        className="rounded-lg border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-brand dark:border-white/20"
-        {...props}
-      />
+    <label className="flex min-w-0 flex-col gap-1.5 text-sm">
+      <span className="text-[13px] font-medium text-fg-secondary">{label}</span>
+      <input className={cn(inputClass, "h-9", className)} {...props} />
     </label>
   );
 }
 
-export function TextArea({ label, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }) {
+export function TextArea({ label, className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }) {
   return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="font-medium">{label}</span>
-      <textarea
-        className="rounded-lg border border-black/15 bg-transparent px-3 py-2 outline-none focus:border-brand dark:border-white/20"
-        rows={4}
-        {...props}
-      />
+    <label className="flex min-w-0 flex-col gap-1.5 text-sm">
+      <span className="text-[13px] font-medium text-fg-secondary">{label}</span>
+      <textarea className={cn(inputClass, "min-h-20 py-2 leading-relaxed", className)} rows={4} {...props} />
     </label>
   );
 }
 
+/** Inline error line (renders nothing when empty). Prefer <Alert tone="danger"> or a toast for new code. */
 export function ErrorText({ children }: { children: ReactNode }) {
   if (!children) return null;
-  return <p className="text-sm text-red-600" role="alert">{children}</p>;
+  return (
+    <p className="flex items-start gap-1.5 text-sm text-danger-text" role="alert">
+      <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-danger" aria-hidden />
+      {children}
+    </p>
+  );
 }
 
+/** Inline success line (renders nothing when empty). Prefer a toast for new code. */
 export function Notice({ children }: { children: ReactNode }) {
   if (!children) return null;
-  return <p className="text-sm text-green-700 dark:text-green-400" role="status">{children}</p>;
+  return (
+    <p className="flex items-start gap-1.5 text-sm text-success-text" role="status">
+      <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-success" aria-hidden />
+      {children}
+    </p>
+  );
 }
 
+/** Legacy page title. New pages use <PageHeader>. */
 export function PageTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-2xl font-semibold">{children}</h1>
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+      <h1 className="text-xl font-semibold text-fg sm:text-2xl">{children}</h1>
       {action}
     </div>
   );
 }
 
-const BADGE: Record<string, string> = {
-  green: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
-  red: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
-  amber: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-  blue: "bg-brand/10 text-brand",
-  gray: "bg-black/5 dark:bg-white/10",
-};
+/**
+ * Classes for a plain <table> (legacy pages): muted uppercase header on a tinted band,
+ * zebra rows, hover, 44px rows. New code should use <DataTable>.
+ */
+export const tableClass = [
+  "w-full border-separate border-spacing-0 text-left text-sm",
+  "[&_th]:h-10 [&_th]:whitespace-nowrap [&_th]:border-b [&_th]:border-border [&_th]:bg-surface-2 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-[0.04em] [&_th]:text-fg-muted",
+  "[&_th:first-child]:rounded-tl-lg [&_th:last-child]:rounded-tr-lg",
+  "[&_td]:h-11 [&_td]:px-3 [&_td]:py-2 [&_td]:align-middle",
+  "[&_tbody_tr:nth-child(even)]:bg-surface-2/70 [&_tbody_tr]:transition-colors [&_tbody_tr:hover]:bg-surface-3/70",
+  "[&_thead]:opacity-100",
+].join(" ");
 
-export function Badge({ tone = "gray", children }: { tone?: keyof typeof BADGE; children: ReactNode }) {
-  return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${BADGE[tone]}`}>{children}</span>;
-}
-
-export const tableClass = "w-full text-left text-sm [&_th]:whitespace-nowrap [&_th]:pr-4 [&_td]:pr-4";
-export const rowClass = "border-t border-black/5 dark:border-white/10";
+/** Row hairline for legacy tables. */
+export const rowClass = "[&>td]:border-b [&>td]:border-border";

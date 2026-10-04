@@ -1,7 +1,25 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { Button, Card, ErrorText, rowClass, tableClass } from "@/components/ui";
+import { ArrowLeftRight, Bus, Plus, Save, UserX } from "lucide-react";
+import {
+  Alert,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmDialog,
+  DataTable,
+  DescriptionList,
+  Dialog,
+  EmptyState,
+  ErrorState,
+  SelectField,
+  SkeletonRows,
+  TextField,
+  useToast,
+  type Column,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { day, rupees, todayIso } from "@/lib/format";
 import { hasRole, SETUP, useSession } from "@/lib/session";
@@ -22,19 +40,27 @@ interface Ride {
   endsOn: string | null;
 }
 
-const selectClass = "rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20";
+const historyColumns: Column<Ride>[] = [
+  { id: "route", header: "Earlier", cell: (h) => h.route },
+  { id: "stop", header: "Stop", cell: (h) => h.stop ?? "–", hideBelow: "sm" },
+  { id: "from", header: "From", cell: (h) => day(h.startsOn) },
+  { id: "to", header: "To", cell: (h) => (h.endsOn ? day(h.endsOn) : "–") },
+];
 
 /** A student's school van: where they're picked up, and changing or stopping it. */
 export function StudentTransport({ studentId, active }: { studentId: string; active: boolean }) {
   const user = useSession();
+  const toast = useToast();
   const canEdit = hasRole(user, SETUP) && active;
   const rides = useApi<{ current: Ride | null; history: Ride[] }>(`/transport/students/${studentId}`);
   const routes = useApi<Route[]>(canEdit ? "/transport/routes" : null);
   const [editing, setEditing] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const [routeId, setRouteId] = useState("");
   const [stopId, setStopId] = useState("");
   const [startsOn, setStartsOn] = useState(todayIso());
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const current = rides.data?.current;
   const openRoutes = routes.data?.filter((r) => r.isActive) ?? [];
@@ -44,105 +70,140 @@ export function StudentTransport({ studentId, active }: { studentId: string; act
     setRouteId(current?.routeId ?? openRoutes[0]?.id ?? "");
     setStopId(current?.stopId ?? "");
     setStartsOn(todayIso());
+    setError("");
     setEditing(true);
   }
 
   async function save() {
     setError("");
+    setBusy(true);
     try {
       await api("/transport/assignments", { method: "POST", body: { studentId, routeId, stopId: stopId || null, startsOn } });
       setEditing(false);
+      toast.success(current ? "Transport changed" : "Added to the route");
       await rides.reload();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function stop() {
-    if (!current || !confirm(`Stop transport from today? ${current.route} is still charged for this month.`)) return;
-    setError("");
+    if (!current) return;
+    setBusy(true);
     try {
       await api(`/transport/assignments/${current.id}/end`, { method: "POST", body: {} });
+      setConfirmStop(false);
+      toast.success("Transport stopped");
       await rides.reload();
     } catch (e) {
-      setError((e as Error).message);
+      toast.error("Could not stop transport", (e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
     <Card>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="font-semibold">Transport</h2>
-        {canEdit && !editing && (
-          <div className="flex gap-3 text-sm">
-            <button className="text-brand" onClick={startEdit}>{current ? "Change" : "Add to a route"}</button>
-            {current && <button className="opacity-70 hover:opacity-100" onClick={stop}>Stop</button>}
-          </div>
-        )}
-      </div>
-      <ErrorText>{rides.error || error}</ErrorText>
-      {editing ? (
-        <div className="flex flex-col gap-3 text-sm">
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Route</span>
-            <select className={selectClass} value={routeId} onChange={(e) => (setRouteId(e.target.value), setStopId(""))}>
-              {openRoutes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} · {r.vehicle ? `${r.riders}/${r.vehicle.capacity} seats` : `${r.riders} riders`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">Stop</span>
-            <select className={selectClass} value={stopId} onChange={(e) => setStopId(e.target.value)}>
-              <option value="">No set stop</option>
-              {route?.stops.map((s) => (
-                <option key={s.id} value={s.id}>{stopLabel(s)} · {rupees(s.monthlyFee ?? route.monthlyFee)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-medium">From</span>
-            <input type="date" className={selectClass} value={startsOn} onChange={(e) => setStartsOn(e.target.value)} />
-          </label>
-          <div className="flex gap-2">
-            <Button onClick={save} disabled={!routeId}>Save</Button>
-            <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-          </div>
-        </div>
-      ) : current ? (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          <dt className="opacity-60">Route</dt><dd>{current.route}</dd>
-          <dt className="opacity-60">Stop</dt><dd>{current.stop ? stopLabel({ ...current, name: current.stop }) : "No set stop"}</dd>
-          <dt className="opacity-60">Fee</dt><dd>{rupees(current.fee)} a month</dd>
-          {current.vehicle && (
+      <CardHeader
+        title="Transport"
+        icon={<Bus />}
+        action={
+          canEdit &&
+          rides.data && (
             <>
-              <dt className="opacity-60">Van</dt><dd>{current.vehicle.registrationNo}</dd>
-              <dt className="opacity-60">Driver</dt>
-              <dd>{current.vehicle.driverName}, <a className="text-brand" href={`tel:${current.vehicle.driverPhone}`}>{current.vehicle.driverPhone}</a></dd>
+              <Button type="button" size="sm" variant="secondary" icon={current ? <ArrowLeftRight /> : <Plus />} onClick={startEdit}>
+                {current ? "Change" : "Add to a route"}
+              </Button>
+              {current && (
+                <Button type="button" size="sm" variant="ghost" icon={<UserX />} onClick={() => setConfirmStop(true)}>Stop</Button>
+              )}
             </>
-          )}
-          <dt className="opacity-60">Since</dt><dd>{day(current.startsOn)}</dd>
-        </dl>
+          )
+        }
+      />
+      {rides.error ? (
+        <ErrorState compact message={rides.error} onRetry={rides.reload} />
+      ) : !rides.data ? (
+        <SkeletonRows rows={3} columns={2} />
+      ) : current ? (
+        <DescriptionList
+          items={[
+            { label: "Route", value: <Link className="text-brand hover:underline" href={`/transport/routes/${current.routeId}`}>{current.route}</Link> },
+            { label: "Stop", value: current.stop ? stopLabel({ ...current, name: current.stop }) : "No set stop" },
+            { label: "Fee", value: `${rupees(current.fee)} a month` },
+            { label: "Since", value: day(current.startsOn) },
+            ...(current.vehicle
+              ? [
+                  { label: "Van", value: current.vehicle.registrationNo },
+                  { label: "Driver", value: <>{current.vehicle.driverName}, <a className="text-brand hover:underline" href={`tel:${current.vehicle.driverPhone}`}>{current.vehicle.driverPhone}</a></> },
+                ]
+              : []),
+          ]}
+        />
       ) : (
-        <p className="text-sm opacity-60">Doesn&apos;t use school transport.</p>
+        <EmptyState compact icon={<Bus />} title="Doesn't use school transport" description={canEdit ? "Add them to a route to start pick-up and drop." : undefined} />
       )}
-      {!editing && (rides.data?.history.length ?? 0) > 0 && (
-        <table className={`${tableClass} mt-4`}>
-          <thead className="opacity-60"><tr><th className="py-2">Earlier</th><th>Stop</th><th>From</th><th>To</th></tr></thead>
-          <tbody>
-            {rides.data!.history.map((h) => (
-              <tr key={h.id} className={rowClass}>
-                <td className="py-2">{h.route}</td>
-                <td>{h.stop ?? "–"}</td>
-                <td>{day(h.startsOn)}</td>
-                <td>{h.endsOn ? day(h.endsOn) : "–"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {rides.data && rides.data.history.length > 0 && (
+        <div className="mt-5 overflow-hidden rounded-lg border border-border">
+          <DataTable bare dense label="Earlier transport" columns={historyColumns} data={rides.data.history} getRowId={(h) => h.id} pageSize={0} />
+        </div>
       )}
+
+      {canEdit && (
+        <Dialog
+          open={editing}
+          onOpenChange={setEditing}
+          title={current ? "Change transport" : "Add to a route"}
+          description="The old route, if any, ends the day before the new one starts."
+          footer={
+            <>
+              <Button type="button" variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+              <Button type="button" icon={<Save />} onClick={save} loading={busy} disabled={!routeId}>Save</Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-4">
+            {error && <Alert tone="danger">{error}</Alert>}
+            {routes.error && <ErrorState compact message={routes.error} onRetry={routes.reload} />}
+            {routes.data && openRoutes.length === 0 && <Alert tone="warning">There are no open routes. Add one on the Transport page first.</Alert>}
+            <SelectField
+              label="Route"
+              value={routeId}
+              onChange={(e) => {
+                setRouteId(e.target.value);
+                setStopId("");
+              }}
+              options={openRoutes.map((r) => ({
+                value: r.id,
+                label: `${r.name} · ${r.vehicle ? `${r.riders}/${r.vehicle.capacity} seats` : `${r.riders} riders`}`,
+              }))}
+            />
+            <SelectField
+              label="Stop"
+              value={stopId}
+              onChange={(e) => setStopId(e.target.value)}
+              options={[
+                { value: "", label: "No set stop" },
+                ...(route?.stops.map((s) => ({ value: s.id, label: `${stopLabel(s)} · ${rupees(s.monthlyFee ?? route.monthlyFee)}` })) ?? []),
+              ]}
+            />
+            <TextField label="From" type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} />
+          </div>
+        </Dialog>
+      )}
+
+      <ConfirmDialog
+        open={confirmStop}
+        onOpenChange={setConfirmStop}
+        title="Stop transport from today?"
+        description={current ? `${current.route} is still charged for this month.` : undefined}
+        confirmLabel="Stop transport"
+        destructive
+        loading={busy}
+        onConfirm={stop}
+      />
     </Card>
   );
 }

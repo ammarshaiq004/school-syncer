@@ -3,11 +3,37 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Button, Card, ErrorText, Notice, rowClass, tableClass } from "@/components/ui";
+import { ArrowRight, Building, CreditCard, History, LogIn, Receipt, ShieldCheck, Store, UserRound, Users, Wallet } from "lucide-react";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmDialog,
+  DataTable,
+  DescriptionList,
+  EmptyState,
+  ErrorState,
+  KpiCard,
+  PageHeader,
+  SelectField,
+  Skeleton,
+  SkeletonCards,
+  StatGrid,
+  StatusPill,
+  TabPanel,
+  Tabs,
+  TextareaField,
+  TextField,
+  useToast,
+  type Column,
+  type Tone,
+} from "@/components/ui";
 import { platformApi, setToken } from "@/lib/api";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
-import { monthName, StatusBadge, STATUSES } from "../../status";
+import { monthName, StatusBadge, STATUS_OPTIONS } from "../../status";
 
 interface Detail {
   id: string;
@@ -33,6 +59,8 @@ interface Detail {
   history: { id: string; action: string; createdAt: string; details: unknown; admin: { name: string } | null }[];
 }
 
+type Invoice = Detail["invoices"][number];
+
 const ACTIONS: Record<string, string> = {
   "subscription.update": "Changed the subscription",
   "school.support_login": "Signed in as the owner for support",
@@ -40,136 +68,253 @@ const ACTIONS: Record<string, string> = {
   "invoice.void": "Voided a bill",
 };
 
-const selectClass = "rounded-lg border border-black/15 bg-transparent px-3 py-2 dark:border-white/20";
+const ACTION_ICONS: Record<string, typeof History> = {
+  "subscription.update": CreditCard,
+  "school.support_login": LogIn,
+  "invoice.pay": Wallet,
+  "invoice.void": Receipt,
+};
+
+const ACCESS: Record<string, { tone: Tone; label: string }> = {
+  full: { tone: "success", label: "Full access" },
+  read_only: { tone: "warning", label: "Read-only" },
+  blocked: { tone: "danger", label: "Blocked" },
+};
+
+const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+
+const invoiceColumns: Column<Invoice>[] = [
+  { id: "number", header: "Bill", sortValue: (i) => i.number, cell: (i) => <span className="font-mono text-xs">{i.number}</span> },
+  { id: "period", header: "Month", sortValue: (i) => i.period, cell: (i) => monthName(i.period) },
+  { id: "students", header: "Students", align: "right", sortValue: (i) => i.students, cell: (i) => i.students, hideBelow: "sm" },
+  { id: "amount", header: "Amount", align: "right", sortValue: (i) => i.amount, cell: (i) => rupees(i.amount) },
+  { id: "due", header: "Due", sortValue: (i) => i.dueDate, cell: (i) => day(i.dueDate), hideBelow: "md" },
+  {
+    id: "status",
+    header: "Status",
+    sortValue: (i) => i.status,
+    cell: (i) => (
+      <span className="flex flex-col items-start gap-0.5">
+        <StatusBadge status={i.status} />
+        {i.paidAt && (
+          <span className="text-xs text-fg-muted">
+            {day(i.paidAt)}, {i.method}
+          </span>
+        )}
+      </span>
+    ),
+  },
+];
 
 export default function SchoolDetailPage() {
   const { id } = useParams<{ id: string }>();
   const school = usePlatformApi<Detail>(`/schools/${id}`);
   const plans = usePlatformApi<{ plans: { code: string; name: string }[] }>("/plans");
-  const [error, setError] = useState("");
+  const toast = useToast();
+  const [confirmLogin, setConfirmLogin] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const sub = school.data?.subscription;
 
   async function supportLogin() {
-    if (!confirm(`Sign in to ${school.data?.name} as its owner for an hour? This is recorded in the school's audit log.`)) return;
+    setSigningIn(true);
     try {
       const res = await platformApi<{ accessToken: string }>(`/schools/${id}/support-login`, { method: "POST" });
       setToken(res.accessToken);
       window.open("/dashboard", "_blank");
+      setConfirmLogin(false);
       await school.reload();
     } catch (e) {
-      setError((e as Error).message);
+      toast.error("Could not sign in as the owner", (e as Error).message);
+    } finally {
+      setSigningIn(false);
     }
   }
 
   const s = school.data;
-  if (!s) return <ErrorText>{school.error}</ErrorText>;
+  const crumbs = [{ label: "Schools", href: "/platform/schools" }, { label: s?.name ?? "School" }];
+
+  if (!s) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title={school.error ? "School" : <Skeleton className="h-7 w-56" />} breadcrumbs={crumbs} />
+        {school.error ? (
+          <Card padding="none">
+            <ErrorState message={school.error} onRetry={school.reload} />
+          </Card>
+        ) : (
+          <>
+            <SkeletonCards count={5} />
+            <Skeleton className="h-72 w-full rounded-xl" />
+          </>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <Link href="/platform/schools" className="text-sm text-brand">← Schools</Link>
-        <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-semibold">{s.name}</h1>
-          <StatusBadge status={sub?.status ?? null} />
-          <Button variant="ghost" className="ml-auto" onClick={supportLogin}>Sign in as owner</Button>
-        </div>
-        <p className="text-sm opacity-70">
-          School code {s.slug}{s.city && ` · ${s.city}`} · joined {day(s.createdAt)}
-          {s.email && ` · ${s.email}`}{s.phone && ` · ${s.phone}`}
-        </p>
-        <ErrorText>{error}</ErrorText>
-        {sub?.reason && <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">The school sees: “{sub.reason}”</p>}
-      </div>
+      <PageHeader
+        title={s.name}
+        breadcrumbs={crumbs}
+        leading={<Avatar name={s.name} size="lg" />}
+        description={[`School code ${s.slug}`, s.city, `joined ${day(s.createdAt)}`].filter(Boolean).join(", ")}
+        meta={
+          <>
+            <StatusBadge status={sub?.status ?? null} />
+            {sub && <span className="text-[13px] text-fg-muted">{sub.plan.name} plan</span>}
+          </>
+        }
+        actions={
+          <Button variant="secondary" icon={<LogIn />} onClick={() => setConfirmLogin(true)}>
+            Sign in as owner
+          </Button>
+        }
+      />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {[
-          ["Active students", s.usage.students],
-          ["Staff logins", s.usage.staff],
-          ["Parent logins", s.usage.parents],
-          ["Campuses", s.campuses.length],
-          ["Per month", sub ? rupees(sub.monthly) : "–"],
-        ].map(([label, value]) => (
-          <Card key={label as string}>
-            <div className="text-sm opacity-60">{label}</div>
-            <div className="mt-1 text-xl font-semibold">{typeof value === "number" ? value.toLocaleString("en-PK") : value}</div>
-          </Card>
-        ))}
-      </div>
+      {sub?.reason && (
+        <Alert tone="warning" title="The school sees this message">
+          {sub.reason}
+        </Alert>
+      )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
-        <Card>
-          <h2 className="mb-3 font-semibold">Subscription</h2>
-          {sub ? (
-            <SubscriptionForm
-              key={`${sub.plan.code}${sub.status}${sub.trialEndsAt}${sub.notes}`}
-              schoolId={s.id}
-              sub={sub}
-              plans={plans.data?.plans ?? []}
-              onSaved={school.reload}
-            />
-          ) : (
-            <p className="text-sm opacity-70">This school has no subscription, so nobody there can sign in.</p>
-          )}
+      <StatGrid cols={5}>
+        <KpiCard label="Active students" value={s.usage.students.toLocaleString("en-PK")} icon={<Users />} />
+        <KpiCard label="Staff logins" value={s.usage.staff.toLocaleString("en-PK")} icon={<UserRound />} tone="info" />
+        <KpiCard label="Parent logins" value={s.usage.parents.toLocaleString("en-PK")} icon={<Users />} tone="info" />
+        <KpiCard label="Campuses" value={s.campuses.length.toLocaleString("en-PK")} icon={<Store />} tone="neutral" />
+        <KpiCard label="Per month" value={sub ? rupees(sub.monthly) : "–"} icon={<Wallet />} tone="success" />
+      </StatGrid>
 
-          <h2 className="mb-2 mt-6 font-semibold">Owners</h2>
-          <ul className="space-y-2 text-sm">
-            {s.owners.map((o) => (
-              <li key={o.id}>
-                <div className="font-medium">{o.name}</div>
-                <div className="opacity-70">{[o.email, o.phone].filter(Boolean).join(" · ")}</div>
-                <div className="text-xs opacity-60">Last signed in {o.lastLoginAt ? day(o.lastLoginAt) : "never"}</div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        <div className="flex flex-col gap-6">
-          <Card className="overflow-x-auto">
-            <h2 className="mb-3 font-semibold">Bills</h2>
-            {s.invoices.length === 0 ? (
-              <p className="text-sm opacity-60">No bills yet.</p>
-            ) : (
-              <table className={tableClass}>
-                <thead className="opacity-60">
-                  <tr><th className="py-2">Bill</th><th>Month</th><th>Students</th><th>Amount</th><th>Due</th><th>Status</th></tr>
-                </thead>
-                <tbody>
-                  {s.invoices.map((i) => (
-                    <tr key={i.id} className={rowClass}>
-                      <td className="py-2 font-mono text-xs">{i.number}</td>
-                      <td>{monthName(i.period)}</td>
-                      <td>{i.students}</td>
-                      <td>{rupees(i.amount)}</td>
-                      <td>{day(i.dueDate)}</td>
-                      <td>
-                        <StatusBadge status={i.status} />
-                        {i.paidAt && <span className="ml-2 text-xs opacity-60">{day(i.paidAt)}, {i.method}</span>}
-                      </td>
-                    </tr>
+      <Tabs
+        aria-label="School sections"
+        tabs={[
+          { value: "overview", label: "Overview", icon: <Building /> },
+          { value: "subscription", label: "Subscription", icon: <CreditCard /> },
+          { value: "invoices", label: "Invoices", icon: <Receipt />, count: s.invoices.length },
+          { value: "audit", label: "Audit", icon: <History />, count: s.history.length },
+        ]}
+      >
+        <TabPanel value="overview" className="pt-5">
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader title="School details" />
+              <DescriptionList
+                items={[
+                  { label: "School code", value: <span className="font-mono text-[13px]">{s.slug}</span> },
+                  { label: "City", value: s.city },
+                  { label: "Email", value: s.email },
+                  { label: "Phone", value: s.phone },
+                  { label: "Joined", value: day(s.createdAt) },
+                  { label: "Last sign-in by anyone", value: s.usage.lastLoginAt ? day(s.usage.lastLoginAt) : "Never" },
+                  {
+                    label: "Campuses",
+                    full: true,
+                    value: s.campuses.length ? s.campuses.map((c) => c.name).join(", ") : "None",
+                  },
+                ]}
+              />
+            </Card>
+            <Card>
+              <CardHeader title="Owners" icon={<ShieldCheck />} />
+              {s.owners.length === 0 ? (
+                <EmptyState title="No owners" description="This school has no owner account." compact />
+              ) : (
+                <ul className="divide-y divide-border">
+                  {s.owners.map((o) => (
+                    <li key={o.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+                      <Avatar name={o.name} size="sm" />
+                      <div className="min-w-0 text-sm">
+                        <div className="font-medium text-fg">{o.name}</div>
+                        <div className="break-words text-fg-secondary">{[o.email, o.phone].filter(Boolean).join(", ")}</div>
+                        <div className="text-xs text-fg-muted">Last signed in {o.lastLoginAt ? day(o.lastLoginAt) : "never"}</div>
+                      </div>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            )}
-            <Link href="/platform/invoices" className="mt-3 inline-block text-sm text-brand">Record a payment on the Bills page</Link>
-          </Card>
+                </ul>
+              )}
+            </Card>
+          </div>
+        </TabPanel>
 
-          <Card>
-            <h2 className="mb-3 font-semibold">History</h2>
-            {s.history.length === 0 ? (
-              <p className="text-sm opacity-60">Nothing yet.</p>
+        <TabPanel value="subscription" className="pt-5">
+          <Card className="max-w-2xl">
+            <CardHeader title="Subscription" description="Plan, status and trial date for this school." />
+            {sub ? (
+              <SubscriptionForm
+                key={`${sub.plan.code}${sub.status}${sub.trialEndsAt}${sub.notes}`}
+                schoolId={s.id}
+                sub={sub}
+                plans={plans.data?.plans ?? []}
+                plansError={plans.error}
+                onSaved={school.reload}
+              />
             ) : (
-              <ul className="space-y-2 text-sm">
-                {s.history.map((h) => (
-                  <li key={h.id} className="flex flex-wrap justify-between gap-2">
-                    <span>{ACTIONS[h.action] ?? h.action}{h.admin && <span className="opacity-60"> by {h.admin.name}</span>}</span>
-                    <span className="opacity-60">{new Date(h.createdAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</span>
-                  </li>
-                ))}
-              </ul>
+              <EmptyState title="No subscription" description="This school has no subscription, so nobody there can sign in." compact />
             )}
           </Card>
-        </div>
-      </div>
+        </TabPanel>
+
+        <TabPanel value="invoices" className="pt-5">
+          <div className="flex flex-col gap-3">
+            <DataTable
+              label="Bills"
+              columns={invoiceColumns}
+              data={s.invoices}
+              getRowId={(i) => i.id}
+              pageSize={10}
+              empty={{ icon: <Receipt />, title: "No bills yet", description: "Bills appear once this school is billed for a month." }}
+            />
+            <Link href="/platform/invoices" className="inline-flex w-fit items-center gap-1 text-sm font-medium text-brand hover:underline">
+              Record a payment on the Bills page
+              <ArrowRight className="size-3.5" aria-hidden />
+            </Link>
+          </div>
+        </TabPanel>
+
+        <TabPanel value="audit" className="pt-5">
+          <Card>
+            <CardHeader title="History" description="Changes made from the console, newest first." />
+            {s.history.length === 0 ? (
+              <EmptyState icon={<History />} title="Nothing yet" description="Console changes to this school are recorded here." compact />
+            ) : (
+              <ol className="relative flex flex-col gap-5 border-s border-border ps-6">
+                {s.history.map((h) => {
+                  const Icon = ACTION_ICONS[h.action] ?? History;
+                  return (
+                    <li key={h.id} className="relative">
+                      <span
+                        className="absolute -start-[37px] top-0 grid size-6 place-items-center rounded-full border border-border bg-surface text-fg-muted [&_svg]:size-3.5"
+                        aria-hidden
+                      >
+                        <Icon />
+                      </span>
+                      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-sm">
+                        <span className="text-fg">
+                          {ACTIONS[h.action] ?? h.action}
+                          {h.admin && <span className="text-fg-muted"> by {h.admin.name}</span>}
+                        </span>
+                        <time dateTime={h.createdAt} className="text-[13px] tabular-nums text-fg-muted">
+                          {when(h.createdAt)}
+                        </time>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </Card>
+        </TabPanel>
+      </Tabs>
+
+      <ConfirmDialog
+        open={confirmLogin}
+        onOpenChange={setConfirmLogin}
+        title={`Sign in to ${s.name} as its owner?`}
+        description="You get the owner's access for an hour in a new tab. This is recorded in the school's audit log."
+        confirmLabel="Sign in as owner"
+        loading={signingIn}
+        onConfirm={supportLogin}
+      />
     </div>
   );
 }
@@ -178,13 +323,16 @@ function SubscriptionForm({
   schoolId,
   sub,
   plans,
+  plansError,
   onSaved,
 }: {
   schoolId: string;
   sub: NonNullable<Detail["subscription"]>;
   plans: { code: string; name: string }[];
+  plansError: string;
   onSaved: () => Promise<void>;
 }) {
+  const toast = useToast();
   const [form, setForm] = useState({
     planCode: sub.plan.code,
     status: sub.status,
@@ -192,48 +340,68 @@ function SubscriptionForm({
     notes: sub.notes ?? "",
   });
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
 
   async function save(event: FormEvent) {
     event.preventDefault();
     setError("");
+    setSaving(true);
     try {
       await platformApi(`/schools/${schoolId}/subscription`, {
         method: "PATCH",
         body: { ...form, trialEndsAt: form.trialEndsAt || null, notes: form.notes || null },
       });
-      setNotice("Saved. The school sees the change within a few seconds.");
+      toast.success("Subscription saved", "The school sees the change within a few seconds.");
       await onSaved();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
+  const planOptions = plans.length ? plans.map((p) => ({ value: p.code, label: p.name })) : [{ value: sub.plan.code, label: sub.plan.name }];
+
   return (
-    <form onSubmit={save} className="flex flex-col gap-3 text-sm">
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Plan</span>
-        <select className={selectClass} value={form.planCode} onChange={(e) => setForm({ ...form, planCode: e.target.value })}>
-          {plans.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Status</span>
-        <select className={selectClass} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-          {STATUSES.map((st) => <option key={st} value={st}>{st.replace("_", " ").toLowerCase()}</option>)}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Trial ends</span>
-        <input type="date" className={selectClass} value={form.trialEndsAt} onChange={(e) => setForm({ ...form, trialEndsAt: e.target.value })} />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Notes (staff only)</span>
-        <textarea className={selectClass} rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-      </label>
-      <ErrorText>{error}</ErrorText>
-      <Notice>{notice}</Notice>
-      <Button type="submit">Save</Button>
+    <form onSubmit={save} className="grid gap-4 sm:grid-cols-2">
+      <SelectField
+        label="Plan"
+        options={planOptions}
+        value={form.planCode}
+        onChange={(e) => setForm({ ...form, planCode: e.target.value })}
+        error={plansError ? `Could not load plans: ${plansError}` : undefined}
+      />
+      <SelectField label="Status" options={STATUS_OPTIONS} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} />
+      <TextField
+        label="Trial ends"
+        type="date"
+        value={form.trialEndsAt}
+        onChange={(e) => setForm({ ...form, trialEndsAt: e.target.value })}
+        hint="Leave empty for no trial end date."
+      />
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-medium text-fg-secondary">Access now</span>
+        <span className="flex h-9 items-center">
+          <StatusPill status={sub.access} {...(ACCESS[sub.access] ?? { tone: "neutral" })} />
+        </span>
+      </div>
+      <TextareaField
+        label="Notes (staff only)"
+        rows={3}
+        value={form.notes}
+        onChange={(e) => setForm({ ...form, notes: e.target.value })}
+        wrapperClassName="sm:col-span-2"
+      />
+      {error && (
+        <Alert tone="danger" className="sm:col-span-2">
+          {error}
+        </Alert>
+      )}
+      <div className="flex justify-end gap-2 sm:col-span-2">
+        <Button type="submit" loading={saving}>
+          Save subscription
+        </Button>
+      </div>
     </form>
   );
 }

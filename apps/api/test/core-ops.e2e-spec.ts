@@ -211,6 +211,10 @@ describe('Core operations (e2e)', () => {
     expect(mine.body).toEqual([expect.objectContaining({ id: sectionId, isClassTeacher: true, students: 2 })]);
     expect((await request(server).get('/api/attendance/sections').set(otherTeacher).expect(200)).body).toEqual([]);
 
+    const day = await request(server).get('/api/dashboard/teacher').set(teacher).expect(200);
+    expect(day.body.sections).toEqual([expect.objectContaining({ id: sectionId, isClassTeacher: true, students: 2 })]);
+    expect((await request(server).get('/api/dashboard/teacher').set(otherTeacher).expect(200)).body.sections).toEqual([]);
+
     const summary = await request(server)
       .get('/api/attendance/summary?date=2026-10-05')
       .set(owner)
@@ -289,6 +293,16 @@ describe('Core operations (e2e)', () => {
     const summary = await request(server).get('/api/dashboard/summary').set(owner).expect(200);
     expect(summary.body.students).toBe(2);
     expect(summary.body.feesThisMonth.collectedToday).toBe(5000);
+    expect(summary.body.recentPayments).toHaveLength(2);
+    expect(summary.body.recentPayments[0].student.id).toBe(studentA);
+    expect(summary.body.collectionTrend).toHaveLength(6);
+    expect(summary.body.studentsByClass).toEqual([expect.objectContaining({ students: 2 })]);
+
+    // Non-fee staff get aggregates only, never individual payments.
+    const teacherSummary = await request(server).get('/api/dashboard/summary').set(teacher).expect(200);
+    expect(teacherSummary.body.recentPayments).toEqual([]);
+    expect(teacherSummary.body.collectionTrend).toEqual([]);
+    expect(teacherSummary.body.overdue).toEqual({ invoices: 0, amount: 0 });
   });
 
   it('sends announcements once per family and gives parents their own portal', async () => {

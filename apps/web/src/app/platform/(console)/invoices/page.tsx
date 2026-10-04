@@ -1,8 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { Button, Card, ErrorText, Notice, PageTitle, rowClass, tableClass } from "@/components/ui";
+import { useState, type FormEvent } from "react";
+import { Ban, CircleCheck, FilePlus, Receipt } from "lucide-react";
+import {
+  Alert,
+  Button,
+  ConfirmDialog,
+  DataTable,
+  Dialog,
+  NativeSelect,
+  PageHeader,
+  SelectField,
+  TextField,
+  useToast,
+  type Column,
+} from "@/components/ui";
 import { platformApi } from "@/lib/api";
 import { day, rupees, thisMonth } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
@@ -24,130 +37,258 @@ interface Bill {
 }
 
 const METHODS = ["Bank transfer", "JazzCash", "Easypaisa", "Cheque", "Cash"];
-const inputClass = "rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20";
+const BILL_STATUSES = [
+  { value: "UNPAID", label: "Unpaid" },
+  { value: "PAID", label: "Paid" },
+  { value: "VOID", label: "Void" },
+];
 
 export default function BillsPage() {
+  const toast = useToast();
   // Links from the overview pass ?status=... (the console only renders in the browser).
   const [status, setStatus] = useState(() => new URLSearchParams(window.location.search).get("status") ?? "");
   const bills = usePlatformApi<Bill[]>(`/invoices${status ? `?status=${status}` : ""}`);
+
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [period, setPeriod] = useState(thisMonth());
   const [paying, setPaying] = useState<Bill | null>(null);
   const [method, setMethod] = useState(METHODS[0]);
   const [reference, setReference] = useState("");
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [voiding, setVoiding] = useState<Bill | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [dialogError, setDialogError] = useState("");
 
+  /** Runs a change, shows its message as a toast and reloads the list. Returns the error message, or "" on success. */
   async function run(action: () => Promise<string>) {
-    setError("");
-    setNotice("");
+    setDialogError("");
+    setBusy(true);
     try {
-      setNotice(await action());
+      const message = await action();
+      if (message) toast.success(message);
       await bills.reload();
+      return "";
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setDialogError(message);
+      return message;
+    } finally {
+      setBusy(false);
     }
   }
 
-  const generate = () =>
-    run(async () => {
+  async function generate(event: FormEvent) {
+    event.preventDefault();
+    const failed = await run(async () => {
       const res = await platformApi<{ created: number; total: number }>("/invoices/generate", { method: "POST", body: { period } });
       return res.created
         ? `Billed ${res.created} ${res.created === 1 ? "school" : "schools"} ${rupees(res.total)} for ${monthName(period)}.`
         : `Every paying school already has a bill for ${monthName(period)}.`;
     });
+    if (!failed) setGenerateOpen(false);
+  }
 
-  const pay = () =>
-    run(async () => {
-      if (!paying) return "";
-      await platformApi(`/invoices/${paying.id}/pay`, { method: "POST", body: { method, reference: reference || undefined } });
+  async function pay(event: FormEvent) {
+    event.preventDefault();
+    const bill = paying;
+    if (!bill) return;
+    const failed = await run(async () => {
+      await platformApi(`/invoices/${bill.id}/pay`, { method: "POST", body: { method, reference: reference || undefined } });
+      return `${bill.number} from ${bill.school.name} marked paid.`;
+    });
+    if (!failed) {
       setPaying(null);
       setReference("");
-      return `${paying.number} from ${paying.school.name} marked paid.`;
-    });
+    }
+  }
 
-  const voidBill = (b: Bill) =>
-    confirm(`Void ${b.number} for ${b.school.name}? The school will no longer owe it.`) &&
-    run(async () => {
-      await platformApi(`/invoices/${b.id}/void`, { method: "POST" });
-      return `${b.number} voided.`;
+  async function voidBill() {
+    const bill = voiding;
+    if (!bill) return;
+    const failed = await run(async () => {
+      await platformApi(`/invoices/${bill.id}/void`, { method: "POST" });
+      return `${bill.number} voided.`;
     });
+    if (failed) toast.error("Could not void the bill", failed);
+    else setVoiding(null);
+  }
 
-  const unpaidTotal = bills.data?.filter((b) => b.status === "UNPAID").reduce((a, b) => a + b.amount, 0) ?? 0;
+  function openPay(b: Bill) {
+    setDialogError("");
+    setMethod(METHODS[0]);
+    setReference("");
+    setPaying(b);
+  }
+
+  const unpaidShown = bills.data?.filter((b) => b.status === "UNPAID") ?? [];
+  const unpaidTotal = unpaidShown.reduce((a, b) => a + b.amount, 0);
+
+  const columns: Column<Bill>[] = [
+    { id: "number", header: "Bill", sortValue: (b) => b.number, cell: (b) => <span className="font-mono text-xs">{b.number}</span> },
+    {
+      id: "school",
+      header: "School",
+      sortValue: (b) => b.school.name,
+      cell: (b) => (
+        <Link href={`/platform/schools/${b.school.id}`} className="font-medium text-fg hover:text-brand">
+          {b.school.name}
+        </Link>
+      ),
+    },
+    { id: "period", header: "Month", sortValue: (b) => b.period, cell: (b) => monthName(b.period) },
+    { id: "plan", header: "Plan", sortValue: (b) => b.planName, cell: (b) => b.planName, hideBelow: "lg" },
+    { id: "students", header: "Students", align: "right", sortValue: (b) => b.students, cell: (b) => b.students, hideBelow: "md" },
+    { id: "amount", header: "Amount", align: "right", sortValue: (b) => b.amount, cell: (b) => rupees(b.amount) },
+    { id: "due", header: "Due", sortValue: (b) => b.dueDate, cell: (b) => day(b.dueDate), hideBelow: "md" },
+    {
+      id: "status",
+      header: "Status",
+      sortValue: (b) => b.status,
+      cell: (b) => (
+        <span className="flex flex-col items-start gap-0.5">
+          <StatusBadge status={b.status} />
+          {b.paidAt && (
+            <span className="text-xs text-fg-muted">
+              {day(b.paidAt)}, {b.method}
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      cell: (b) =>
+        b.status === "UNPAID" ? (
+          <span className="flex justify-end gap-1.5 whitespace-nowrap">
+            <Button size="sm" variant="secondary" type="button" icon={<CircleCheck />} onClick={() => openPay(b)} aria-label={`Mark ${b.number} paid`}>
+              Mark paid
+            </Button>
+            <Button size="sm" variant="ghost" type="button" icon={<Ban />} onClick={() => setVoiding(b)} aria-label={`Void ${b.number}`}>
+              Void
+            </Button>
+          </span>
+        ) : null,
+    },
+  ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageTitle>Bills</PageTitle>
-      <Card>
-        <h2 className="mb-2 font-semibold">Bill paying schools for a month</h2>
-        <p className="mb-3 text-sm opacity-70">
-          Each active or past-due school is billed at its current number of active students. Schools on trial are skipped,
-          and running it twice for the same month does nothing.
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className={inputClass} aria-label="Month" />
-          <Button onClick={generate}>Create bills</Button>
-        </div>
-      </Card>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Bills"
+        description="Monthly bills for every paying school. Record payments and void bills here."
+        actions={
+          <Button
+            icon={<FilePlus />}
+            onClick={() => {
+              setDialogError("");
+              setGenerateOpen(true);
+            }}
+          >
+            Create bills
+          </Button>
+        }
+      />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputClass} aria-label="Status">
-          <option value="">All bills</option>
-          <option value="UNPAID">Unpaid</option>
-          <option value="PAID">Paid</option>
-          <option value="VOID">Void</option>
-        </select>
-        {unpaidTotal > 0 && <span className="text-sm">Unpaid shown: <b>{rupees(unpaidTotal)}</b></span>}
-      </div>
-      <ErrorText>{error || bills.error}</ErrorText>
-      <Notice>{notice}</Notice>
-
-      {paying && (
-        <Card>
-          <h2 className="mb-3 font-semibold">Record payment for {paying.number} ({paying.school.name}, {rupees(paying.amount)})</h2>
-          <div className="flex flex-wrap items-end gap-3">
-            <select value={method} onChange={(e) => setMethod(e.target.value)} className={inputClass} aria-label="Method">
-              {METHODS.map((m) => <option key={m}>{m}</option>)}
-            </select>
-            <input placeholder="Reference (optional)" value={reference} onChange={(e) => setReference(e.target.value)} className={inputClass} />
-            <Button onClick={pay}>Mark paid</Button>
-            <Button variant="ghost" onClick={() => setPaying(null)}>Cancel</Button>
-          </div>
-        </Card>
+      {unpaidTotal > 0 && (
+        <Alert tone="warning" title={`${rupees(unpaidTotal)} unpaid in this list`}>
+          {unpaidShown.length} {unpaidShown.length === 1 ? "bill is" : "bills are"} waiting for payment.
+        </Alert>
       )}
 
-      <Card className="overflow-x-auto">
-        <table className={tableClass}>
-          <thead className="opacity-60">
-            <tr><th className="py-2">Bill</th><th>School</th><th>Month</th><th>Plan</th><th>Students</th><th>Amount</th><th>Due</th><th>Status</th><th /></tr>
-          </thead>
-          <tbody>
-            {bills.data?.map((b) => (
-              <tr key={b.id} className={rowClass}>
-                <td className="py-2 font-mono text-xs">{b.number}</td>
-                <td><Link href={`/platform/schools/${b.school.id}`} className="text-brand hover:underline">{b.school.name}</Link></td>
-                <td>{monthName(b.period)}</td>
-                <td>{b.planName}</td>
-                <td>{b.students}</td>
-                <td>{rupees(b.amount)}</td>
-                <td>{day(b.dueDate)}</td>
-                <td>
-                  <StatusBadge status={b.status} />
-                  {b.paidAt && <div className="text-xs opacity-60">{day(b.paidAt)}, {b.method}</div>}
-                </td>
-                <td className="whitespace-nowrap text-right">
-                  {b.status === "UNPAID" && (
-                    <>
-                      <button className="text-brand" onClick={() => setPaying(b)}>Mark paid</button>
-                      <button className="ml-3 opacity-60 hover:opacity-100" onClick={() => voidBill(b)}>Void</button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {bills.data?.length === 0 && <p className="py-4 text-sm opacity-60">No bills.</p>}
-      </Card>
+      <DataTable
+        label="Bills"
+        columns={columns}
+        data={bills.data}
+        getRowId={(b) => b.id}
+        error={bills.error}
+        onRetry={bills.reload}
+        getSearchText={(b) => `${b.number} ${b.school.name} ${b.planName}`}
+        searchPlaceholder="Search bill number or school"
+        filters={
+          <NativeSelect
+            aria-label="Status"
+            placeholder="All bills"
+            options={BILL_STATUSES}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            wrapperClassName="w-36"
+          />
+        }
+        filtered={!!status}
+        empty={{
+          icon: <Receipt />,
+          title: "No bills",
+          description: "Create bills for a month to bill every paying school.",
+          action: (
+            <Button type="button" icon={<FilePlus />} onClick={() => setGenerateOpen(true)}>
+              Create bills
+            </Button>
+          ),
+        }}
+      />
+
+      <Dialog
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+        title="Bill paying schools for a month"
+        description="Each active or past-due school is billed at its current number of active students. Schools on trial are skipped, and running it twice for the same month does nothing."
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setGenerateOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="generate-bills" loading={busy}>
+              Create bills
+            </Button>
+          </>
+        }
+      >
+        <form id="generate-bills" onSubmit={generate} className="flex flex-col gap-4">
+          <TextField label="Month" type="month" required value={period} onChange={(e) => setPeriod(e.target.value)} />
+          {dialogError && <Alert tone="danger">{dialogError}</Alert>}
+        </form>
+      </Dialog>
+
+      <Dialog
+        open={!!paying}
+        onOpenChange={(open) => !open && setPaying(null)}
+        title={paying ? `Record payment for ${paying.number}` : "Record payment"}
+        description={paying ? `${paying.school.name}, ${rupees(paying.amount)} for ${monthName(paying.period)}` : undefined}
+        size="sm"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setPaying(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="pay-bill" loading={busy}>
+              Mark paid
+            </Button>
+          </>
+        }
+      >
+        <form id="pay-bill" onSubmit={pay} className="flex flex-col gap-4">
+          <SelectField label="Method" options={METHODS.map((m) => ({ value: m, label: m }))} value={method} onChange={(e) => setMethod(e.target.value)} />
+          <TextField
+            label="Reference"
+            hint="Optional, for example the bank transaction ID."
+            value={reference}
+            onChange={(e) => setReference(e.target.value)}
+          />
+          {dialogError && <Alert tone="danger">{dialogError}</Alert>}
+        </form>
+      </Dialog>
+
+      <ConfirmDialog
+        open={!!voiding}
+        onOpenChange={(open) => !open && setVoiding(null)}
+        title={voiding ? `Void ${voiding.number}?` : "Void bill?"}
+        description={voiding ? `${voiding.school.name} will no longer owe ${rupees(voiding.amount)} for this bill.` : ""}
+        confirmLabel="Void bill"
+        destructive
+        loading={busy}
+        onConfirm={voidBill}
+      />
     </div>
   );
 }
