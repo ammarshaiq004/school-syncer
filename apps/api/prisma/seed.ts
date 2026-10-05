@@ -10,6 +10,7 @@ import { localToday } from '../src/common/dates.js';
 import { CUSTOMER_SCHOOLS, PLATFORM_ADMIN, seedBilling, seedCustomerSchools, seedPlans, seedPlatformAdmin } from './demo/platform.js';
 import { seedSchool, type SchoolPlan } from './demo/school.js';
 import { SUPPORT_ADMIN, seedPlatformActivity, seedSchoolAccess, seedSupportAdmin } from './demo/access.js';
+import { seedAcademia } from './demo/academia.js';
 
 const prisma = new PrismaClient();
 
@@ -270,6 +271,18 @@ async function main() {
   // Roles, a switched-off login, a module override and audit history; safe to rerun.
   await seedSchoolAccess(prisma, 'demo-school', passwordHash);
   await seedPlatformActivity(prisma, PLATFORM_ADMIN.email);
+  // Lesson plans and parent-teacher chat; each part is skipped if the school already has some.
+  for (const plan of DEMO_SCHOOLS) {
+    if (!plan.demoTeacher || !plan.demoFamily) continue;
+    const a = await seedAcademia(prisma, plan.slug, today, {
+      demoTeacherEmail: plan.demoTeacher.email,
+      reviewerEmail: plan.staff.find((s) => s.role === Role.PRINCIPAL)!.email,
+      demoParent: plan.demoFamily.father,
+    });
+    if (a.lessonPlans || a.threads) {
+      console.log(`  ${plan.slug}: ${a.lessonPlans} lesson plans, ${a.threads} chat threads (${a.messages} messages)`);
+    }
+  }
   console.log(
     `Seeded ${CUSTOMER_SCHOOLS.length} customer schools and the console logins ${PLATFORM_ADMIN.email} (owner) and ${SUPPORT_ADMIN.email} (support)`,
   );

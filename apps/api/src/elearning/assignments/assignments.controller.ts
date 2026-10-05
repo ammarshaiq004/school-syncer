@@ -386,6 +386,81 @@ export class ElearningAssignmentsController {
     return submission;
   }
 
+  /**
+   * Gradebook entry (AcademiaOS module D): grades one student's work for the
+   * assignment, creating the submission record when the student never
+   * submitted online (e.g. work handed in on paper). The student must be
+   * active in the section or already have a submission.
+   */
+  @Put('assignments/:id/grades/:studentId')
+  @Roles(...ATTENDANCE_ROLES)
+  async gradeStudent(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('studentId') studentId: string,
+    @Body(new ZodValidationPipe(gradeSchema)) body: Grade,
+  ) {
+    const a = await this.inScope(user, id);
+    const [enrolled, before] = await Promise.all([
+      this.prisma.enrollment.findFirst({
+        where: { sectionId: a.sectionId, studentId, status: 'ACTIVE' },
+        select: { id: true },
+      }),
+      this.prisma.submission.findUnique({
+        where: { assignmentId_studentId: { assignmentId: a.id, studentId } },
+      }),
+    ]);
+    if (!enrolled && !before)
+      throw new NotFoundException('Student not found in this section');
+    const problem = gradeProblem(body.points, a.maxPoints);
+    if (problem) throw new BadRequestException(problem);
+    const now = new Date();
+    const graded = {
+      points: body.points,
+      status: body.status,
+      gradedById: user.sub,
+      gradedAt: now,
+    };
+    const submission = await this.prisma.submission.upsert({
+      where: { assignmentId_studentId: { assignmentId: a.id, studentId } },
+      update: {
+        ...graded,
+        feedback:
+          body.feedback === undefined ? undefined : body.feedback || null,
+      },
+      create: {
+        ...graded,
+        assignmentId: a.id,
+        studentId,
+        submittedAt: now,
+        isLate: false,
+        feedback: body.feedback || null,
+      },
+      include: { gradedBy: { select: { id: true, name: true } } },
+    });
+    await this.audit.record(
+      user,
+      'assignment.grade',
+      'Submission',
+      submission.id,
+      {
+        before: before
+          ? {
+              points: before.points,
+              feedback: before.feedback,
+              status: before.status,
+            }
+          : null,
+        after: {
+          points: submission.points,
+          feedback: submission.feedback,
+          status: submission.status,
+        },
+      },
+    );
+    return { ...submission, created: !before };
+  }
+
   private stats(
     subs: { status: SubmissionStatus; isLate: boolean }[],
     students: number,

@@ -35,8 +35,7 @@ export const PERMISSION_GROUPS = {
 export type PermissionGroup = keyof typeof PERMISSION_GROUPS;
 
 /**
- * Every module, in display order. Later releases append keys (gradebook,
- * lesson_plans, chat); stored matrices without them fall back to
+ * Every module, in display order. Later releases append keys; stored matrices without them fall back to
  * DEFAULT_PERMISSIONS, so no data migration is needed.
  */
 export const PERMISSION_MODULES = {
@@ -50,6 +49,8 @@ export const PERMISSION_MODULES = {
   homework: { label: 'Homework', group: 'academics' },
   exams: { label: 'Exams and results', group: 'academics' },
   elearning: { label: 'E-school', group: 'academics' },
+  gradebook: { label: 'Gradebook', group: 'academics' },
+  lesson_plans: { label: 'Lesson plans', group: 'academics' },
   fees: { label: 'Fees', group: 'finance' },
   accounts: { label: 'Accounts', group: 'finance' },
   reports: { label: 'Reports', group: 'finance' },
@@ -59,6 +60,7 @@ export const PERMISSION_MODULES = {
   library: { label: 'Library', group: 'operations' },
   announcements: { label: 'Announcements', group: 'communication' },
   messages: { label: 'Messages and notifications', group: 'communication' },
+  chat: { label: 'Parent-teacher chat', group: 'communication' },
   campuses: { label: 'Campuses', group: 'setup' },
   classes: { label: 'Classes and subjects', group: 'setup' },
   users: { label: 'Users and roles', group: 'setup' },
@@ -110,6 +112,9 @@ const TEACHING: PartialMatrix = {
   homework: 'manage',
   exams: 'manage', // marks entry and remarks
   elearning: 'manage', // courses, live classes, assignments, quizzes
+  gradebook: 'manage', // marks and assignment grades for their sections
+  lesson_plans: 'manage', // own plans
+  chat: 'manage', // threads where they are the staff member
   fees: 'view', // fee heads and structures
   hr: 'manage', // own leave requests and payslips
   transport: 'view',
@@ -129,6 +134,10 @@ const TEACHING: PartialMatrix = {
  */
 export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
   [Role.OWNER]: matrix('manage'),
+  // Setup roles read any chat thread for safeguarding (read-only: the chat
+  // service refuses posting by non-participants regardless of level). They
+  // keep chat=manage so one who is also a class or subject teacher can answer
+  // the parents who message them.
   [Role.PRINCIPAL]: matrix('manage'),
   [Role.ADMIN]: matrix('manage'),
   [Role.ACCOUNTANT]: matrix('none', {
@@ -159,6 +168,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     homework: 'view',
     exams: 'view',
     elearning: 'none', // e-school is for teaching staff
+    gradebook: 'none',
+    lesson_plans: 'none',
+    chat: 'none',
   }),
   // Parents and students are not editable; their endpoints are fenced by
   // @Roles and by ownership checks, the matrix only has to let them through.
@@ -175,6 +187,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     library: 'view',
     announcements: 'view',
     messages: 'view',
+    chat: 'manage', // threads with their children's teachers
     campuses: 'view',
     classes: 'view',
     settings: 'view',

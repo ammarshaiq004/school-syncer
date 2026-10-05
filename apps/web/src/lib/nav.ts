@@ -20,13 +20,17 @@ import {
   Library,
   ListChecks,
   Megaphone,
+  MessageCircle,
   MessagesSquare,
   MonitorPlay,
   NotebookPen,
+  NotebookText,
   Presentation,
+  ReceiptText,
   Settings,
   ShieldCheck,
   Sun,
+  Table2,
   TrendingUp,
   UserPlus,
   Users,
@@ -59,6 +63,8 @@ export interface NavItem {
   roles: Role[];
   /** Hidden when the school's plan lacks this feature. */
   feature?: Feature;
+  /** Hidden when the school's plan has none of these features. */
+  anyFeature?: Feature[];
   /** Permission module behind the page; hidden when the user's access to it is "none". */
   module?: PermissionModule;
   /** Only for these school modes (ignored when the mode is unknown). */
@@ -71,7 +77,12 @@ export interface NavItem {
   viewLabels?: Partial<Record<ViewId, string>>;
   /** Override the label for a school mode (e.g. no "ID cards" for online schools). */
   modeLabels?: Partial<Record<SchoolMode, string>>;
+  /** Live count shown as a badge next to the label (the shell fetches it). */
+  count?: NavCount;
 }
+
+/** Counts the sidebar can show on an item. */
+export type NavCount = "chatUnread";
 
 export interface NavGroup {
   id: string;
@@ -110,7 +121,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "people",
     label: "People",
     items: [
-      { href: "/students", label: "Students", icon: GraduationCap, module: "students", roles: STAFF, views: ["admin", "teacher"], keywords: "pupils directory profile" },
+      { href: "/students", label: "Students", icon: GraduationCap, module: "students", roles: STAFF, views: ["admin", "teacher"], keywords: "pupils directory profile student directory", viewLabels: { admin: "Student directory" } },
       { href: "/admissions", label: "Admissions", icon: UserPlus, module: "admissions", roles: SETUP, feature: "admissions", views: ["admin"], keywords: "enquiries applications" },
       { href: "/hr", label: "HR and payroll", icon: BriefcaseBusiness, module: "hr", roles: STAFF, feature: "hr", views: ["admin", "teacher"], keywords: "staff salary payslips leave my leave", viewLabels: { teacher: "My leave and payslips" } },
     ],
@@ -120,10 +131,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Academics",
     items: [
       { href: "/classes", label: "Classes and sections", icon: Layers, module: "classes", roles: SETUP, views: ["admin"], keywords: "grades subjects" },
-      { href: "/attendance", label: "Attendance", icon: CalendarCheck, module: "attendance", roles: TEACHING, views: ["admin", "teacher"], keywords: "present absent register" },
+      { href: "/attendance", label: "Attendance", icon: CalendarCheck, module: "attendance", roles: TEACHING, views: ["admin", "teacher"], keywords: "present absent register monthly matrix class timetable", viewLabels: { teacher: "Classes and attendance" } },
       { href: "/timetable", label: "Timetable", icon: CalendarClock, module: "timetable", roles: STAFF, feature: "timetable", views: ["admin", "teacher"], keywords: "periods schedule" },
       { href: "/homework", label: "Homework", icon: NotebookPen, module: "homework", roles: TEACHING, feature: "homework", views: ["admin", "teacher"], keywords: "assignments diary" },
       { href: "/exams", label: "Exams and results", icon: ClipboardCheck, module: "exams", roles: TEACHING, feature: "exams", views: ["admin", "teacher"], keywords: "marks report cards grades", viewLabels: { teacher: "Exams and marks" } },
+      { href: "/gradebook", label: "Gradebook", icon: Table2, module: "gradebook", roles: TEACHING, anyFeature: ["exams", "elearning"], views: ["admin", "teacher"], keywords: "marks scores grades assessment matrix spreadsheet letter grade" },
+      { href: "/lesson-plans", label: "Lesson plans", icon: NotebookText, module: "lesson_plans", roles: TEACHING, views: ["admin", "teacher"], keywords: "weekly plan scheme of work review approve" },
       { href: "/promotions", label: "Promotions", icon: TrendingUp, module: "promotions", roles: SETUP, views: ["admin"], keywords: "year end next year" },
       { href: "/certificates", label: "Certificates and ID cards", icon: Award, module: "certificates", roles: STAFF, feature: "certificates", views: ["admin", "teacher"], keywords: "leaving character id card", modeLabels: { ONLINE: "Certificates" } },
     ],
@@ -143,7 +156,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "finance",
     label: "Finance",
     items: [
-      { href: "/fees", label: "Fees", icon: Wallet, module: "fees", roles: FEES, feature: "fees", views: ["admin"], keywords: "invoices vouchers defaulters" },
+      { href: "/fees", label: "Fees", icon: Wallet, module: "fees", roles: FEES, feature: "fees", views: ["admin"], keywords: "invoices vouchers defaulters fee management", viewLabels: { admin: "Fee management" } },
       { href: "/accounts", label: "Accounts", icon: Landmark, module: "accounts", roles: FEES, feature: "accounts", views: ["admin"], keywords: "cashbook expenses income" },
       { href: "/reports", label: "Reports", icon: ChartColumn, module: "reports", roles: FEES, feature: "reports", views: ["admin"], keywords: "analytics collection" },
       { href: "/billing", label: "Plan and billing", icon: CreditCard, module: "billing", roles: FEES, views: ["admin"], keywords: "subscription plan" },
@@ -162,6 +175,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Communication",
     items: [
       { href: "/announcements", label: "Announcements", icon: Megaphone, module: "announcements", roles: STAFF, views: ["admin", "teacher"], keywords: "notices news" },
+      { href: "/chat", label: "Messages", icon: MessageCircle, module: "chat", roles: TEACHING, views: ["admin", "teacher"], keywords: "chat parents parent teacher conversations inbox safeguarding", viewLabels: { admin: "Parent-teacher chat" }, count: "chatUnread" },
       { href: "/messages", label: "Message log", icon: MessagesSquare, module: "messages", roles: SETUP, views: ["admin"], keywords: "whatsapp sms notifications" },
     ],
   },
@@ -195,7 +209,12 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "family",
     label: "My family",
-    items: [{ href: "/parent", label: "My children", icon: Users, roles: ["PARENT"], views: ["parent"], keywords: "kids results fees timetable" }],
+    items: [
+      { href: "/parent", label: "Child overview", icon: Users, roles: ["PARENT"], views: ["parent"], keywords: "my children kids results fees timetable" },
+      { href: "/parent/invoices", label: "Fee invoices and payment", icon: ReceiptText, module: "fees", roles: ["PARENT"], feature: "fees", views: ["parent"], keywords: "vouchers dues pay fees pdf jazzcash easypaisa bank" },
+      { href: "/parent/attendance", label: "Attendance history", icon: CalendarCheck, module: "attendance", roles: ["PARENT"], views: ["parent"], keywords: "present absent late leave days heatmap" },
+      { href: "/parent/chat", label: "Teacher chat", icon: MessageCircle, module: "chat", roles: ["PARENT"], views: ["parent"], keywords: "messages chat class teacher conversation inbox", count: "chatUnread" },
+    ],
   },
 ];
 
@@ -242,6 +261,7 @@ function visible(item: NavItem, { user, view, mode }: NavContext) {
     hasRole(user, item.roles) &&
     (!item.module || can(user, item.module)) &&
     (!item.feature || !features || features.includes(item.feature)) &&
+    (!item.anyFeature || !features || item.anyFeature.some((f) => features.includes(f))) &&
     (!item.modes || !mode || item.modes.includes(mode))
   );
 }

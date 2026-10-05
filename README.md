@@ -75,7 +75,7 @@ pnpm dev               # API on :4000, web on :3000
 
 ## Demo data
 
-`pnpm db:seed` builds three schools (one hybrid, one physical, one online) with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Every login's password is `password123`.
+`pnpm db:seed` builds three schools (one hybrid, one physical, one online) with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Rerunning without `--reset` leaves existing demo schools alone, but adds lesson plans and chats to a demo school that has none yet. Every login's password is `password123`.
 
 **City Grammar School** (school code `demo-school`, Lahore, mode Hybrid): two campuses (Model Town, with Playgroup to Grade 8, and Johar Town, with Playgroup to Grade 5), about 490 students in 300 families with siblings, 47 staff, and from the start of the academic year:
 
@@ -84,6 +84,8 @@ pnpm dev               # API on :4000, web on :3000
 - a published first-term exam with positions and remarks, and a monthly test still being marked;
 - timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, four van routes with about 55 riders, a library of about 70 titles with books out, a few overdue and some small fines owed, a handful of children who left during the year with their leaving certificates, character and enrolment certificates, an admissions pipeline, announcements and a message log;
 - e-school for Grades 5 to 8: published courses for Mathematics, Science, English, Computer and Social Studies (units with Khan Academy and Crash Course videos, reading notes and links, a draft lesson, and student progress), live classes for Maths, Science and Computer periods two weeks back and a week ahead (past ones ended with attendance and some recordings, a few cancelled, plus an evening doubt-clearing session today), assignments that are graded, being marked, due soon and due later (with late, returned and missing work), and three quizzes per section (one closed and marked, one open now with typed answers waiting for review, one opening soon). Ahmed's whole section (Grade 5 A) has student logins.
+- lesson plans for last week (approved), this week (approved, submitted and one sent back with a note) and next week (drafts and one submitted) from the demo teacher and a few colleagues, so the principal's review queue has work in it;
+- parent-teacher chat: Imran Khan with Ahmed's class teacher (two replies he hasn't read), with `teacher@demo.pk` about Zainab (his last message unread by the teacher) and with a subject teacher, plus another parent's unread message to `teacher@demo.pk`. In Grades 5 to 8 the gradebook mixes the first-term paper with assignments (Maths, Science, English, Computer, Social Studies) and quizzes (Maths, Science, Computer); Computer, English and Islamiat also show the monthly test that is still being marked.
 
 | Login | Role |
 | --- | --- |
@@ -100,7 +102,7 @@ pnpm dev               # API on :4000, web on :3000
 
 **Bright Future School** (school code `bright-future`, Faisalabad, mode Physical): a smaller single-campus school with no e-school data, to check that schools never see each other's data. Owner login `owner@brightfuture.pk`.
 
-**Virtual Learning Academy** (school code `online-academy`, Karachi, mode Online): one "Online campus" with Grades 6 to 10 (one section each, about 70 students), a timetable taught entirely as live classes, courses, assignments and quizzes for every section, fees, exams, attendance and payroll, and no transport or library. Every student has a login (username = admission number). A paying Growth customer.
+**Virtual Learning Academy** (school code `online-academy`, Karachi, mode Online): one "Online campus" with Grades 6 to 10 (one section each, about 70 students), a timetable taught entirely as live classes, courses, assignments and quizzes for every section, fees, exams, attendance and payroll, and no transport or library. Every student has a login (username = admission number). Lesson plans for Saima Naveed and colleagues, and chats between Tariq Mehmood and Ayesha's teachers (two unread for him) and between another parent and Saima (one unread for her). A paying Growth customer.
 
 | Login | Role |
 | --- | --- |

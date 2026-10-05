@@ -4,13 +4,13 @@ import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Banknote, CalendarClock, Download, Printer, ReceiptText, TriangleAlert } from "lucide-react";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
+import { InvoiceBreakdownCard, PrintableVoucher } from "@/components/invoices/invoice-breakdown";
 import {
   Alert,
   Avatar,
   Button,
   Card,
   CardHeader,
-  DescriptionList,
   Dialog,
   EmptyState,
   ErrorState,
@@ -22,7 +22,6 @@ import {
   useToast,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { day, fullName, rupees } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
@@ -123,10 +122,6 @@ export default function VoucherPage() {
   const cls = v.student.enrollments[0];
   const className = cls ? `${cls.section.class.name} ${cls.section.name}` : "Not enrolled";
   const guardian = v.student.guardians[0]?.guardian.name;
-  const charges = v.lines.filter((l) => l.amount >= 0);
-  const concessions = v.lines.filter((l) => l.amount < 0);
-  const subtotal = charges.reduce((s, l) => s + l.amount, 0);
-  const concessionTotal = concessions.reduce((s, l) => s + l.amount, 0);
   const canPay = v.status !== "PAID" && v.status !== "CANCELLED";
   const display = invoiceDisplay(v);
 
@@ -173,88 +168,24 @@ export default function VoucherPage() {
 
       <div className="grid gap-6 lg:grid-cols-3 print:hidden">
         {/* Breakdown */}
-        <Card padding="none" className="overflow-hidden lg:col-span-2">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border p-5">
-            <div className="min-w-0">
-              <div className="text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">Billed by</div>
-              <div className="mt-1 font-display text-base font-semibold text-fg">{v.school.name}</div>
-              <div className="text-[13px] text-fg-muted">{[v.school.city, v.school.phone].filter(Boolean).join(", ")}</div>
-            </div>
-            <div className="text-end">
-              <div className="text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">Voucher no.</div>
-              <div className="mt-1 font-mono text-sm font-medium text-fg">{v.voucherNo}</div>
-            </div>
-          </div>
-          <div className="border-b border-border p-5">
-            <DescriptionList
-              columns={3}
-              items={[
-                { label: "Student", value: fullName(v.student) },
-                { label: "Admission no.", value: v.student.admissionNo },
-                { label: "Class", value: className },
-                { label: "Guardian", value: guardian ?? "Not added" },
-                { label: "Issued", value: day(v.issueDate) },
-                { label: "Due date", value: day(v.dueDate) },
-              ]}
-            />
-          </div>
-
-          <table className="w-full text-sm">
-            <caption className="sr-only">Charges on voucher {v.voucherNo}</caption>
-            <thead className="bg-surface-2">
-              <tr>
-                <th scope="col" className="px-5 py-2.5 text-start text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">
-                  Item
-                </th>
-                <th scope="col" className="px-5 py-2.5 text-end text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">
-                  Amount
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {charges.map((l) => (
-                <tr key={l.id}>
-                  <td className="px-5 py-3 text-fg">{l.description}</td>
-                  <td className="px-5 py-3 text-end tabular-nums text-fg">{rupees(l.amount)}</td>
-                </tr>
-              ))}
-              {charges.length === 0 && (
-                <tr>
-                  <td colSpan={2} className="px-5 py-6 text-center text-fg-muted">
-                    No charges on this voucher.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-
-          <dl className="ms-auto flex max-w-sm flex-col gap-2 border-t border-border p-5 text-sm">
-            <SummaryRow label="Subtotal" value={rupees(subtotal)} />
-            {concessions.map((l) => (
-              <SummaryRow key={l.id} label={l.description} value={`- ${rupees(Math.abs(l.amount))}`} className="text-success-text" />
-            ))}
-            {concessions.length === 0 && <SummaryRow label="Concessions" value={rupees(0)} muted />}
-            {v.lateFine > 0 && (
-              <SummaryRow
-                label="Late fee so far"
-                value={rupees(v.lateFine)}
-                className="text-warning-text"
-                hint="Grows each day after the due date. Not part of the voucher total."
-              />
-            )}
-            <SummaryRow label="Total due" value={rupees(v.total)} strong className="mt-1 border-t border-border pt-3" />
-            <SummaryRow label="Paid" value={v.paid > 0 ? `- ${rupees(v.paid)}` : rupees(0)} muted={v.paid === 0} />
-            <div className="mt-1 flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2.5">
-              <dt className="font-medium text-fg">Balance</dt>
-              <dd className={cn("font-display text-lg font-semibold tabular-nums", v.balance > 0 ? "text-fg" : "text-success-text")}>
-                {rupees(v.balance)}
-              </dd>
-            </div>
-            {concessionTotal < 0 && (
-              <p className="text-xs text-fg-muted">Includes {rupees(Math.abs(concessionTotal))} in concessions.</p>
-            )}
-          </dl>
-        </Card>
+        <InvoiceBreakdownCard
+          className="lg:col-span-2"
+          voucherNo={v.voucherNo}
+          school={v.school}
+          details={[
+            { label: "Student", value: fullName(v.student) },
+            { label: "Admission no.", value: v.student.admissionNo },
+            { label: "Class", value: className },
+            { label: "Guardian", value: guardian ?? "Not added" },
+            { label: "Issued", value: day(v.issueDate) },
+            { label: "Due date", value: day(v.dueDate) },
+          ]}
+          lines={v.lines}
+          total={v.total}
+          paid={v.paid}
+          balance={v.balance}
+          lateFine={v.lateFine}
+        />
 
         {/* Payments */}
         <Card className="self-start">
@@ -292,40 +223,23 @@ export default function VoucherPage() {
       </div>
 
       {/* Printed voucher: three copies on one A4 page, bank, school and parent. Only shown when printing. */}
-      <div className="hidden grid-cols-3 gap-2 text-[11px] print:grid">
-        {["Bank copy", "School copy", "Parent copy"].map((copy) => (
-          <div key={copy} className="rounded-xl border border-dashed border-black/40 bg-white p-3 text-black">
-            <div className="flex justify-between text-[10px] uppercase tracking-wide text-black/60">
-              <span>{copy}</span>
-              <span>{v.voucherNo}</span>
-            </div>
-            <div className="mt-1 text-sm font-bold">{v.school.name}</div>
-            <div className="text-[10px] text-black/70">{[v.school.city, v.school.phone].filter(Boolean).join(", ")}</div>
-            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3">
-              <dt className="text-black/60">Student</dt><dd className="font-medium">{fullName(v.student)}</dd>
-              <dt className="text-black/60">Adm. no.</dt><dd>{v.student.admissionNo}</dd>
-              <dt className="text-black/60">Class</dt><dd>{cls ? className : "None"}</dd>
-              <dt className="text-black/60">Guardian</dt><dd>{guardian ?? "None"}</dd>
-              <dt className="text-black/60">Month</dt><dd>{v.period}</dd>
-              <dt className="text-black/60">Due date</dt><dd className="font-medium">{day(v.dueDate)}</dd>
-            </dl>
-            <table className="mt-2 w-full">
-              <tbody>
-                {v.lines.map((l) => (
-                  <tr key={l.id}><td>{l.description}</td><td className="text-right">{rupees(l.amount)}</td></tr>
-                ))}
-                <tr className="border-t border-black/30 font-bold"><td className="pt-1">Total</td><td className="pt-1 text-right">{rupees(v.total)}</td></tr>
-                {v.paid > 0 && <tr><td>Paid</td><td className="text-right">{rupees(v.paid)}</td></tr>}
-                {v.paid > 0 && <tr className="font-semibold"><td>Balance</td><td className="text-right">{rupees(v.balance)}</td></tr>}
-                {v.lateFine > 0 && <tr><td>Late fine so far</td><td className="text-right">{rupees(v.lateFine)}</td></tr>}
-              </tbody>
-            </table>
-            <div className="mt-2 text-[10px] text-black/60">
-              Pay at the school counter, by bank, or with JazzCash or Easypaisa using voucher no. {v.voucherNo}.
-            </div>
-          </div>
-        ))}
-      </div>
+      <PrintableVoucher
+        voucherNo={v.voucherNo}
+        school={v.school}
+        rows={[
+          ["Student", fullName(v.student)],
+          ["Adm. no.", v.student.admissionNo],
+          ["Class", cls ? className : "None"],
+          ["Guardian", guardian ?? "None"],
+          ["Month", v.period],
+          ["Due date", day(v.dueDate)],
+        ]}
+        lines={v.lines}
+        total={v.total}
+        paid={v.paid}
+        balance={v.balance}
+        lateFine={v.lateFine}
+      />
 
       <Dialog
         open={payOpen}
@@ -365,32 +279,6 @@ export default function VoucherPage() {
           )}
         </form>
       </Dialog>
-    </div>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  strong,
-  muted,
-  hint,
-  className,
-}: {
-  label: string;
-  value: string;
-  strong?: boolean;
-  muted?: boolean;
-  hint?: string;
-  className?: string;
-}) {
-  return (
-    <div className={cn("flex items-start justify-between gap-3", muted && "text-fg-muted", className)}>
-      <dt className={cn(strong ? "font-semibold text-fg" : "")}>
-        {label}
-        {hint && <span className="block text-xs font-normal text-fg-muted">{hint}</span>}
-      </dt>
-      <dd className={cn("shrink-0 tabular-nums", strong && "font-semibold text-fg")}>{value}</dd>
     </div>
   );
 }

@@ -5,18 +5,22 @@ import { ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { BrandLockup, BrandMark } from "@/components/brand";
 import { Tooltip } from "@/components/kit/overlay";
 import { EmptyState } from "@/components/kit/feedback";
+import { CountBadge } from "@/components/kit/badge";
+import { useChatUnread } from "@/components/chat/unread";
 import { cn } from "@/lib/cn";
-import { activeHref, STUDENT_PLACEHOLDER_ICON, type NavGroup, type NavItem, type ViewId } from "@/lib/nav";
+import { activeHref, STUDENT_PLACEHOLDER_ICON, type NavCount, type NavGroup, type NavItem, type ViewId } from "@/lib/nav";
 import { usePersistedState } from "@/lib/persisted";
 
-function NavEntry({ item, active, collapsed, onNavigate }: { item: NavItem; active: boolean; collapsed: boolean; onNavigate?: () => void }) {
+function NavEntry({ item, active, collapsed, onNavigate, count }: { item: NavItem; active: boolean; collapsed: boolean; onNavigate?: () => void; count?: number | null }) {
   const Icon = item.icon;
+  const unread = count && count > 0 ? count : 0;
+  const unreadText = unread ? `${unread > 99 ? "99+" : unread} unread` : "";
   const link = (
     <Link
       href={item.href}
       onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      aria-label={collapsed ? item.label : undefined}
+      aria-label={collapsed ? (unread ? `${item.label}, ${unreadText}` : item.label) : undefined}
       className={cn(
         "group/nav relative flex h-9 items-center gap-3 rounded-lg px-2.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring",
         active ? "bg-primary-tint text-brand" : "text-fg-secondary hover:bg-surface-3 hover:text-fg",
@@ -32,6 +36,15 @@ function NavEntry({ item, active, collapsed, onNavigate }: { item: NavItem; acti
         aria-hidden
       />
       {!collapsed && <span className="truncate">{item.label}</span>}
+      {unread > 0 &&
+        (collapsed ? (
+          <span aria-hidden className="absolute end-2 top-1.5 size-2 rounded-full bg-primary ring-2 ring-surface" />
+        ) : (
+          <>
+            <CountBadge count={unread} className="ms-auto" />
+            <span className="sr-only">, {unreadText}</span>
+          </>
+        ))}
     </Link>
   );
   return collapsed ? (
@@ -46,6 +59,8 @@ function NavEntry({ item, active, collapsed, onNavigate }: { item: NavItem; acti
 export function SidebarNav({ groups, pathname, view, collapsed = false, onNavigate }: { groups: NavGroup[]; pathname: string; view: ViewId; collapsed?: boolean; onNavigate?: () => void }) {
   const [closed, setClosed] = usePersistedState<string[]>("schoolsyncer.nav-closed", []);
   const active = activeHref(pathname, groups.flatMap((g) => g.items.map((i) => i.href)));
+  const chatUnread = useChatUnread(groups.some((g) => g.items.some((i) => i.count === "chatUnread")));
+  const counts: Record<NavCount, number | null> = { chatUnread };
 
   if (groups.length === 0) {
     return (
@@ -70,7 +85,7 @@ export function SidebarNav({ groups, pathname, view, collapsed = false, onNaviga
           return (
             <div key={g.id} className={cn("flex flex-col gap-1", gi > 0 && "mt-2 border-t border-border pt-2")}>
               {g.items.map((i) => (
-                <NavEntry key={i.href} item={i} active={i.href === active} collapsed onNavigate={onNavigate} />
+                <NavEntry key={i.href} item={i} active={i.href === active} collapsed onNavigate={onNavigate} count={i.count ? counts[i.count] : null} />
               ))}
             </div>
           );
@@ -93,7 +108,7 @@ export function SidebarNav({ groups, pathname, view, collapsed = false, onNaviga
             <div id={`nav-${g.id}`} className={cn("grid transition-[grid-template-rows] duration-200 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
               <div className={cn("flex min-h-0 flex-col gap-0.5 overflow-hidden", !single && "pt-1")} inert={!open}>
                 {g.items.map((i) => (
-                  <NavEntry key={i.href} item={i} active={i.href === active} collapsed={false} onNavigate={onNavigate} />
+                  <NavEntry key={i.href} item={i} active={i.href === active} collapsed={false} onNavigate={onNavigate} count={i.count ? counts[i.count] : null} />
                 ))}
               </div>
             </div>

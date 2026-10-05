@@ -83,6 +83,9 @@ model School {
   liveClasses LiveClass[]
   assignments Assignment[]
   quizzes     Quiz[]
+
+  lessonPlans LessonPlan[]
+  chatThreads ChatThread[]
 }
 
 model Campus {
@@ -181,6 +184,8 @@ model Section {
   assignments Assignment[]
   quizzes     Quiz[]
 
+  lessonPlans LessonPlan[]
+
   @@unique([classId, academicYearId, name])
   @@index([schoolId])
 }
@@ -204,6 +209,8 @@ model Subject {
   liveClasses LiveClass[]
   assignments Assignment[]
   quizzes     Quiz[]
+
+  lessonPlans LessonPlan[]
 
   @@unique([schoolId, name])
 }
@@ -263,6 +270,12 @@ model User {
   assignmentsCreated Assignment[] @relation("AssignmentCreatedBy")
   submissionsGraded  Submission[] @relation("SubmissionGradedBy")
   quizzesCreated     Quiz[]
+
+  lessonPlans         LessonPlan[]  @relation("LessonPlanTeacher")
+  lessonPlansReviewed LessonPlan[]  @relation("LessonPlanReviewer")
+  chatThreadsAsParent ChatThread[]  @relation("ChatThreadGuardian")
+  chatThreadsAsStaff  ChatThread[]  @relation("ChatThreadStaff")
+  chatMessagesSent    ChatMessage[]
 
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
@@ -413,6 +426,8 @@ model Student {
   liveAttendance LiveAttendance[]
   submissions    Submission[]
   quizAttempts   QuizAttempt[]
+
+  chatThreads ChatThread[]
 
   @@unique([schoolId, admissionNo])
   @@index([schoolId, status])
@@ -1711,4 +1726,90 @@ model QuizAttempt {
 
   @@index([quizId, studentId])
   @@index([studentId])
+}
+
+enum LessonPlanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  NEEDS_CHANGES
+}
+
+/// A teacher's weekly plan for one section and subject, reviewed by setup
+/// roles. Plans outlive the teacher's account (teacherId SET NULL) so the
+/// school keeps its curriculum record.
+model LessonPlan {
+  id           String           @id @default(cuid())
+  schoolId     String
+  sectionId    String
+  subjectId    String
+  teacherId    String?
+  /// Monday of the planned week.
+  weekStart    DateTime         @db.Date
+  topic        String
+  objectives   String?
+  activities   String?
+  resources    String?
+  homework     String?
+  status       LessonPlanStatus @default(DRAFT)
+  submittedAt  DateTime?
+  reviewerNote String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  school     School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  section    Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject    Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher    User?   @relation("LessonPlanTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  reviewedBy User?   @relation("LessonPlanReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, status, weekStart])
+  @@index([teacherId, weekStart])
+  @@index([sectionId, subjectId, weekStart])
+}
+
+/// Parent-teacher conversation about one student (SCHOOL-25). Participant
+/// links are SET NULL so the conversation stays on record for safeguarding
+/// when an account is removed; a thread with a missing participant is
+/// read-only.
+model ChatThread {
+  id             String    @id @default(cuid())
+  schoolId       String
+  studentId      String
+  guardianUserId String?
+  staffUserId    String?
+  lastMessageAt  DateTime?
+  createdAt      DateTime  @default(now())
+
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianUser User?         @relation("ChatThreadGuardian", fields: [guardianUserId], references: [id], onDelete: SetNull)
+  staffUser    User?         @relation("ChatThreadStaff", fields: [staffUserId], references: [id], onDelete: SetNull)
+  messages     ChatMessage[]
+
+  @@unique([studentId, guardianUserId, staffUserId])
+  @@index([schoolId, lastMessageAt])
+  @@index([guardianUserId, lastMessageAt])
+  @@index([staffUserId, lastMessageAt])
+}
+
+model ChatMessage {
+  id        String    @id @default(cuid())
+  threadId  String
+  senderId  String?
+  /// Up to 2000 characters (validated in the API and by a DB CHECK).
+  body      String
+  createdAt DateTime  @default(now())
+  /// When the other participant read it; null = unread.
+  readAt    DateTime?
+
+  thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User?      @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  // Conversation paging (?after) and unread counts per thread.
+  @@index([threadId, createdAt])
+  @@index([threadId, readAt])
+  @@index([senderId])
 }

@@ -24,6 +24,7 @@ import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { dayStart } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { buildMatrix, monthBounds, monthDays } from './attendance-matrix.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 
@@ -43,6 +44,10 @@ const sheetSchema = z.object({
 type SheetInput = z.infer<typeof sheetSchema>;
 
 const asDate = dayStart;
+
+const monthParam = z
+  .string()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
 
 @Controller('attendance')
 @Permission('attendance')
@@ -118,6 +123,59 @@ export class AttendanceController {
           note: record?.note ?? null,
         };
       }),
+    };
+  }
+
+  /**
+   * The month at a glance for one section: every school day as a column and
+   * every enrolled student as a row with their status per day. Teachers only
+   * see sections they teach; admins any section on their campuses.
+   */
+  @Get('matrix')
+  @Roles(...ATTENDANCE_ROLES)
+  async matrix(
+    @CurrentUser() user: AuthUser,
+    @Query('sectionId', new ZodValidationPipe(z.string().min(1, 'sectionId is required'))) sectionId: string,
+    @Query('month', new ZodValidationPipe(monthParam)) month: string,
+  ) {
+    const section = await this.assertCanMark(user, sectionId);
+    const { start, end } = monthBounds(month);
+    const [enrollments, sessions] = await Promise.all([
+      this.prisma.enrollment.findMany({
+        where: { sectionId, academicYearId: section.academicYearId, status: 'ACTIVE' },
+        orderBy: [{ rollNo: 'asc' }, { student: { firstName: 'asc' } }],
+        select: {
+          rollNo: true,
+          student: { select: { id: true, firstName: true, lastName: true, admissionNo: true, photoUrl: true } },
+        },
+      }),
+      this.prisma.attendanceSession.findMany({
+        where: { sectionId, date: { gte: asDate(start), lt: asDate(end) } },
+        orderBy: { date: 'asc' },
+        select: { id: true, date: true, records: { select: { studentId: true, status: true } } },
+      }),
+    ]);
+    const sessionByDate = new Map(sessions.map((s) => [s.date.toISOString().slice(0, 10), s.id]));
+    const days = monthDays(month, sessionByDate);
+    const { students, totals } = buildMatrix(
+      enrollments.map(({ rollNo, student: s }) => ({
+        id: s.id,
+        name: [s.firstName, s.lastName].filter(Boolean).join(' '),
+        admissionNo: s.admissionNo,
+        rollNo,
+        photoUrl: s.photoUrl,
+      })),
+      sessions.flatMap((s) =>
+        s.records.map((r) => ({ ...r, date: s.date.toISOString().slice(0, 10) })),
+      ),
+      days,
+    );
+    return {
+      section: { id: section.id, name: section.name, className: section.class.name },
+      month,
+      days,
+      students,
+      totals,
     };
   }
 

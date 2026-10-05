@@ -22,6 +22,7 @@ import {
 } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import { UserStatusService } from '../common/user-status.service.js';
+import { PermissionService } from '../common/permission.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -36,6 +37,13 @@ import {
   tempPassword,
 } from './student-login.js';
 import { createStudentRecord, guardianInputSchema } from './student-records.js';
+import {
+  directoryQuerySchema,
+  studentDirectory,
+  studentPerformance,
+  type DirectoryAccess,
+  type DirectoryQuery,
+} from './student-directory.js';
 
 const createStudentSchema = z.object({
   sectionId: z.string().min(1),
@@ -83,7 +91,19 @@ export class StudentsController {
     private readonly notifications: NotificationsService,
     private readonly subscriptions: SubscriptionService,
     private readonly userStatus: UserStatusService,
+    private readonly permissions: PermissionService,
   ) {}
+
+  /** Which fee/exam/attendance data this viewer may see in the directory and drawer. */
+  private async directoryAccess(user: AuthUser): Promise<DirectoryAccess> {
+    const perms = await this.permissions.permissionsFor(user);
+    return {
+      fees: perms.fees !== 'none',
+      attendance: perms.attendance !== 'none',
+      exams: perms.exams !== 'none',
+      examDrafts: perms.exams === 'manage',
+    };
+  }
 
   @Get()
   list(
@@ -136,6 +156,27 @@ export class StudentsController {
         },
       },
     });
+  }
+
+  /**
+   * The admin student directory: one server-side page with class, attendance
+   * rate (current academic year), primary guardian and fee standing per row.
+   * Declared before :id so "directory" is not read as a student id.
+   */
+  @Get('directory')
+  @Roles(...SETUP_ROLES, Role.ACCOUNTANT)
+  async directory(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(directoryQuerySchema)) query: DirectoryQuery,
+  ) {
+    return studentDirectory(this.prisma, user.schoolId, campusScope(user), query, await this.directoryAccess(user));
+  }
+
+  /** Subject scores, 26 weeks of attendance and fee standing, for the directory drawer. */
+  @Get(':id/performance')
+  @Roles(...SETUP_ROLES, Role.ACCOUNTANT)
+  async performance(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return studentPerformance(this.prisma, user.schoolId, campusScope(user), id, await this.directoryAccess(user));
   }
 
   @Get(':id')

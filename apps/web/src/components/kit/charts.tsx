@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { TONE_DOT, toTone, type AnyTone } from "./badge";
 
@@ -613,6 +613,12 @@ export function CalendarHeatmap({ days, from, to, label, max, cellSize = 14, leg
   const w = left + weeks.length * step;
   const h = top + 7 * step;
   const summary = `${label}, ${isoDay(start)} to ${isoDay(end)}`;
+  // When the grid is wider than its container (phones), start scrolled to the newest weeks.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [w]);
   const toneFill: Record<string, string> = {
     success: "var(--success)",
     warning: "var(--warning)",
@@ -623,7 +629,7 @@ export function CalendarHeatmap({ days, from, to, label, max, cellSize = 14, leg
   };
   return (
     <div className={cn("flex min-w-0 flex-col gap-3", className)}>
-      <div className="overflow-x-auto">
+      <div ref={scrollRef} className="overflow-x-auto">
         <svg width={w} height={h} role="img" aria-label={summary}>
           <title>{summary}</title>
           {DOW.map((d, i) =>

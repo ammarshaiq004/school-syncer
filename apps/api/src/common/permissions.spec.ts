@@ -44,6 +44,28 @@ describe('permission catalog', () => {
     expect(DEFAULT_PERMISSIONS[Role.STAFF].elearning).toBe('none');
   });
 
+  it('gives gradebook and lesson plans to setup and teaching roles only', () => {
+    for (const role of [Role.OWNER, Role.PRINCIPAL, Role.ADMIN, Role.TEACHER, Role.CLASS_TEACHER]) {
+      expect(DEFAULT_PERMISSIONS[role].gradebook).toBe('manage');
+      expect(DEFAULT_PERMISSIONS[role].lesson_plans).toBe('manage');
+    }
+    for (const role of [Role.ACCOUNTANT, Role.STAFF, Role.PARENT, Role.STUDENT]) {
+      expect(DEFAULT_PERMISSIONS[role].gradebook).toBe('none');
+      expect(DEFAULT_PERMISSIONS[role].lesson_plans).toBe('none');
+    }
+  });
+
+  it('lets teachers, parents and setup roles chat, others none', () => {
+    // Setup roles keep manage so one who also teaches can answer parents; the
+    // chat service still makes their safeguarding view of other threads read-only.
+    for (const role of [Role.TEACHER, Role.CLASS_TEACHER, Role.PARENT, Role.OWNER, Role.PRINCIPAL, Role.ADMIN]) {
+      expect(DEFAULT_PERMISSIONS[role].chat).toBe('manage');
+    }
+    for (const role of [Role.ACCOUNTANT, Role.STAFF, Role.STUDENT]) {
+      expect(DEFAULT_PERMISSIONS[role].chat).toBe('none');
+    }
+  });
+
   it('orders levels none < view < manage', () => {
     expect(satisfies('manage', 'view')).toBe(true);
     expect(satisfies('view', 'manage')).toBe(false);
