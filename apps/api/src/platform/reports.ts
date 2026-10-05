@@ -82,3 +82,33 @@ export function fallingStudents(
   }
   return out;
 }
+
+const DAY = 86_400_000;
+
+/**
+ * The churn-risk entry for a school on TRIAL: an expired trial (the school is
+ * read-only and should be called first), a trial ending within `withinDays`,
+ * or null when the trial is further off or has no end date.
+ */
+export function trialRisk(
+  trialEndsAt: Date | null,
+  now: Date,
+  withinDays = 7,
+): { reason: 'trial_ended' | 'trial_ending'; detail: string } | null {
+  if (!trialEndsAt) return null;
+  const plural = (n: number) => `${n} day${n === 1 ? '' : 's'}`;
+  if (trialEndsAt < now) {
+    const days = Math.floor((+now - +trialEndsAt) / DAY);
+    return {
+      reason: 'trial_ended',
+      detail: days
+        ? `Trial ended ${plural(days)} ago, read-only`
+        : 'Trial ended today, read-only',
+    };
+  }
+  if (+trialEndsAt - +now <= withinDays * DAY) {
+    const days = Math.ceil((+trialEndsAt - +now) / DAY);
+    return { reason: 'trial_ending', detail: `Trial ends in ${plural(days)}` };
+  }
+  return null;
+}

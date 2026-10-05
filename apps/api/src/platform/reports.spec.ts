@@ -1,5 +1,11 @@
 import { SubscriptionStatus as S } from '@prisma/client';
-import { byMonth, fallingStudents, monthKeys, trialConversion } from './reports.js';
+import {
+  byMonth,
+  fallingStudents,
+  monthKeys,
+  trialConversion,
+  trialRisk,
+} from './reports.js';
 
 const now = new Date('2026-10-04T10:00:00Z');
 
@@ -62,5 +68,23 @@ describe('fallingStudents', () => {
       { schoolId: 'c', period: '2026-09', students: 10 },
     ]);
     expect([...r]).toEqual([['a', [320, 300]]]);
+  });
+});
+
+describe('trialRisk', () => {
+  it('flags expired trials and trials ending within a week', () => {
+    expect(trialRisk(new Date('2026-09-25T00:00:00Z'), now)).toEqual({
+      reason: 'trial_ended',
+      detail: 'Trial ended 9 days ago, read-only',
+    });
+    expect(trialRisk(new Date('2026-10-03T12:00:00Z'), now)?.detail).toBe(
+      'Trial ended today, read-only',
+    );
+    expect(trialRisk(new Date('2026-10-06T10:00:00Z'), now)).toEqual({
+      reason: 'trial_ending',
+      detail: 'Trial ends in 2 days',
+    });
+    expect(trialRisk(new Date('2026-10-20'), now)).toBeNull();
+    expect(trialRisk(null, now)).toBeNull();
   });
 });

@@ -208,7 +208,7 @@ export default function ReportsPage() {
           <div className="grid gap-6 lg:grid-cols-3">
             <Card padding="none" className="lg:col-span-2">
               <div className="px-5 pt-5">
-                <CardHeader title="Churn risk" description="Overdue bills, trials ending within 7 days, no sign-ins for 14 days and falling student counts" />
+                <CardHeader title="Churn risk" description="Overdue bills, ended trials, trials ending within 7 days, no sign-ins for 14 days and falling student counts" />
               </div>
               <DataTable
                 bare

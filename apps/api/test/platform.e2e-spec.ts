@@ -280,6 +280,7 @@ describe('Platform and plans (e2e)', () => {
     await request(server)
       .post(`/api/platform/invoices/${mine.id}/void`)
       .set(admin)
+      .send({ reason: 'Billed twice by mistake' })
       .expect(409);
     const sub = await request(server)
       .get('/api/subscription')
