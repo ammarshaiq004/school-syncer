@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   buildContacts,
   canPost,
+  canStartThreadAbout,
   preview,
   threadRole,
   type ThreadRole,
@@ -222,6 +224,154 @@ export class ChatService {
       unread: role === 'OBSERVER' ? 0 : unread,
       createdAt: t.createdAt,
     };
+  }
+
+  /** The student's current section (for the staff-side access rule), or null. */
+  private async studentSection(user: AuthUser, studentId: string) {
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, schoolId: user.schoolId },
+      select: {
+        campusId: true,
+        enrollments: {
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            section: {
+              select: {
+                classTeacherId: true,
+                subjects: { select: { teacherId: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+    return { student, section: student.enrollments[0]?.section ?? null };
+  }
+
+  /**
+   * Staff side of starting a conversation: the students this user may message
+   * about, with the guardians who have a login and any thread already open.
+   * Administrators get their campus scope, teachers the sections they
+   * class-teach or teach a subject in.
+   */
+  async staffContacts(user: AuthUser) {
+    const admin = hasAnyRole(user, SETUP_ROLES);
+    const scope = campusScope(user);
+    const students = await this.prisma.student.findMany({
+      where: {
+        schoolId: user.schoolId,
+        ...(scope ? { campusId: { in: scope } } : {}),
+        enrollments: {
+          some: {
+            status: 'ACTIVE',
+            section: {
+              academicYear: { isCurrent: true },
+              ...(admin
+                ? {}
+                : {
+                    OR: [
+                      { classTeacherId: user.sub },
+                      { subjects: { some: { teacherId: user.sub } } },
+                    ],
+                  }),
+            },
+          },
+        },
+      },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      take: 500,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        admissionNo: true,
+        photoUrl: true,
+        enrollments: {
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            section: {
+              select: { name: true, class: { select: { name: true } } },
+            },
+          },
+        },
+        guardians: {
+          orderBy: [{ isPrimary: 'desc' }, { relation: 'asc' }],
+          select: {
+            relation: true,
+            isPrimary: true,
+            guardian: {
+              select: {
+                name: true,
+                user: { select: { id: true, isActive: true } },
+              },
+            },
+          },
+        },
+        chatThreads: {
+          where: { staffUserId: user.sub },
+          select: { id: true, guardianUserId: true },
+        },
+      },
+    });
+    return students.map((student) => {
+      const section = student.enrollments[0]?.section;
+      const threadFor = new Map(
+        student.chatThreads.map((t) => [t.guardianUserId, t.id]),
+      );
+      return {
+        student: {
+          id: student.id,
+          name: name(student),
+          admissionNo: student.admissionNo,
+          photoUrl: student.photoUrl,
+          className: section ? `${section.class.name} ${section.name}` : null,
+        },
+        // Only guardians with an active login can be messaged.
+        guardians: student.guardians
+          .filter((g) => g.guardian.user?.isActive)
+          .map((g) => ({
+            userId: g.guardian.user?.id as string,
+            name: g.guardian.name,
+            relation: g.relation,
+            isPrimary: g.isPrimary,
+            threadId: threadFor.get(g.guardian.user?.id as string) ?? null,
+          })),
+      };
+    });
+  }
+
+  /** Checks that this staff member may start a conversation about the student with this guardian. */
+  async assertCanStartThread(
+    user: AuthUser,
+    studentId: string,
+    guardianUserId: string,
+  ) {
+    const { student, section } = await this.studentSection(user, studentId);
+    const scope = campusScope(user);
+    if (scope && !scope.includes(student.campusId))
+      throw new NotFoundException('Student not found');
+    const isAdmin = hasAnyRole(user, SETUP_ROLES);
+    if (!canStartThreadAbout(section, user.sub, { isAdmin })) {
+      throw new ForbiddenException(
+        'You can only message the parents of students you teach',
+      );
+    }
+    const guardian = await this.prisma.studentGuardian.findFirst({
+      where: {
+        studentId,
+        guardian: { userId: guardianUserId, user: { isActive: true } },
+      },
+      select: { guardianId: true },
+    });
+    if (!guardian)
+      throw new BadRequestException(
+        'That guardian is not linked to this student',
+      );
   }
 
   /** A parent's children (current guardian link) with their teachers as contacts. */

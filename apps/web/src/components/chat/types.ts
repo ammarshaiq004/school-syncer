@@ -38,6 +38,12 @@ export interface ChatContactGroup {
   contacts: { userId: string; name: string; isClassTeacher: boolean; subjects: string[]; threadId: string | null }[];
 }
 
+/** Staff side of the composer (GET /chat/contacts): a student and the guardians who can be messaged. */
+export interface ChatStaffContactGroup {
+  student: { id: string; name: string; admissionNo: string; photoUrl: string | null; className: string | null };
+  guardians: { userId: string; name: string; relation: string; isPrimary: boolean; threadId: string | null }[];
+}
+
 export interface ChatUnread {
   total: number;
   threads: Record<string, number>;
