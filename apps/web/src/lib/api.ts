@@ -41,6 +41,7 @@ export type AccessLevel = "none" | "view" | "manage";
 /** Permission module keys (same as apps/api/src/common/permissions.ts). */
 export type PermissionModule =
   | "dashboard"
+  | "assistant"
   | "students"
   | "admissions"
   | "attendance"
@@ -81,7 +82,8 @@ export type Feature =
   | "transport"
   | "library"
   | "certificates"
-  | "elearning";
+  | "elearning"
+  | "ai_assistant";
 
 /** The school's SchoolSyncer plan, as /auth/me reports it. */
 export interface SchoolPlan {
