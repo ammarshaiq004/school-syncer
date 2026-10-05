@@ -58,6 +58,7 @@ model School {
   applications      Application[]
   feeHeads          FeeHead[]
   invoices          Invoice[]
+  onlinePayments    OnlinePayment[]
   notifications     NotificationLog[]
   announcements     Announcement[]
   gradeBands        GradeBand[]
@@ -652,6 +653,7 @@ model Invoice {
   lines        InvoiceLine[]
   payments     Payment[]
   libraryFines BookLoan[]
+  checkouts    OnlinePayment[]
 
   @@unique([studentId, period])
   @@index([schoolId, period, status])
@@ -690,6 +692,7 @@ model Payment {
 
   invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   receivedBy User?   @relation(fields: [receivedById], references: [id], onDelete: SetNull)
+  checkout   OnlinePayment?
 
   // A gateway transaction is only ever counted once.
   @@unique([method, reference])
@@ -1812,4 +1815,46 @@ model ChatMessage {
   @@index([threadId, createdAt])
   @@index([threadId, readAt])
   @@index([senderId])
+}
+
+// ---------------------------------------------------------------------------
+// Online fee payments: a parent paying a voucher through JazzCash, Easypaisa
+// or 1Bill. The checkout is only trusted once the gateway's signed callback
+// (or a status inquiry) confirms it; then a Payment is recorded as usual.
+// ---------------------------------------------------------------------------
+
+enum CheckoutStatus {
+  PENDING // sent to the gateway, waiting for the parent or the bank
+  PAID // confirmed and recorded as a Payment
+  FAILED // declined, cancelled or timed out at the gateway
+  REVIEW // money confirmed but it could not be applied (e.g. the voucher was settled meanwhile)
+}
+
+model OnlinePayment {
+  id             String         @id @default(cuid())
+  schoolId       String
+  invoiceId      String
+  provider       PaymentMethod // JAZZCASH, EASYPAISA or ONEBILL
+  amount         Int // whole rupees, fixed when the checkout starts
+  status         CheckoutStatus @default(PENDING)
+  /// Our reference sent to the gateway (JazzCash pp_TxnRefNo, Easypaisa orderRefNum).
+  txnRef         String         @unique
+  /// The number a parent enters in a banking app for 1Bill.
+  consumerNumber String?        @unique
+  /// The gateway's own transaction id once it reports one.
+  providerRef    String?
+  responseCode   String?
+  message        String?
+  createdById    String?
+  paymentId      String?        @unique
+  expiresAt      DateTime
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, createdAt])
+  @@index([invoiceId])
 }

@@ -23,6 +23,12 @@ import { ReportsController } from './reports/reports.controller.js';
 import { FeesController } from './fees/fees.controller.js';
 import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
 import { PaymentsService } from './fees/payments.service.js';
+import {
+  OnlinePaymentsAdminController,
+  ParentPaymentsController,
+  PaymentGatewayController,
+} from './fees/online-payments.controller.js';
+import { OnlinePaymentsService } from './fees/online-payments.service.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { ElearningModule } from './elearning/elearning.module.js';
 import { GradebookModule } from './gradebook/gradebook.module.js';
@@ -101,6 +107,9 @@ import { UsersController } from './users/users.controller.js';
     AccountsController,
     ReportsController,
     PaymentWebhookController,
+    PaymentGatewayController,
+    OnlinePaymentsAdminController,
+    ParentPaymentsController,
     AnnouncementsController,
     DashboardController,
     ParentController,
@@ -112,6 +121,7 @@ import { UsersController } from './users/users.controller.js';
   ],
   providers: [
     PaymentsService,
+    OnlinePaymentsService,
     // Order matters: authenticate first, then check roles, then the school's plan.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

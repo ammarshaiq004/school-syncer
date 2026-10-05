@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { Banknote, CircleCheck, Download, Printer, ReceiptText, TriangleAlert, Wallet } from "lucide-react";
 import { InvoiceBreakdownCard, PrintableVoucher, paymentMethodLabel, periodLabel } from "@/components/invoices/invoice-breakdown";
+import { CheckoutResult } from "@/components/invoices/checkout-result";
 import { PayDuesDialog } from "@/components/invoices/pay-dues-dialog";
 import { PARENT_INVOICE_LABEL, PARENT_INVOICE_TONE, type ParentInvoiceDetail } from "@/components/invoices/parent-types";
 import {
@@ -93,6 +95,8 @@ export default function ParentInvoicePage() {
         }
       />
 
+      <CheckoutResult onSettled={res.reload} />
+
       {v.displayStatus === "OVERDUE" && (
         <Alert tone="danger" title="This voucher is overdue" className="print:hidden" icon={<TriangleAlert />}>
           {rupees(b.balance)} was due on {day(v.dueDate)}.
@@ -136,7 +140,7 @@ export default function ParentInvoicePage() {
             <EmptyState
               icon={<Banknote />}
               title="No payments yet"
-              description={owes ? "Payments show here once the school office records them." : undefined}
+              description={owes ? "Pay online with Pay dues, or payments show here once the school office records them." : undefined}
               action={
                 owes ? (
                   <Button type="button" size="sm" icon={<Wallet />} onClick={() => setPayOpen(true)}>
@@ -157,6 +161,11 @@ export default function ParentInvoicePage() {
                       {p.reference ? `, ref ${p.reference}` : ""}
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-fg-muted">Receipt {p.receiptNo}</div>
+                    {p.checkoutId && (
+                      <Link href={`/parent/payments/${p.checkoutId}`} className="text-xs font-medium text-brand hover:underline">
+                        View receipt
+                      </Link>
+                    )}
                   </div>
                   <div className="shrink-0 text-sm font-semibold tabular-nums text-success-text">{rupees(p.amount)}</div>
                 </li>
@@ -194,6 +203,7 @@ export default function ParentInvoicePage() {
         open={payOpen}
         onOpenChange={setPayOpen}
         invoice={{
+          invoiceId: v.id,
           voucherNo: v.voucherNo,
           dueDate: v.dueDate,
           totalDue: b.totalDue,

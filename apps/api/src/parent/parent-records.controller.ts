@@ -183,6 +183,7 @@ export class ParentRecordsController {
             reference: true,
             receiptNo: true,
             receivedAt: true,
+            checkout: { select: { id: true } },
           },
         },
         student: {
@@ -219,7 +220,7 @@ export class ParentRecordsController {
       },
       lines: i.lines,
       breakdown: invoiceBreakdown(i.lines, i, fine),
-      payments: i.payments,
+      payments: i.payments.map(({ checkout, ...p }) => ({ ...p, checkoutId: checkout?.id ?? null })),
     };
   }
 
