@@ -1,5 +1,7 @@
 /** Shapes returned by /elearning/courses (staff course builder). */
 
+import type { FileLink } from "./file-upload";
+
 export type LessonKind = "VIDEO" | "TEXT" | "LINK" | "DOCUMENT";
 
 export interface CourseSection {
@@ -37,6 +39,8 @@ export interface Lesson {
   kind: LessonKind;
   body: string | null;
   url: string | null;
+  /** Uploaded video or document; shown instead of the link when set. */
+  file: FileLink | null;
   durationMin: number | null;
   sortOrder: number;
   isPublished: boolean;

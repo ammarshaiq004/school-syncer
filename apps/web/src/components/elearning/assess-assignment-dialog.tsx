@@ -7,6 +7,7 @@ import { useSectionOptions } from "@/lib/sections";
 import { hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 import type { CourseSummary } from "./courses-types";
+import { ACCEPT, FileUploadField, type FileInfo } from "./file-upload";
 import { fromLocalInput, toLocalInput, type Assignment } from "./assess-types";
 
 interface SectionSubject {
@@ -142,6 +143,7 @@ function AssignmentForm({
   });
   const [allowLate, setAllowLate] = useState(assignment?.allowLate ?? true);
   const [publish, setPublish] = useState(assignment?.isPublished ?? false);
+  const [attachment, setAttachment] = useState<FileInfo | null>(assignment?.attachment ?? null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -157,6 +159,7 @@ function AssignmentForm({
       title: text("title"),
       instructions: text("instructions") || null,
       attachmentUrl: attachmentUrl || null,
+      attachmentId: attachment?.id ?? null,
       dueAt,
       maxPoints: Number(text("maxPoints")) || 100,
       allowLate,
@@ -195,10 +198,18 @@ function AssignmentForm({
         <TextField name="dueAt" type="datetime-local" label="Due" required defaultValue={assignment ? toLocalInput(assignment.dueAt) : defaultDue()} hint="Pakistan time" />
         <TextField name="maxPoints" type="number" inputMode="numeric" label="Points" min={1} max={1000} step={1} required defaultValue={assignment?.maxPoints ?? 100} />
       </div>
+      <FileUploadField
+        label="Attachment (optional)"
+        endpoint="/elearning/files?purpose=ASSIGNMENT"
+        accept={ACCEPT.assignment}
+        value={attachment}
+        onChange={setAttachment}
+        hint="A worksheet, reading or audio clip: PDF, Word, PowerPoint, Excel, images, audio or zip, up to 25 MB."
+      />
       <TextField
         name="attachmentUrl"
         type="url"
-        label="Attachment link (optional)"
+        label="Or a link (optional)"
         placeholder="https://drive.google.com/..."
         pattern="https://.*"
         defaultValue={assignment?.attachmentUrl ?? ""}

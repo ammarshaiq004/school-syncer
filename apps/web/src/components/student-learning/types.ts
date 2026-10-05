@@ -1,5 +1,6 @@
 /** Response shapes of the student e-school API (courses, live classes, assignments, quizzes) and parent learning. */
 
+import type { FileInfo, FileLink } from "@/components/elearning/file-upload";
 import type { AssignmentState, LiveProvider, LiveState } from "@/components/student/types";
 
 export type LessonKind = "VIDEO" | "TEXT" | "LINK" | "DOCUMENT";
@@ -40,6 +41,8 @@ export interface StudentLesson {
   kind: LessonKind;
   body: string | null;
   url: string | null;
+  /** Uploaded video or document; played or opened instead of the link. */
+  file: FileLink | null;
   durationMin: number | null;
   publishedAt: string | null;
   embedUrl: string | null;
@@ -93,6 +96,8 @@ export interface StudentSubmission {
   id: string;
   body: string | null;
   linkUrl: string | null;
+  /** Uploaded work: a link to open it on the detail page, name and size only in lists. */
+  file: FileLink | FileInfo | null;
   submittedAt: string;
   isLate: boolean;
   status: "SUBMITTED" | "GRADED" | "RETURNED";
@@ -109,6 +114,7 @@ export interface StudentAssignmentItem {
   maxPoints: number;
   allowLate: boolean;
   attachmentUrl: string | null;
+  attachment: FileLink | FileInfo | null;
   subject: Ref;
   course: { id: string; title: string } | null;
   state: AssignmentState;

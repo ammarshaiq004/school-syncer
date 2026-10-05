@@ -87,6 +87,8 @@ model School {
   lessonPlans LessonPlan[]
   chatThreads ChatThread[]
 
+  files StoredFile[]
+
   assistantUsage AssistantUsage[]
 }
 
@@ -271,6 +273,7 @@ model User {
   liveClassesTaught  LiveClass[]
   assignmentsCreated Assignment[] @relation("AssignmentCreatedBy")
   submissionsGraded  Submission[] @relation("SubmissionGradedBy")
+  filesUploaded      StoredFile[]
   quizzesCreated     Quiz[]
 
   lessonPlans         LessonPlan[]  @relation("LessonPlanTeacher")
@@ -1115,6 +1118,7 @@ model Plan {
   minimumMonthly  Int // PKR
   maxStudents     Int? // null = unlimited
   maxCampuses     Int?
+  maxStorageMb    Int? // e-school uploads; null = unlimited
   // Feature keys from src/platform/plans.ts, e.g. ["fees", "exams"]
   features        String[]
   isPublic        Boolean  @default(true)
@@ -1502,6 +1506,7 @@ model Lesson {
   kind        LessonKind @default(TEXT)
   body        String? // plain text / simple markdown, rendered without raw HTML
   url         String? // https: YouTube, Vimeo, Drive or any link
+  fileId      String?    @unique // an uploaded video or document instead of a link
   durationMin Int?
   sortOrder   Int        @default(0)
   isPublished Boolean    @default(false)
@@ -1510,6 +1515,7 @@ model Lesson {
   updatedAt   DateTime   @updatedAt
 
   unit     CourseUnit       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  file     StoredFile?      @relation(fields: [fileId], references: [id], onDelete: SetNull)
   progress LessonProgress[]
 
   @@index([unitId, sortOrder])
@@ -1603,6 +1609,7 @@ model Assignment {
   title         String
   instructions  String?
   attachmentUrl String?
+  attachmentId  String?  @unique // uploaded worksheet or brief
   dueAt         DateTime
   maxPoints     Int      @default(100)
   allowLate     Boolean  @default(true)
@@ -1610,11 +1617,12 @@ model Assignment {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  course    Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
-  createdBy User?   @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  school     School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  section    Section     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject    Subject     @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  course     Course?     @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdBy  User?       @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  attachment StoredFile? @relation("AssignmentAttachment", fields: [attachmentId], references: [id], onDelete: SetNull)
 
   submissions Submission[]
 
@@ -1635,6 +1643,7 @@ model Submission {
   studentId    String
   body         String?
   linkUrl      String?
+  fileId       String?          @unique // the student's uploaded work
   submittedAt  DateTime         @default(now())
   isLate       Boolean          @default(false)
   status       SubmissionStatus @default(SUBMITTED)
@@ -1643,9 +1652,10 @@ model Submission {
   gradedById   String?
   gradedAt     DateTime?
 
-  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  gradedBy   User?      @relation("SubmissionGradedBy", fields: [gradedById], references: [id], onDelete: SetNull)
+  assignment Assignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student    Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  gradedBy   User?       @relation("SubmissionGradedBy", fields: [gradedById], references: [id], onDelete: SetNull)
+  file       StoredFile? @relation("SubmissionFile", fields: [fileId], references: [id], onDelete: SetNull)
 
   @@unique([assignmentId, studentId])
   @@index([studentId])
@@ -1814,6 +1824,37 @@ model ChatMessage {
   @@index([threadId, createdAt])
   @@index([threadId, readAt])
   @@index([senderId])
+}
+
+enum FilePurpose {
+  LESSON
+  ASSIGNMENT
+  SUBMISSION
+}
+
+/// A file uploaded to the school's storage (S3-compatible bucket or local
+/// disk, see src/elearning/files). Counted against the plan's maxStorageMb.
+/// Attached to at most one lesson, assignment or submission; files nothing
+/// points at are removed when replaced, and unattached uploads after a day.
+model StoredFile {
+  id           String      @id @default(cuid())
+  schoolId     String
+  purpose      FilePurpose
+  key          String      @unique // object key in the storage driver
+  filename     String // original name, cleaned, for downloads
+  mimeType     String // from the checked extension, never the client's claim
+  size         Int // bytes
+  uploadedById String?
+  createdAt    DateTime    @default(now())
+
+  school     School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  uploadedBy User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  lesson     Lesson?
+  assignment Assignment? @relation("AssignmentAttachment")
+  submission Submission? @relation("SubmissionFile")
+
+  @@index([schoolId])
+  @@index([uploadedById])
 }
 
 // ---------------------------------------------------------------------------

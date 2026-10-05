@@ -55,6 +55,7 @@ const planSchema = z.object({
   minimumMonthly: z.number().int().min(0).max(10_000_000).optional(),
   maxStudents: z.number().int().min(1).nullable().optional(),
   maxCampuses: z.number().int().min(1).nullable().optional(),
+  maxStorageMb: z.number().int().min(1).max(10_000_000).nullable().optional(),
   features: z.array(z.string().refine(isFeature, 'Unknown feature')).optional(),
   isPublic: z.boolean().optional(),
 });

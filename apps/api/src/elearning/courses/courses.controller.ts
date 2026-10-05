@@ -13,7 +13,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { LessonKind, Prisma } from '@prisma/client';
+import { FilePurpose, LessonKind, Prisma, type StoredFile } from '@prisma/client';
 import { z } from 'zod';
 import { ATTENDANCE_ROLES, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../../common/admin-roles.js';
 import { AuditService } from '../../common/audit.service.js';
@@ -21,6 +21,8 @@ import type { AuthUser } from '../../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../../common/decorators.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import type { FileKind } from '../files/file-rules.js';
+import { FilesService } from '../files/files.service.js';
 import { teacherGrantInScope } from '../teacher-grant.js';
 import { isHttpsUrl, lessonContentProblem, progressPercent, reorderProblem } from './course-rules.js';
 import { courseSummary, CoursesService } from './courses.service.js';
@@ -51,6 +53,7 @@ const lessonFields = {
   kind: z.enum(LessonKind),
   body: z.string().max(20000).nullable().optional(),
   url: httpsUrl.nullable().optional(),
+  fileId: z.string().min(1).nullable().optional(),
   durationMin: z.number().int().min(1).max(600).nullable().optional(),
   isPublished: z.boolean().optional(),
 };
@@ -64,6 +67,12 @@ type CreateCourse = z.infer<typeof createCourseSchema>;
 type UpdateCourse = z.infer<typeof updateCourseSchema>;
 type CreateLesson = z.infer<typeof createLessonSchema>;
 type UpdateLesson = z.infer<typeof updateLessonSchema>;
+
+/** What an uploaded lesson file may be, by lesson kind. */
+const LESSON_FILE_KINDS: Partial<Record<LessonKind, FileKind[]>> = {
+  VIDEO: ['video'],
+  DOCUMENT: ['document', 'image', 'audio'],
+};
 
 /**
  * Course builder for teachers and admins: courses per section subject, their
@@ -79,6 +88,7 @@ export class ElearningCoursesController {
     private readonly prisma: PrismaService,
     private readonly courses: CoursesService,
     private readonly audit: AuditService,
+    private readonly files: FilesService,
   ) {}
 
   @Get('courses')
@@ -202,15 +212,22 @@ export class ElearningCoursesController {
       this.prisma.courseUnit.findMany({
         where: { courseId: course.id },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
-        include: { lessons: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] } },
+        include: { lessons: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], include: { file: true } } },
       }),
       this.prisma.enrollment.count({ where: { sectionId: course.sectionId, status: 'ACTIVE' } }),
     ]);
+    const links = await this.files.links(units.flatMap((u) => u.lessons.map((l) => l.file)));
     return {
       ...course,
       studentCount: students,
       canManage: hasAnyRole(user, ATTENDANCE_ROLES),
-      units: units.map((u) => ({ ...u, lessons: u.lessons.map((l) => CoursesService.withEmbed(l)) })),
+      units: units.map((u) => ({
+        ...u,
+        lessons: u.lessons.map(({ file, ...l }) => ({
+          ...CoursesService.withEmbed(l),
+          file: file ? (links.get(file.id) ?? null) : null,
+        })),
+      })),
     };
   }
 
@@ -241,7 +258,9 @@ export class ElearningCoursesController {
   @Roles(...ATTENDANCE_ROLES)
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const course = await this.courses.courseInScope(user, id);
+    const fileIds = await this.files.lessonFileIds({ courseId: course.id });
     await this.prisma.course.delete({ where: { id: course.id } });
+    await this.files.release(fileIds);
     await this.audit.record(user, 'course.delete', 'Course', course.id, { before: course });
     return { deleted: true };
   }
@@ -302,7 +321,9 @@ export class ElearningCoursesController {
   @Roles(...ATTENDANCE_ROLES)
   async removeUnit(@CurrentUser() user: AuthUser, @Param('unitId') unitId: string) {
     const unit = await this.courses.unitInScope(user, unitId);
+    const fileIds = await this.files.lessonFileIds({ unitId: unit.id });
     await this.prisma.courseUnit.delete({ where: { id: unit.id } });
+    await this.files.release(fileIds);
     await this.audit.record(user, 'course.unit.delete', 'CourseUnit', unit.id, { before: unit });
     return { deleted: true };
   }
@@ -319,6 +340,7 @@ export class ElearningCoursesController {
     const unit = await this.courses.unitInScope(user, unitId);
     const problem = lessonContentProblem(body);
     if (problem) throw new BadRequestException(problem);
+    if (body.fileId) await this.files.claim(user, body.fileId, FilePurpose.LESSON, LESSON_FILE_KINDS[body.kind]);
     const last = await this.prisma.lesson.aggregate({ where: { unitId: unit.id }, _max: { sortOrder: true } });
     const lesson = await this.prisma.lesson.create({
       data: {
@@ -327,6 +349,7 @@ export class ElearningCoursesController {
         kind: body.kind,
         body: body.body?.trim() || null,
         url: body.url || null,
+        fileId: body.fileId || null,
         durationMin: body.durationMin ?? null,
         sortOrder: (last._max.sortOrder ?? -1) + 1,
         isPublished: body.isPublished ?? false,
@@ -334,7 +357,7 @@ export class ElearningCoursesController {
       },
     });
     await this.audit.record(user, 'course.lesson.create', 'Lesson', lesson.id, { after: lessonSnapshot(lesson) });
-    return CoursesService.withEmbed(lesson);
+    return this.present(lesson);
   }
 
   @Put('units/:unitId/lessons/order')
@@ -367,14 +390,21 @@ export class ElearningCoursesController {
       kind: body.kind ?? lesson.kind,
       body: body.body === undefined ? lesson.body : body.body,
       url: body.url === undefined ? lesson.url : body.url,
+      fileId: body.fileId === undefined ? lesson.fileId : body.fileId,
     };
     const problem = lessonContentProblem(merged);
     if (problem) throw new BadRequestException(problem);
+    const fileChanged = body.fileId !== undefined && body.fileId !== lesson.fileId;
+    if (merged.fileId && (fileChanged || merged.kind !== lesson.kind)) {
+      if (fileChanged) await this.files.claim(user, merged.fileId, FilePurpose.LESSON, LESSON_FILE_KINDS[merged.kind]);
+      else await this.assertFileFits(merged.fileId, merged.kind);
+    }
     const data: Prisma.LessonUncheckedUpdateInput = {
       title: body.title,
       kind: body.kind,
       body: body.body === undefined ? undefined : body.body?.trim() || null,
       url: body.url === undefined ? undefined : body.url || null,
+      fileId: fileChanged ? body.fileId || null : undefined,
       durationMin: body.durationMin,
       ...this.publishChange(lesson, body.isPublished),
     };
@@ -392,7 +422,8 @@ export class ElearningCoursesController {
       before: lessonSnapshot(lesson),
       after: lessonSnapshot(updated),
     });
-    return CoursesService.withEmbed(updated);
+    if (fileChanged) await this.files.release([lesson.fileId]);
+    return this.present(updated);
   }
 
   @Put('lessons/:id/publish')
@@ -416,7 +447,7 @@ export class ElearningCoursesController {
         { before: { isPublished: lesson.isPublished }, after: { isPublished: updated.isPublished } },
       );
     }
-    return CoursesService.withEmbed(updated);
+    return this.present(updated);
   }
 
   @Delete('lessons/:id')
@@ -424,6 +455,7 @@ export class ElearningCoursesController {
   async removeLesson(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const lesson = await this.courses.lessonInScope(user, id);
     await this.prisma.lesson.delete({ where: { id: lesson.id } });
+    await this.files.release([lesson.fileId]);
     await this.audit.record(user, 'course.lesson.delete', 'Lesson', lesson.id, { before: lesson });
     return { deleted: true };
   }
@@ -480,6 +512,24 @@ export class ElearningCoursesController {
     };
   }
 
+  /** A lesson as staff see it: player URL for video links and a fresh link to its uploaded file. */
+  private async present<T extends { url: string | null; fileId: string | null }>(lesson: T) {
+    const file: StoredFile | null = lesson.fileId
+      ? await this.prisma.storedFile.findUnique({ where: { id: lesson.fileId } })
+      : null;
+    return { ...CoursesService.withEmbed(lesson), file: file ? await this.files.link(file) : null };
+  }
+
+  /** Changing a lesson's kind keeps its file only when the file suits the new kind. */
+  private async assertFileFits(fileId: string, kind: LessonKind) {
+    const file = await this.prisma.storedFile.findUniqueOrThrow({ where: { id: fileId } });
+    const fits = LESSON_FILE_KINDS[kind];
+    const fileKind = FilesService.view(file).kind;
+    if (!fits || !fileKind || !fits.includes(fileKind)) {
+      throw new BadRequestException('The uploaded file does not suit this lesson type. Remove it or upload another.');
+    }
+  }
+
   private publishChange(
     lesson: { isPublished: boolean; publishedAt: Date | null },
     isPublished: boolean | undefined,
@@ -510,9 +560,10 @@ function lessonSnapshot(l: {
   title: string;
   kind: string;
   url: string | null;
+  fileId: string | null;
   durationMin: number | null;
   isPublished: boolean;
 }) {
-  const { unitId, title, kind, url, durationMin, isPublished } = l;
-  return { unitId, title, kind, url, durationMin, isPublished };
+  const { unitId, title, kind, url, fileId, durationMin, isPublished } = l;
+  return { unitId, title, kind, url, fileId, durationMin, isPublished };
 }
