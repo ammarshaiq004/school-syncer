@@ -1,6 +1,8 @@
 import {
   buildContacts,
   canPost,
+  canStartThreadAbout,
+  createThreadSchema,
   messagesQuerySchema,
   preview,
   sendMessageSchema,
@@ -51,6 +53,59 @@ describe('canPost', () => {
       false,
     );
     expect(canPost({ guardianUserId: 'p', staffUserId: null }, 'PARENT')).toBe(
+      false,
+    );
+  });
+});
+
+describe('canStartThreadAbout', () => {
+  const section = {
+    classTeacherId: 'class-teacher',
+    subjects: [{ teacherId: 'maths-teacher' }, { teacherId: null }],
+  };
+  const teacher = { isAdmin: false };
+
+  it('lets the class teacher and the subject teachers start', () => {
+    expect(canStartThreadAbout(section, 'class-teacher', teacher)).toBe(true);
+    expect(canStartThreadAbout(section, 'maths-teacher', teacher)).toBe(true);
+  });
+
+  it('refuses a teacher who does not teach the student', () => {
+    expect(canStartThreadAbout(section, 'other-teacher', teacher)).toBe(false);
+  });
+
+  it('lets administrators start for any student, enrolled or not', () => {
+    const admin = { isAdmin: true };
+    expect(canStartThreadAbout(section, 'principal', admin)).toBe(true);
+    expect(canStartThreadAbout(null, 'principal', admin)).toBe(true);
+  });
+
+  it('refuses a teacher when the student has no current section', () => {
+    expect(canStartThreadAbout(null, 'class-teacher', teacher)).toBe(false);
+  });
+});
+
+describe('createThreadSchema', () => {
+  it('takes the teacher from a parent and the guardian from a staff member', () => {
+    expect(
+      createThreadSchema.safeParse({ studentId: 's', staffUserId: 't' })
+        .success,
+    ).toBe(true);
+    expect(
+      createThreadSchema.safeParse({ studentId: 's', guardianUserId: 'g' })
+        .success,
+    ).toBe(true);
+  });
+
+  it('refuses naming both sides, or neither', () => {
+    expect(
+      createThreadSchema.safeParse({
+        studentId: 's',
+        staffUserId: 't',
+        guardianUserId: 'g',
+      }).success,
+    ).toBe(false);
+    expect(createThreadSchema.safeParse({ studentId: 's' }).success).toBe(
       false,
     );
   });

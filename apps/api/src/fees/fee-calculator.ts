@@ -56,3 +56,30 @@ export function lateFine(dueDate: Date, asOf: Date, perDay: number): number {
   const days = Math.floor((asOf.getTime() - dueDate.getTime()) / 86_400_000);
   return days > 0 ? days * perDay : 0;
 }
+
+/** Rupees as the counter reads them, for payment messages: "Rs 12,500". */
+const rupees = (n: number) => `Rs ${n.toLocaleString('en-PK')}`;
+
+/**
+ * Why a payment cannot be taken against an invoice, or null when it can. A
+ * settled voucher takes nothing more, and nothing above the balance (plus any
+ * late fine collected with it) is accepted, so a mistyped amount cannot leave
+ * the invoice over-paid.
+ */
+export function paymentRejection(
+  amount: number,
+  invoice: { total: number; paid: number },
+  fine = 0,
+): string | null {
+  const balance = Math.max(0, invoice.total - invoice.paid);
+  if (balance === 0) {
+    return 'This voucher is already paid in full, so no further payment can be recorded.';
+  }
+  const allowed = balance + Math.max(0, fine);
+  if (amount > allowed) {
+    return fine > 0
+      ? `${rupees(amount)} is more than this voucher's balance of ${rupees(balance)} plus the ${rupees(fine)} late fine. Collect at most ${rupees(allowed)}.`
+      : `${rupees(amount)} is more than this voucher's balance of ${rupees(balance)}. Collect at most ${rupees(balance)}.`;
+  }
+  return null;
+}

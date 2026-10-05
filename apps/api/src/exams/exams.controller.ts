@@ -24,6 +24,8 @@ import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
+import { PermissionService } from '../common/permission.service.js';
+import { satisfies } from '../common/permissions.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -104,6 +106,14 @@ type ExamInput = z.infer<typeof examSchema>;
 const fullName = (s: { firstName: string; lastName: string | null }) =>
   [s.firstName, s.lastName].filter(Boolean).join(' ');
 
+/**
+ * Exams, marks entry and results. The permission matrix decides who may run an
+ * exam: exams=manage creates exams and papers, edits the grading scale and
+ * publishes, so a custom role such as "Exam coordinator" can do it without
+ * being an administrator. Entering marks and writing remarks only needs
+ * exams=view, because the gate there is teaching the subject (or being the
+ * class teacher), checked per section below.
+ */
 @Controller('exams')
 @Permission('exams')
 @RequiresFeature('exams')
@@ -112,6 +122,7 @@ export class ExamsController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly permissions: PermissionService,
   ) {}
 
   // ---- Grading scale -------------------------------------------------------
@@ -124,7 +135,8 @@ export class ExamsController {
 
   /** Replaces the school's grading scale. Published results keep the grades they were given. */
   @Put('grade-bands')
-  @Roles(...SETUP_ROLES)
+  @Roles(...STAFF_ROLES)
+  @Permission('exams', 'manage')
   async setGradeBands(
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(bandsSchema)) body: z.infer<typeof bandsSchema>,
@@ -165,7 +177,8 @@ export class ExamsController {
   }
 
   @Post()
-  @Roles(...SETUP_ROLES)
+  @Roles(...STAFF_ROLES)
+  @Permission('exams', 'manage')
   async create(
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(examSchema)) body: ExamInput,
@@ -225,7 +238,8 @@ export class ExamsController {
 
   /** Adds papers or updates their marks and dates. Only while the exam is a draft. */
   @Put(':id/papers')
-  @Roles(...SETUP_ROLES)
+  @Roles(...STAFF_ROLES)
+  @Permission('exams', 'manage')
   async setPapers(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -280,7 +294,8 @@ export class ExamsController {
   }
 
   @Delete(':id/papers/:paperId')
-  @Roles(...SETUP_ROLES)
+  @Roles(...STAFF_ROLES)
+  @Permission('exams', 'manage')
   async deletePaper(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -309,18 +324,26 @@ export class ExamsController {
   /** The marks sheet for one section and subject: every enrolled student and their marks, if entered. */
   @Get(':id/marks')
   @Roles(...ATTENDANCE_ROLES)
+  @Permission('exams', 'view')
   async marksSheet(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Query('sectionId') sectionId: string,
     @Query('subjectId') subjectId: string,
   ) {
-    const { exam, section, paper } = await this.assertCanEnterMarks(
+    const { exam, section, paper, canEnter } = await this.sheetContext(
       user,
       id,
       sectionId,
       subjectId,
     );
+    // Teachers only open their own subjects; whoever runs the exam may read
+    // every sheet (the Marks tab shows those rows read-only).
+    if (!canEnter && !(await this.managesExams(user))) {
+      throw new ForbiddenException(
+        'You do not teach this subject in this section',
+      );
+    }
     const [enrollments, marks] = await Promise.all([
       this.activeEnrollments(section.id, exam.academicYearId),
       this.prisma.mark.findMany({ where: { paperId: paper.id } }),
@@ -338,6 +361,7 @@ export class ExamsController {
         passMarks: paper.passMarks,
       },
       locked: exam.status === ExamStatus.PUBLISHED,
+      canEnter,
       students: enrollments.map((e) => {
         const mark = marks.find((m) => m.studentId === e.studentId);
         return {
@@ -354,6 +378,7 @@ export class ExamsController {
 
   @Put(':id/marks')
   @Roles(...ATTENDANCE_ROLES)
+  @Permission('exams', 'view')
   async saveMarks(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -427,7 +452,8 @@ export class ExamsController {
    * optionally sends parents a WhatsApp summary. Refuses while marks are missing.
    */
   @Post(':id/publish')
-  @Roles(...SETUP_ROLES)
+  @Roles(...STAFF_ROLES)
+  @Permission('exams', 'manage')
   async publish(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -573,7 +599,8 @@ export class ExamsController {
 
   /** Takes results down so marks can be corrected. Remarks are kept for the next publish. */
   @Post(':id/unpublish')
-  @Roles(...SETUP_ROLES)
+  @Roles(...STAFF_ROLES)
+  @Permission('exams', 'manage')
   async unpublish(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const exam = await this.findExam(user, id);
     if (exam.status !== ExamStatus.PUBLISHED)
@@ -636,6 +663,7 @@ export class ExamsController {
   /** Class teachers write the teacher remark; administrators write either remark. */
   @Put(':id/results/:studentId/remarks')
   @Roles(...ATTENDANCE_ROLES)
+  @Permission('exams', 'view')
   async setRemarks(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -850,8 +878,17 @@ export class ExamsController {
     });
   }
 
-  /** Administrators enter any marks; teachers only for subjects they teach in that section. */
-  private async assertCanEnterMarks(
+  /** True when the user's role runs exams (create, papers, grading scale, publish). */
+  private async managesExams(user: AuthUser) {
+    return satisfies(await this.permissions.levelFor(user, 'exams'), 'manage');
+  }
+
+  /**
+   * One marks sheet: the exam, the section and the paper, with `canEnter` for
+   * whether this user may change its marks. Administrators may enter any
+   * marks; teachers only the subjects they teach in that section.
+   */
+  private async sheetContext(
     user: AuthUser,
     examId: string,
     sectionId: string,
@@ -876,16 +913,27 @@ export class ExamsController {
       throw new NotFoundException(
         'This subject has no paper for the class in this exam',
       );
-    if (!this.adminFor(user, section.class.campusId)) {
-      const teaches = section.subjects.some(
+    const canEnter =
+      this.adminFor(user, section.class.campusId) ||
+      section.subjects.some(
         (s) => s.subjectId === subjectId && s.teacherId === user.sub,
       );
-      if (!teaches)
-        throw new ForbiddenException(
-          'You do not teach this subject in this section',
-        );
-    }
-    return { exam, section, paper };
+    return { exam, section, paper, canEnter };
+  }
+
+  /** Like sheetContext, for the endpoints that change marks. */
+  private async assertCanEnterMarks(
+    user: AuthUser,
+    examId: string,
+    sectionId: string,
+    subjectId: string,
+  ) {
+    const ctx = await this.sheetContext(user, examId, sectionId, subjectId);
+    if (!ctx.canEnter)
+      throw new ForbiddenException(
+        'You do not teach this subject in this section',
+      );
+    return ctx;
   }
 
   private async missingMarks(

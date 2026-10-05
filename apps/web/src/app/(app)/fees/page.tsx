@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock } from "lucide-react";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
 import {
@@ -81,6 +81,13 @@ const monthLabel = (period: string) =>
 export default function FeesPage() {
   const toast = useToast();
   const [tab, setTab] = useState("invoices");
+  // A link may point straight at a tab, e.g. /fees#defaulters from the dashboard.
+  useEffect(() => {
+    const wanted = window.location.hash.slice(1);
+    // Reading the address bar on mount is exactly what this effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (TABS.some((t) => t.value === wanted)) setTab(wanted);
+  }, []);
   const [period, setPeriod] = useState(thisMonth());
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");

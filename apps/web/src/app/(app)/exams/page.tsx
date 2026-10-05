@@ -27,7 +27,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { day } from "@/lib/format";
-import { hasRole, SETUP, useSession } from "@/lib/session";
+import { can, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 interface Exam {
@@ -51,9 +51,11 @@ function dateRange(e: Exam) {
 
 export default function ExamsPage() {
   const user = useSession();
-  const isAdmin = hasRole(user, SETUP);
+  // Whoever has "manage" on exams runs them: administrators, and custom roles
+  // such as an exam coordinator.
+  const canManage = can(user, "exams", "manage");
   const exams = useApi<Exam[]>("/exams");
-  const years = useApi<AcademicYear[]>(isAdmin ? "/academic-years" : null);
+  const years = useApi<AcademicYear[]>(canManage ? "/academic-years" : null);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -109,7 +111,7 @@ export default function ExamsPage() {
     { id: "status", header: "Status", sortValue: (e) => e.status, cell: (e) => <StatusPill status={e.status} /> },
   ];
 
-  const newExamButton = isAdmin ? (
+  const newExamButton = canManage ? (
     <Button icon={<Plus />} onClick={() => setCreating(true)}>
       New exam
     </Button>
@@ -144,15 +146,15 @@ export default function ExamsPage() {
         empty={{
           icon: <FileText />,
           title: "No exams yet",
-          description: isAdmin ? "Create an exam, add its papers, then teachers can enter marks." : "Exams appear here once the school sets them up.",
+          description: canManage ? "Create an exam, add its papers, then teachers can enter marks." : "Exams appear here once the school sets them up.",
           action: newExamButton,
         }}
         getRowLabel={(e) => e.name}
       />
 
-      {isAdmin && <GradeScale />}
+      {canManage && <GradeScale />}
 
-      {isAdmin && (
+      {canManage && (
         <Drawer
           open={creating}
           onOpenChange={setCreating}

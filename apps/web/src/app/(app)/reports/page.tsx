@@ -9,6 +9,7 @@ import {
   ChartColumn,
   CircleAlert,
   Download,
+  Printer,
   ReceiptText,
   Scale,
   Users,
@@ -72,6 +73,7 @@ function topSlices(rows: Total[], n = 5) {
 
 export default function ReportsPage() {
   const user = useSession();
+  const school = useApi<{ name: string }>("/school");
   const tabs: Tab[] = [
     ...(hasRole(user, FEES) ? (["income", "collection", "outstanding"] as const) : []),
     ...(hasRole(user, SETUP) ? (["attendance"] as const) : []),
@@ -83,9 +85,24 @@ export default function ReportsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Reports"
-        description="Money and attendance at a glance. Download any list for Excel."
+        description="Money and attendance at a glance. Download any list for Excel, or print this report."
         breadcrumbs={[{ label: "Finance" }, { label: "Reports" }]}
+        actions={
+          tabs.length > 0 ? (
+            <Button variant="secondary" icon={<Printer />} onClick={() => window.print()}>
+              Print
+            </Button>
+          ) : undefined
+        }
       />
+      {/* Paper only: the shell, tabs and buttons are hidden, so the sheet needs its own heading. */}
+      <div className="hidden print:block">
+        <h1 className="font-display text-xl font-semibold text-black">{school.data?.name ?? "School report"}</h1>
+        <p className="text-sm text-black">
+          {TAB_META[tab].label} · printed {day(todayIso())}
+          {dated ? ` · ${day(range.from)} to ${day(range.to)}` : ""}
+        </p>
+      </div>
       {tabs.length === 0 ? (
         <Card padding="none">
           <EmptyState icon={<ChartColumn />} title="No reports for your role" description="Reports are available to fee and admin staff." />
@@ -96,8 +113,9 @@ export default function ReportsPage() {
           value={tab}
           onValueChange={(v) => setTab(v as Tab)}
           aria-label="Reports"
+          listClassName="print:hidden"
         >
-          {dated && <DateRange from={range.from} to={range.to} onChange={setRange} className="pt-5" />}
+          {dated && <DateRange from={range.from} to={range.to} onChange={setRange} className="pt-5 print:hidden" />}
           <TabPanel value="income">
             <IncomeExpense range={range} />
           </TabPanel>
@@ -243,6 +261,7 @@ function FeeCollection({ range }: { range: Range }) {
                       <Button
                         variant="secondary"
                         size="sm"
+                        className="print:hidden"
                         icon={<Download />}
                         onClick={() => downloadCsv(`fee-collection-${range.from}-to-${range.to}.csv`, ["Date", "Collected"], r.byDay.map((d) => [d.name, d.total]))}
                       >
@@ -405,7 +424,7 @@ function AttendanceReport() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3 print:hidden">
         <TextField label="Month" type="month" value={month} onChange={(e) => setMonth(e.target.value)} wrapperClassName="w-44" />
         <TextField
           label="Flag below %"
@@ -417,6 +436,10 @@ function AttendanceReport() {
           wrapperClassName="w-32"
         />
       </div>
+      {/* The pickers are hidden on paper, so say what the printed figures cover. */}
+      <p className="hidden text-sm text-black print:block">
+        {new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })}, flagging below {threshold}%
+      </p>
       <ReportBody report={report} kpis={3}>
         {(r) => {
           const avg = r.sections.length ? Math.round((r.sections.reduce((s, x) => s + x.percent, 0) / r.sections.length) * 10) / 10 : 0;

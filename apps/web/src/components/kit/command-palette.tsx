@@ -43,13 +43,26 @@ export interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
   commands: PaletteCommand[];
   placeholder?: string;
+  /** Looks up records (e.g. students) for what was typed; results are listed after the pages. */
+  onSearch?: (query: string) => Promise<PaletteCommand[]>;
+  /** How many characters before onSearch runs. */
+  searchMinChars?: number;
 }
 
 /** Cmd/Ctrl+K jump-to dialog. The hotkey listener is built in; mount once in the shell. */
-export function CommandPalette({ open, onOpenChange, commands, placeholder = "Search pages and actions" }: CommandPaletteProps) {
+export function CommandPalette({
+  open,
+  onOpenChange,
+  commands,
+  placeholder = "Search pages and actions",
+  onSearch,
+  searchMinChars = 2,
+}: CommandPaletteProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  /** Results of the last finished lookup, with the query they were for (older ones are ignored). */
+  const [found, setFound] = useState<{ q: string; items: PaletteCommand[] }>({ q: "", items: [] });
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,14 +78,34 @@ export function CommandPalette({ open, onOpenChange, commands, placeholder = "Se
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
+  // Record lookups go to the server, so wait for a short pause in typing.
+  useEffect(() => {
+    const q = query.trim();
+    if (!onSearch || q.length < searchMinChars) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      onSearch(q).then(
+        (items) => !cancelled && setFound({ q, items }),
+        // A failed lookup simply adds nothing; the pages still work.
+        () => !cancelled && setFound({ q, items: [] }),
+      );
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [query, onSearch, searchMinChars]);
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return commands
+    const pages = commands
       .map((c, i) => ({ c, s: score(c, q), i }))
       .filter((r) => r.s > 0)
       .sort((a, b) => (q ? b.s - a.s : a.i - b.i))
       .map((r) => r.c);
-  }, [commands, query]);
+    // Looked-up records go last: a name that matches no page then stands alone at the top.
+    return [...pages, ...(found.q === query.trim() ? found.items : [])];
+  }, [commands, query, found]);
 
   const groups = useMemo(() => {
     const map = new Map<string, PaletteCommand[]>();
@@ -143,7 +176,7 @@ export function CommandPalette({ open, onOpenChange, commands, placeholder = "Se
             {flat.length === 0 ? (
               <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-fg-muted">
                 <SearchX className="size-5" aria-hidden />
-                No pages match &ldquo;{query}&rdquo;
+                Nothing matches &ldquo;{query}&rdquo;
               </div>
             ) : (
               groups.map(([group, items]) => (

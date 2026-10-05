@@ -440,7 +440,7 @@ function AttendanceTab() {
     <Card>
       <CardHeader
         title="Staff register"
-        description={register?.taken ? "Already taken for this day. Changes overwrite it." : "Everyone starts as present. Tap to change."}
+        description={register?.taken ? "Already taken for this day. Changes overwrite it." : "Not taken yet. Everyone starts as present; tap to change, then save."}
         icon={<CalendarCheck />}
         action={
           <>
@@ -457,14 +457,21 @@ function AttendanceTab() {
           </>
         }
       />
+      {register && !register.taken && register.staff.length > 0 && (
+        // Everyone defaults to present, so the counts would read as a register that was never taken.
+        <Alert tone="warning" className="mb-3" title={date === todayIso() ? "Not taken yet today" : "No register for this day"}>
+          Nothing is recorded for {date === todayIso() ? "today" : day(date)} yet. Mark the {register.staff.length} staff below and save to take the register.
+        </Alert>
+      )}
       {register && register.staff.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {register.taken && <StatusPill status="COMPLETED" label="Taken" />}
-          {counts.map((c) => (
-            <span key={c.status} className="text-xs text-fg-muted tabular-nums">
-              {c.label} <span className="font-semibold text-fg">{c.n}</span>
-            </span>
-          ))}
+          {register.taken &&
+            counts.map((c) => (
+              <span key={c.status} className="text-xs text-fg-muted tabular-nums">
+                {c.label} <span className="font-semibold text-fg">{c.n}</span>
+              </span>
+            ))}
           <Button
             type="button"
             size="sm"

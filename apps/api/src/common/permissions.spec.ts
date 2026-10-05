@@ -55,6 +55,23 @@ describe('permission catalog', () => {
     }
   });
 
+  it('keeps running exams to exams=manage, so teachers only enter their own marks', () => {
+    for (const role of [Role.OWNER, Role.PRINCIPAL, Role.ADMIN]) {
+      expect(DEFAULT_PERMISSIONS[role].exams).toBe('manage');
+    }
+    for (const role of [Role.TEACHER, Role.CLASS_TEACHER, Role.STAFF]) {
+      expect(DEFAULT_PERMISSIONS[role].exams).toBe('view');
+    }
+    // A custom role built on TEACHER with exams=manage runs exams, e.g. an
+    // "Exam coordinator".
+    const coordinator = effectiveLevel(
+      [{ role: Role.TEACHER, customRoleId: 'cr1' }],
+      { custom: { cr1: { baseRole: Role.TEACHER, permissions: { exams: 'manage' } } } },
+      'exams',
+    );
+    expect(coordinator).toBe('manage');
+  });
+
   it('lets teachers, parents and setup roles chat, others none', () => {
     // Setup roles keep manage so one who also teaches can answer parents; the
     // chat service still makes their safeguarding view of other threads read-only.

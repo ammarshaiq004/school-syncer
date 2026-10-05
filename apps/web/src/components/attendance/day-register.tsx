@@ -65,12 +65,29 @@ const OPTIONS: { status: Status; short: string; label: string; on: string; hover
 
 const name = (s: SheetStudent) => [s.firstName, s.lastName].filter(Boolean).join(" ");
 
+interface MySection {
+  id: string;
+  name: string;
+  students: number;
+  isClassTeacher: boolean;
+}
+
+interface DayRegisterProps {
+  sectionId: string;
+  onSectionChange: (id: string) => void;
+  date: string;
+  onDateChange: (date: string) => void;
+}
+
 /** "Take attendance" tab: the daily register for one section, plus the all-sections summary for admins. */
-export function DayRegister({ sectionId, onSectionChange: setSectionId }: { sectionId: string; onSectionChange: (id: string) => void }) {
+export function DayRegister({ sectionId, onSectionChange: setSectionId, date, onDateChange: setDate }: DayRegisterProps) {
   const user = useSession();
   const toast = useToast();
-  const sections = useSectionOptions();
-  const [date, setDate] = useState(todayIso());
+  const isAdmin = hasRole(user, SETUP);
+  // Teachers pick from the sections they teach (the rest answer 403); admins
+  // pick any section in the school.
+  const allSections = useSectionOptions({ enabled: isAdmin });
+  const mySections = useApi<MySection[]>(isAdmin ? null : "/attendance/sections");
   // The loaded sheet remembers which section and date it belongs to, so a switch shows a skeleton.
   const [loaded, setLoaded] = useState<{ key: string; sheet: Sheet } | null>(null);
   const [loadError, setLoadError] = useState<{ key: string; message: string } | null>(null);
@@ -80,8 +97,17 @@ export function DayRegister({ sectionId, onSectionChange: setSectionId }: { sect
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
-  const isAdmin = hasRole(user, SETUP);
   const summary = useApi<SummaryRow[]>(isAdmin ? `/attendance/summary?date=${date}` : null);
+  const sectionOptions = isAdmin ? allSections.options : (mySections.data ?? []).map((s) => ({ value: s.id, label: s.name }));
+  const sectionsError = isAdmin ? allSections.error : mySections.error;
+
+  // Open a teacher's own class first, so the usual register is one tap away.
+  useEffect(() => {
+    if (sectionId || isAdmin) return;
+    const list = mySections.data;
+    if (!list?.length) return;
+    setSectionId((list.find((s) => s.isClassTeacher) ?? list[0]).id);
+  }, [sectionId, isAdmin, mySections.data, setSectionId]);
 
   const key = `${sectionId}|${date}`;
   const sheet = loaded?.key === key ? loaded.sheet : null;
@@ -174,7 +200,7 @@ export function DayRegister({ sectionId, onSectionChange: setSectionId }: { sect
             value={sectionId}
             onChange={(e) => setSectionId(e.target.value)}
             placeholder="Choose a section"
-            options={sections.options}
+            options={sectionOptions}
             wrapperClassName="w-full sm:w-64"
           />
           <TextField
@@ -191,15 +217,21 @@ export function DayRegister({ sectionId, onSectionChange: setSectionId }: { sect
             </div>
           )}
         </div>
-        {sections.error && <p className="mt-2 text-[13px] text-danger-text">{sections.error}</p>}
+        {sectionsError && <p className="mt-2 text-[13px] text-danger-text">{sectionsError}</p>}
       </Card>
 
       {!sectionId ? (
         <Card padding="none">
           <EmptyState
             icon={<ClipboardList />}
-            title="Choose a class to take attendance"
-            description={isAdmin ? "Pick a section above, or click a row in the summary below." : "Pick one of your sections above to open its register."}
+            title={!isAdmin && mySections.data?.length === 0 ? "No sections assigned" : "Choose a class to take attendance"}
+            description={
+              isAdmin
+                ? "Pick a section above, or click a row in the summary below."
+                : mySections.data?.length === 0
+                  ? "Ask the school office to make you a class teacher or assign you a subject."
+                  : "Pick one of your sections above to open its register."
+            }
           />
         </Card>
       ) : sheetError ? (

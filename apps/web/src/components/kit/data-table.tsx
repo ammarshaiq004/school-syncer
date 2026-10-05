@@ -203,7 +203,8 @@ export function DataTable<T>(props: DataTableProps<T>) {
   return (
     <div className={cn("flex min-w-0 flex-col gap-3", className)}>
       {hasToolbar && (
-        <div className="flex flex-wrap items-center gap-2">
+        // Searching and filtering are for the screen; paper shows the rows as they stand.
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
           {(getSearchText || props.onSearchChange) && (
             <SearchInput
               value={search}

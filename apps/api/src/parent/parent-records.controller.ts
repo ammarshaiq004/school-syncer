@@ -88,6 +88,12 @@ export class ParentRecordsController {
               ...activeClass,
             },
           },
+          // Latest payment only, so a settled voucher can say when it was paid.
+          payments: {
+            select: { receivedAt: true },
+            orderBy: { receivedAt: 'desc' },
+            take: 1,
+          },
         },
       }),
       this.prisma.school.findUniqueOrThrow({
@@ -111,6 +117,7 @@ export class ParentRecordsController {
         dueDate: i.dueDate.toISOString().slice(0, 10),
         total: i.total,
         paid: i.paid,
+        paidAt: i.payments[0]?.receivedAt.toISOString().slice(0, 10) ?? null,
         balance,
         lateFine: fine,
         totalDue: balance > 0 ? balance + fine : 0,

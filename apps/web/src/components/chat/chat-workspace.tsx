@@ -14,6 +14,7 @@ import { can, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 import { CHAT_POLL_MS, Conversation } from "./conversation";
 import { NewConversationDialog } from "./new-conversation-dialog";
+import { NewStaffConversationDialog } from "./new-staff-conversation-dialog";
 import { ThreadList } from "./thread-list";
 import { type ChatThread } from "./types";
 import { refreshChatUnread, setChatUnreadFromThreads } from "./unread";
@@ -38,7 +39,9 @@ export function ChatWorkspace({ kind }: { kind: "staff" | "parent" }) {
   const scope: Scope = canWatch ? savedScope : "mine";
   const [savedChild] = usePersistedState<string>("schoolsyncer.parent.child", "");
   const [composeOpen, setComposeOpen] = useState(false);
-  const canStart = kind === "parent" && can(user, "chat", "manage");
+  // Parents message a teacher; teachers and administrators can open a
+  // conversation with a parent of a student they teach.
+  const canStart = can(user, "chat", "manage");
 
   const { data: threads, error, reload } = useApi<ChatThread[]>(`/chat/threads?scope=${scope}`);
   useVisibleInterval(() => void reload(), CHAT_POLL_MS);
@@ -59,7 +62,7 @@ export function ChatWorkspace({ kind }: { kind: "staff" | "parent" }) {
 
   const newButton = canStart && (
     <Button type="button" icon={<SquarePen />} onClick={() => setComposeOpen(true)}>
-      Message a teacher
+      {kind === "parent" ? "Message a teacher" : "New message"}
     </Button>
   );
 
@@ -72,25 +75,30 @@ export function ChatWorkspace({ kind }: { kind: "staff" | "parent" }) {
             ? "Talk to your children's class and subject teachers. Teachers usually reply during school hours."
             : scope === "all"
               ? "Every parent and teacher conversation in your campuses, for safeguarding."
-              : "Conversations with parents about their children."
+              : "Conversations with parents about their children. Start one with a parent of a student you teach."
         }
         actions={
           kind === "parent" ? (
             newButton
           ) : canWatch ? (
-            <SegmentedControl<Scope>
-              aria-label="Which conversations"
-              value={scope}
-              onChange={(v) => {
-                setSavedScope(v);
-                select(null);
-              }}
-              options={[
-                { value: "mine", label: "My conversations", icon: <MessagesSquare /> },
-                { value: "all", label: "All conversations", icon: <Eye /> },
-              ]}
-            />
-          ) : undefined
+            <>
+              {newButton}
+              <SegmentedControl<Scope>
+                aria-label="Which conversations"
+                value={scope}
+                onChange={(v) => {
+                  setSavedScope(v);
+                  select(null);
+                }}
+                options={[
+                  { value: "mine", label: "My conversations", icon: <MessagesSquare /> },
+                  { value: "all", label: "All conversations", icon: <Eye /> },
+                ]}
+              />
+            </>
+          ) : (
+            newButton || undefined
+          )
         }
       />
 
@@ -113,7 +121,11 @@ export function ChatWorkspace({ kind }: { kind: "staff" | "parent" }) {
                 ? { title: "No conversations yet", description: "Send a message to your child's class teacher or a subject teacher.", action: newButton || undefined }
                 : scope === "all"
                   ? { title: "No conversations yet", description: "Parent and teacher conversations in your campuses will appear here." }
-                  : { title: "No conversations yet", description: "When a parent messages you about their child, it appears here." }
+                  : {
+                      title: "No conversations yet",
+                      description: "When a parent messages you about their child, it appears here. You can also start one.",
+                      action: newButton || undefined,
+                    }
             }
           />
         </aside>
@@ -145,17 +157,27 @@ export function ChatWorkspace({ kind }: { kind: "staff" | "parent" }) {
         </section>
       </Card>
 
-      {kind === "parent" && (
-        <NewConversationDialog
-          open={composeOpen}
-          onOpenChange={setComposeOpen}
-          defaultStudentId={savedChild || null}
-          onStarted={(t) => {
-            void reload();
-            select(t.id);
-          }}
-        />
-      )}
+      {canStart &&
+        (kind === "parent" ? (
+          <NewConversationDialog
+            open={composeOpen}
+            onOpenChange={setComposeOpen}
+            defaultStudentId={savedChild || null}
+            onStarted={(t) => {
+              void reload();
+              select(t.id);
+            }}
+          />
+        ) : (
+          <NewStaffConversationDialog
+            open={composeOpen}
+            onOpenChange={setComposeOpen}
+            onStarted={(t) => {
+              void reload();
+              select(t.id);
+            }}
+          />
+        ))}
     </div>
   );
 }

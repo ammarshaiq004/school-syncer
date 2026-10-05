@@ -38,6 +38,17 @@ export const FEES: Role[] = ["OWNER", "PRINCIPAL", "ADMIN", "ACCOUNTANT"];
 export const TEACHING: Role[] = [...SETUP, "TEACHER", "CLASS_TEACHER"];
 export const STAFF: Role[] = [...FEES, "TEACHER", "CLASS_TEACHER", "STAFF"];
 
+/**
+ * Campuses this user's staff roles are limited to, or null when they work
+ * school-wide. Mirrors campusScope() in the API, so pickers can show the same
+ * campuses the API would accept.
+ */
+export function campusScope(user: SessionUser): string[] | null {
+  const staff = user.roles.filter((r) => STAFF.includes(r.role));
+  if (!staff.length || staff.some((r) => r.campusId === null)) return null;
+  return [...new Set(staff.map((r) => r.campusId as string))];
+}
+
 /** The school's delivery mode (PHYSICAL, ONLINE or HYBRID), or null on an older API. */
 export function useSchoolMode(): SchoolMode | null {
   return useSession().school?.mode ?? null;

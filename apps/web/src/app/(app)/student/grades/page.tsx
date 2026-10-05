@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Award, BookOpen, ClipboardCheck, FileText, ListChecks, NotebookPen, Trophy } from "lucide-react";
 import { ASSIGNMENT_STATE } from "@/components/student/format";
+import { ASSIGNMENT_AVERAGE_HINT, assignmentAverage } from "@/components/student-learning/format";
 import type { ExamResultItem, ScoredAssignment, ScoredQuiz, StudentResults } from "@/components/student/types";
 import {
   Badge,
@@ -25,6 +26,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { day } from "@/lib/format";
+import { notPassedLabel } from "@/lib/results";
 import { useSchoolMode, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
@@ -131,9 +133,8 @@ export default function StudentGradesPage() {
 
   const latest = r?.exams[0];
   const marked = r?.assignments.filter((a) => a.points != null) ?? [];
-  const assignmentAvg = marked.length
-    ? (marked.reduce((n, a) => n + (a.points ?? 0), 0) / marked.reduce((n, a) => n + a.maxPoints, 0)) * 100
-    : null;
+  // Shared with /student/assignments so the two pages never show different averages.
+  const assignmentAvg = assignmentAverage(marked);
   const quizBest = r?.quizzes.filter((q) => q.best?.percent != null) ?? [];
   const quizAvg = quizBest.length ? quizBest.reduce((n, q) => n + (q.best!.percent ?? 0), 0) / quizBest.length : null;
 
@@ -178,7 +179,7 @@ export default function StudentGradesPage() {
               tone="success"
               loading={!r}
               value={assignmentAvg == null ? "–" : pct(assignmentAvg)}
-              hint={`${marked.length} marked`}
+              hint={`${ASSIGNMENT_AVERAGE_HINT}, across ${marked.length} marked`}
             />
             <KpiCard
               label="Quiz average"
@@ -327,7 +328,7 @@ function ExamCard({ exam: e }: { exam: ExamResultItem }) {
             </div>
           </div>
           <LetterGrade grade={e.grade} />
-          <StatusPill status={e.passed ? "PASSED" : "FAILED"} />
+          <StatusPill status={e.passed ? "PASSED" : "FAILED"} label={e.passed ? undefined : notPassedLabel(e.subjects)} />
           <Link href={`/student/grades/${e.examId}`} className={buttonClass("secondary", "sm")} aria-label={`Report card for ${e.exam}`}>
             <FileText className="size-4" aria-hidden />
             Report card

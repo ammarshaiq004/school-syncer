@@ -10,6 +10,8 @@ export interface ParentInvoiceRow {
   dueDate: string;
   total: number;
   paid: number;
+  /** Date of the most recent payment, if any. */
+  paidAt: string | null;
   balance: number;
   lateFine: number;
   /** Balance plus late fine; 0 when paid. */

@@ -10,3 +10,14 @@ export function toInternational(phone: string): string {
   if (digits.startsWith('3') && digits.length === 10) return `92${digits}`;
   return digits;
 }
+
+/**
+ * The digits to look for when searching stored phone numbers, ignoring the
+ * prefix: "0300-1234567", "+92 300 1234567" and "03001234567" all give
+ * "3001234567". Null when the text holds too few digits to be a phone search.
+ */
+export function phoneSearchDigits(text: string): string | null {
+  if (/[a-z@]/i.test(text)) return null;
+  const digits = text.replace(/\D/g, '').replace(/^(0092|92|0)/, '');
+  return digits.length >= 5 ? digits : null;
+}

@@ -272,6 +272,60 @@ export class StudentController {
     };
   }
 
+  /**
+   * The student's own weekly timetable: their section's bell schedule and
+   * slots, in the shape the week grid draws (the same one the parent view at
+   * GET /timetable/students/:studentId returns). The section comes from the
+   * token, so a student can only ever see their own.
+   */
+  @Get('timetable')
+  @Permission('timetable')
+  async timetable(@CurrentUser() user: AuthUser) {
+    const ctx = await resolveStudent(this.prisma, user);
+    if (!ctx.sectionId) return { section: null, periods: [], slots: [] };
+    const section = await this.prisma.section.findUniqueOrThrow({
+      where: { id: ctx.sectionId },
+      select: { id: true, name: true, class: { select: { name: true, campusId: true } } },
+    });
+    const [periods, slots] = await Promise.all([
+      this.prisma.period.findMany({
+        where: { campusId: section.class.campusId },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      this.prisma.timetableSlot.findMany({
+        where: { schoolId: ctx.schoolId, sectionId: section.id },
+        select: {
+          id: true,
+          dayOfWeek: true,
+          periodId: true,
+          room: true,
+          subject: { select: { id: true, name: true } },
+          teacher: { select: { id: true, name: true } },
+          period: { select: { startTime: true, endTime: true, name: true } },
+        },
+      }),
+    ]);
+    return {
+      section: { id: section.id, name: `${section.class.name} ${section.name}` },
+      periods,
+      slots: slots.map((s) => ({
+        id: s.id,
+        dayOfWeek: s.dayOfWeek,
+        periodId: s.periodId,
+        period: s.period.name,
+        startTime: s.period.startTime,
+        endTime: s.period.endTime,
+        subjectId: s.subject.id,
+        subject: s.subject.name,
+        teacherId: s.teacher?.id ?? null,
+        teacher: s.teacher?.name ?? null,
+        sectionId: section.id,
+        section: `${section.class.name} ${section.name}`,
+        room: s.room,
+      })),
+    };
+  }
+
   /** One month of daily attendance (default: this month) and the year so far. */
   @Get('attendance')
   @Permission('attendance')

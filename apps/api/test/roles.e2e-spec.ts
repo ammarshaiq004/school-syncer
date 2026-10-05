@@ -143,7 +143,7 @@ describe('Roles and permissions (e2e)', () => {
     expect(created.body).toMatchObject({ name: 'Exam coordinator', baseRole: 'TEACHER', baseRoleName: 'Teacher', memberCount: 0 });
     expect(created.body.permissions).toMatchObject({ exams: 'manage', attendance: 'none', homework: 'manage' });
     // Only what differs from the base role is stored.
-    expect(created.body.overrides).toEqual({ attendance: 'none' });
+    expect(created.body.overrides).toEqual({ exams: 'manage', attendance: 'none' });
 
     await request(server).post('/api/roles').set(ownerA).send({ name: 'exam Coordinator', baseRole: 'TEACHER' }).expect(409);
     await request(server).post('/api/roles').set(ownerA).send({ name: 'Teacher', baseRole: 'TEACHER' }).expect(409);
