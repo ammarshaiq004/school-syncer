@@ -190,6 +190,8 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | POST | `/payments/webhook/:provider` | payment gateways (signed) |
 | GET, POST | `/announcements` | staff; posting needs owner, principal or admin |
 | GET | `/dashboard/summary` | staff |
+| GET | `/assistant/status`, `/assistant/options`, `/assistant/students`, `/assistant/at-risk` | owner, principal, admin, accountant and teachers; plan with the AI assistant |
+| POST | `/assistant/ask`, `/assistant/draft` | same; teachers only see the sections they teach |
 | GET | `/parent/children` | parents |
 | GET | `/notifications` | owner, principal or admin |
 | GET, POST, PATCH | `/transport/vehicles`, `/transport/routes`, PUT `/transport/routes/:id/stops`, GET `/transport/routes/:id` | staff can read; changes need owner, principal or admin |
@@ -210,6 +212,16 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | PATCH, POST | `/platform/schools/:id/subscription`, `/platform/schools/:id/support-login` | SchoolSyncer staff |
 | GET, PATCH | `/platform/plans`, `/platform/plans/:id` | SchoolSyncer staff |
 | GET, POST | `/platform/invoices`, `/platform/invoices/generate`, `/platform/invoices/:id/pay`, `/platform/invoices/:id/void` | SchoolSyncer staff |
+
+## AI assistant setup
+
+The AI assistant (sidebar: AI assistant) is part of the Growth and Enterprise plans. It has three parts:
+
+- **Students at risk**: flags students from attendance in the last 30 days, the last two published exams and long-overdue fees (fees only for fee staff). Rules are in `apps/api/src/assistant/risk-rules.ts`; no AI is involved.
+- **Ask a question**: Claude answers plain-language questions using read-only tools (`apps/api/src/assistant/assistant-tools.ts`). Every tool runs with the asking user's access: teachers see only the sections they teach, and modules their role cannot open are refused.
+- **Remarks and messages**: drafts a report card remark (which can be saved to the report card) or a message to a parent from the student's record. No phone numbers, ID numbers or medical notes are sent.
+
+To switch on AI answers, set `ANTHROPIC_API_KEY` on the API (optionally `ASSISTANT_MODEL` and `ASSISTANT_DAILY_LIMIT`). Without a key, the page still shows the at-risk list and template drafts, and Ask explains that it is not switched on. Each model call is counted in `AssistantUsage` (tokens only; questions and answers are not stored).
 
 ## WhatsApp and payments setup
 

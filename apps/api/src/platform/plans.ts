@@ -18,6 +18,7 @@ export const FEATURES = {
   library: 'Library',
   certificates: 'Certificates and ID cards',
   elearning: 'E-school: courses, live classes, assignments and quizzes',
+  ai_assistant: 'AI assistant: questions, drafts and at-risk students',
 } as const;
 
 export type Feature = keyof typeof FEATURES;

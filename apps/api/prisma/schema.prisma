@@ -88,6 +88,8 @@ model School {
   chatThreads ChatThread[]
 
   files StoredFile[]
+
+  assistantUsage AssistantUsage[]
 }
 
 model Campus {
@@ -1853,4 +1855,31 @@ model StoredFile {
 
   @@index([schoolId])
   @@index([uploadedById])
+}
+
+// ---------------------------------------------------------------------------
+// AI assistant (SCHOOL-27)
+// ---------------------------------------------------------------------------
+
+enum AssistantKind {
+  ASK
+  DRAFT
+}
+
+/// One call to the model, for the daily limit and usage reports. The question
+/// and the answer are not stored.
+model AssistantUsage {
+  id           String        @id @default(cuid())
+  schoolId     String
+  userId       String
+  kind         AssistantKind
+  model        String
+  inputTokens  Int           @default(0)
+  outputTokens Int           @default(0)
+  createdAt    DateTime      @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([schoolId, createdAt])
 }
