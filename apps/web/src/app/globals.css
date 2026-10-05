@@ -1,32 +1,308 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: <html class="dark">, set before paint by the theme script in app/layout.tsx. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------ */
+/* Design tokens. Light is the default; .dark overrides.               */
+/* Use them through Tailwind: bg-surface, text-fg-muted, border-border, */
+/* bg-primary, text-brand, bg-success-tint text-success-text, etc.      */
+/* ------------------------------------------------------------------ */
 :root {
-  --background: #f7f8fa;
-  --foreground: #14171f;
-  --brand: #1f6feb;
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f8fafc; /* table header, zebra, subtle wells */
+  --surface-3: #f1f5f9; /* hover on subtle surfaces, skeleton */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --fg: #0f172a;
+  --fg-secondary: #475569;
+  --fg-muted: #64748b;
+  --fg-disabled: #94a3b8;
+
+  --primary: #4f46e5; /* filled buttons, progress fills */
+  --primary-hover: #4338ca;
+  --primary-active: #3730a3;
+  --primary-fg: #ffffff; /* text on primary */
+  --primary-tint: #eef2ff; /* selected rows, active nav */
+  --primary-tint-strong: #e0e7ff;
+  --brand: #4f46e5; /* accent text, links, icons (lighter in dark) */
+
+  --success: #059669;
+  --success-text: #047857;
+  --success-tint: #ecfdf5;
+  --warning: #d97706;
+  --warning-text: #b45309;
+  --warning-tint: #fffbeb;
+  --danger: #e11d48;
+  --danger-text: #be123c;
+  --danger-tint: #fff1f2;
+  --info: #0284c7;
+  --info-text: #0369a1;
+  --info-tint: #f0f9ff;
+  --neutral-text: #475569;
+  --neutral-tint: #f1f5f9;
+
+  --ring: rgb(79 70 229 / 0.35);
+  --overlay: rgb(15 23 42 / 0.4);
+
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #f43f5e;
+  --chart-6: #94a3b8;
+  --chart-grid: #e2e8f0;
+  --chart-axis: #94a3b8;
+  --chart-track: #f1f5f9;
+
+  /* Legacy names some pages still use. */
+  --background: var(--bg);
+  --foreground: var(--fg);
+
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #020617;
+  --surface: #0f172a;
+  --surface-2: #131c31;
+  --surface-3: #1e293b;
+  --border: #1e293b;
+  --border-strong: #334155;
+
+  --fg: #f1f5f9;
+  --fg-secondary: #cbd5e1;
+  --fg-muted: #94a3b8;
+  --fg-disabled: #64748b;
+
+  --primary: #4f46e5;
+  --primary-hover: #5b54ea;
+  --primary-active: #4338ca;
+  --primary-fg: #ffffff;
+  --primary-tint: rgb(99 102 241 / 0.16);
+  --primary-tint-strong: rgb(99 102 241 / 0.26);
+  --brand: #a5b4fc;
+
+  --success: #34d399;
+  --success-text: #6ee7b7;
+  --success-tint: rgb(16 185 129 / 0.14);
+  --warning: #fbbf24;
+  --warning-text: #fcd34d;
+  --warning-tint: rgb(245 158 11 / 0.14);
+  --danger: #fb7185;
+  --danger-text: #fda4af;
+  --danger-tint: rgb(244 63 94 / 0.14);
+  --info: #38bdf8;
+  --info-text: #7dd3fc;
+  --info-tint: rgb(14 165 233 / 0.14);
+  --neutral-text: #cbd5e1;
+  --neutral-tint: rgb(148 163 184 / 0.14);
+
+  --ring: rgb(129 140 248 / 0.45);
+  --overlay: rgb(2 6 23 / 0.65);
+
+  --chart-1: #6366f1;
+  --chart-2: #0ea5e9;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #f43f5e;
+  --chart-6: #64748b;
+  --chart-grid: #1e293b;
+  --chart-axis: #64748b;
+  --chart-track: #1e293b;
+
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-disabled: var(--fg-disabled);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-tint: var(--primary-tint);
+  --color-primary-tint-strong: var(--primary-tint-strong);
   --color-brand: var(--brand);
-  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Noto Nastaliq Urdu", sans-serif;
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-success-tint: var(--success-tint);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-warning-tint: var(--warning-tint);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-danger-tint: var(--danger-tint);
+  --color-info: var(--info);
+  --color-info-text: var(--info-text);
+  --color-info-tint: var(--info-tint);
+  --color-neutral-text: var(--neutral-text);
+  --color-neutral-tint: var(--neutral-tint);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-track: var(--chart-track);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", Roboto, "Noto Nastaliq Urdu", sans-serif;
+  --font-display: var(--font-jakarta), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-raised: 0 4px 12px rgb(15 23 42 / 0.06);
+  --shadow-overlay: 0 10px 30px rgb(15 23 42 / 0.1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0d1117;
-    --foreground: #e6edf3;
+@theme {
+  --animate-fade-in: fade-in 160ms ease-out both;
+  --animate-fade-out: fade-out 140ms ease-in both;
+  --animate-pop-in: pop-in 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-pop-out: pop-out 120ms ease-in both;
+  --animate-dialog-in: dialog-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-dialog-out: dialog-out 140ms ease-in both;
+  --animate-sheet-in-right: sheet-in-right 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-sheet-out-right: sheet-out-right 180ms ease-in both;
+  --animate-sheet-in-left: sheet-in-left 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-sheet-out-left: sheet-out-left 180ms ease-in both;
+  --animate-toast-in: toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-rise: rise 200ms ease-out both;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes pop-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.97); }
+  }
+  /* Dialogs are centred with the translate property; these only use transform. */
+  @keyframes dialog-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.97); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes dialog-out {
+    from { opacity: 1; transform: none; }
+    to { opacity: 0; transform: translateY(6px) scale(0.97); }
+  }
+  @keyframes sheet-in-right {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes sheet-out-right {
+    from { transform: translateX(0); }
+    to { transform: translateX(100%); }
+  }
+  @keyframes sheet-in-left {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+  @keyframes sheet-out-left {
+    from { transform: translateX(0); }
+    to { transform: translateX(-100%); }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 14px;
+    line-height: 1.5;
+    font-feature-settings: "cv11";
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    line-height: 1.25;
+    font-feature-settings: normal;
+    /* Plus Jakarta Sans has a narrow space; open it up slightly at small sizes. */
+    word-spacing: 0.08em;
+  }
+
+  .font-display {
+    word-spacing: 0.08em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--primary-tint-strong);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--fg-disabled);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Narrow margins so ten ID cards, or a bordered certificate, fit an A4 sheet. */
 @page {
   size: A4;
   margin: 8mm;
+}
+
+@media print {
+  body {
+    background: #fff;
+    color: #000;
+  }
 }

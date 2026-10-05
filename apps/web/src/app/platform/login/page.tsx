@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Button, Card, ErrorText, Field } from "@/components/ui";
+import { ShieldCheck } from "lucide-react";
+import { AuthShell } from "@/components/auth-shell";
+import { Alert, Button, TextField } from "@/components/ui";
 import { platformApi, setPlatformToken } from "@/lib/api";
 
 export default function PlatformLoginPage() {
@@ -30,18 +32,30 @@ export default function PlatformLoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <Card>
-        <p className="text-sm font-medium text-brand">SchoolSyncer console</p>
-        <h1 className="mb-4 text-2xl font-semibold">Staff sign in</h1>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <Field label="Email" name="email" type="email" required />
-          <Field label="Password" name="password" type="password" required />
-          <ErrorText>{error}</ErrorText>
-          <Button type="submit" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</Button>
-        </form>
-        <p className="mt-4 text-sm opacity-70">For SchoolSyncer staff only. Schools sign in on the main login page.</p>
-      </Card>
-    </main>
+    <AuthShell
+      eyebrow="SchoolSyncer console"
+      title="Staff sign in"
+      description="For SchoolSyncer staff only. Schools sign in on the main login page."
+      aside={
+        <div className="mx-auto w-full max-w-md text-slate-300">
+          <span className="grid size-11 place-items-center rounded-xl bg-indigo-500/15 text-indigo-300">
+            <ShieldCheck className="size-5" aria-hidden />
+          </span>
+          <h2 className="mt-5 text-3xl font-semibold leading-tight text-white">Every customer school, plan and bill.</h2>
+          <p className="mt-3 text-sm leading-relaxed text-slate-400">
+            Manage trials, plans, bills and support access for every school from one place.
+          </p>
+        </div>
+      }
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <TextField label="Email" name="email" type="email" autoComplete="username" required />
+        <TextField label="Password" name="password" type="password" autoComplete="current-password" required />
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Button type="submit" loading={busy} className="mt-1 w-full">
+          {busy ? "Signing in..." : "Sign in"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

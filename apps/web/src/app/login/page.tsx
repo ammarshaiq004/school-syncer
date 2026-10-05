@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Button, Card, ErrorText, Field } from "@/components/ui";
+import { AuthShell } from "@/components/auth-shell";
+import { Alert, Button, TextField } from "@/components/ui";
 import { api, setToken } from "@/lib/api";
+import { STAFF } from "@/lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,7 +19,7 @@ export default function LoginPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await api<{ accessToken: string }>("/auth/login", {
+      const res = await api<{ accessToken: string; user?: { roles: { role: string }[] } }>("/auth/login", {
         method: "POST",
         body: {
           schoolSlug: form.get("schoolSlug"),
@@ -26,7 +28,11 @@ export default function LoginPage() {
         },
       });
       setToken(res.accessToken);
-      router.push("/dashboard");
+      // Parents and students go straight to their portal.
+      const roles = res.user?.roles.map((r) => r.role) ?? [];
+      const staff = !res.user || roles.some((r) => (STAFF as string[]).includes(r));
+      const studentOnly = roles.includes("STUDENT") && !roles.includes("PARENT");
+      router.push(staff ? "/dashboard" : studentOnly ? "/student" : "/parent");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -35,20 +41,34 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4">
-      <Card>
-        <h1 className="mb-4 text-2xl font-semibold">Sign in</h1>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <Field label="School code" name="schoolSlug" placeholder="demo-school" required />
-          <Field label="Email or phone" name="login" required />
-          <Field label="Password" name="password" type="password" required />
-          <ErrorText>{error}</ErrorText>
-          <Button type="submit" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</Button>
-        </form>
-        <p className="mt-4 text-sm opacity-70">
-          New school? <Link href="/register" className="text-brand underline">Register</Link>
-        </p>
-      </Card>
-    </main>
+    <AuthShell
+      title="Sign in to your school"
+      description="Staff, parents and students use the same page. Ask your school office for the school code."
+      footer={
+        <>
+          New school?{" "}
+          <Link href="/register" className="font-medium text-brand hover:underline">
+            Register free for 30 days
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <TextField label="School code" name="schoolSlug" placeholder="demo-school" autoComplete="organization" required />
+        <TextField
+          label="Email, phone or username"
+          name="login"
+          placeholder="you@school.pk or 03001234567"
+          hint="Students use the username from their login slip (usually the admission number)."
+          autoComplete="username"
+          required
+        />
+        <TextField label="Password" name="password" type="password" autoComplete="current-password" required />
+        {error && <Alert tone="danger">{error}</Alert>}
+        <Button type="submit" loading={busy} className="mt-1 w-full">
+          {busy ? "Signing in..." : "Sign in"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

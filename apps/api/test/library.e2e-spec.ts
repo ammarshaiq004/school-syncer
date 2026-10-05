@@ -18,7 +18,6 @@ describe('Library (e2e)', () => {
 
   let owner: Record<string, string>;
   let schoolSlug: string;
-  let schoolId: string;
   let ownerId: string;
   let classId: string;
   let yearId: string;
@@ -43,7 +42,6 @@ describe('Library (e2e)', () => {
       })
       .expect(201);
     schoolSlug = reg.body.schoolSlug;
-    schoolId = reg.body.user.schoolId;
     ownerId = reg.body.user.sub;
     owner = { Authorization: `Bearer ${reg.body.accessToken}` };
 

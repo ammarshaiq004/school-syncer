@@ -1,10 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, ErrorText, Notice, PageTitle } from "@/components/ui";
+import { Save, Tags } from "lucide-react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardFooter,
+  Checkbox,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Skeleton,
+  Switch,
+  TextareaField,
+  TextField,
+  useToast,
+} from "@/components/ui";
 import { platformApi } from "@/lib/api";
 import { rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
+import { isOwner, useConsoleAdmin } from "@/components/platform/session";
 
 interface Plan {
   id: string;
@@ -20,17 +37,17 @@ interface Plan {
   schools: number;
 }
 
-const inputClass = "rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20";
 const numberOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
 
-function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<string, string>; onSaved: () => void }) {
+function PlanEditor({ plan, features, onSaved, canEdit }: { plan: Plan; features: Record<string, string>; onSaved: () => void; canEdit: boolean }) {
+  const toast = useToast();
   const [draft, setDraft] = useState(plan);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
 
   async function save() {
     setError("");
-    setNotice("");
+    setSaving(true);
     try {
       await platformApi(`/plans/${plan.id}`, {
         method: "PATCH",
@@ -45,67 +62,86 @@ function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<
           isPublic: draft.isPublic,
         },
       });
-      setNotice(`Saved. ${plan.schools} ${plan.schools === 1 ? "school uses" : "schools use"} this plan.`);
+      toast.success(`${draft.name} saved`, `${plan.schools} ${plan.schools === 1 ? "school uses" : "schools use"} this plan.`);
       onSaved();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
-  const toggle = (f: string) =>
-    setDraft({ ...draft, features: draft.features.includes(f) ? draft.features.filter((x) => x !== f) : [...draft.features, f] });
+  const toggle = (f: string) => setDraft({ ...draft, features: draft.features.includes(f) ? draft.features.filter((x) => x !== f) : [...draft.features, f] });
 
   return (
-    <Card>
-      <div className="flex items-center justify-between">
-        <input className={`${inputClass} text-lg font-semibold`} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} aria-label="Name" />
-        <span className="text-sm opacity-60">{plan.schools} {plan.schools === 1 ? "school" : "schools"}</span>
+    <Card className="flex flex-col">
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-mono text-xs text-fg-muted">{plan.code}</span>
+        <Badge tone={plan.schools ? "primary" : "neutral"}>
+          {plan.schools} {plan.schools === 1 ? "school" : "schools"}
+        </Badge>
       </div>
-      <textarea
-        className={`${inputClass} mt-2 w-full`}
-        rows={2}
-        value={draft.description ?? ""}
-        onChange={(e) => setDraft({ ...draft, description: e.target.value || null })}
-        aria-label="Description"
-      />
-      <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          <span>Rs per student</span>
-          <input type="number" min={0} className={inputClass} value={draft.pricePerStudent} onChange={(e) => setDraft({ ...draft, pricePerStudent: Number(e.target.value) })} />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span>Monthly minimum</span>
-          <input type="number" min={0} className={inputClass} value={draft.minimumMonthly} onChange={(e) => setDraft({ ...draft, minimumMonthly: Number(e.target.value) })} />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span>Student limit</span>
-          <input type="number" min={1} placeholder="Unlimited" className={inputClass} value={draft.maxStudents ?? ""} onChange={(e) => setDraft({ ...draft, maxStudents: numberOrNull(e.target.value) })} />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span>Campus limit</span>
-          <input type="number" min={1} placeholder="Unlimited" className={inputClass} value={draft.maxCampuses ?? ""} onChange={(e) => setDraft({ ...draft, maxCampuses: numberOrNull(e.target.value) })} />
-        </label>
+      <div className="mt-3 flex flex-col gap-4">
+        <TextField label="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="font-semibold" />
+        <TextareaField
+          label="Description"
+          rows={2}
+          value={draft.description ?? ""}
+          onChange={(e) => setDraft({ ...draft, description: e.target.value || null })}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <TextField
+            label="Rs per student"
+            type="number"
+            min={0}
+            value={draft.pricePerStudent}
+            onChange={(e) => setDraft({ ...draft, pricePerStudent: Number(e.target.value) })}
+          />
+          <TextField
+            label="Monthly minimum"
+            type="number"
+            min={0}
+            value={draft.minimumMonthly}
+            onChange={(e) => setDraft({ ...draft, minimumMonthly: Number(e.target.value) })}
+          />
+          <TextField
+            label="Student limit"
+            type="number"
+            min={1}
+            placeholder="Unlimited"
+            value={draft.maxStudents ?? ""}
+            onChange={(e) => setDraft({ ...draft, maxStudents: numberOrNull(e.target.value) })}
+          />
+          <TextField
+            label="Campus limit"
+            type="number"
+            min={1}
+            placeholder="Unlimited"
+            value={draft.maxCampuses ?? ""}
+            onChange={(e) => setDraft({ ...draft, maxCampuses: numberOrNull(e.target.value) })}
+          />
+        </div>
+        <p className="rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-fg-secondary">
+          500 students would pay <span className="font-medium tabular-nums text-fg">{rupees(Math.max(draft.minimumMonthly, draft.pricePerStudent * 500))}</span>{" "}
+          a month.
+        </p>
+        <fieldset>
+          <legend className="mb-2 text-[13px] font-medium text-fg-secondary">Modules</legend>
+          <div className="flex flex-col gap-2">
+            {Object.entries(features).map(([key, label]) => (
+              <Checkbox key={key} label={label} checked={draft.features.includes(key)} onCheckedChange={() => toggle(key)} />
+            ))}
+          </div>
+        </fieldset>
+        <Switch label="Schools can choose it themselves" checked={draft.isPublic} onCheckedChange={(v) => setDraft({ ...draft, isPublic: v })} />
+        {error && <Alert tone="danger">{error}</Alert>}
       </div>
-      <p className="mt-2 text-xs opacity-60">
-        500 students would pay {rupees(Math.max(draft.minimumMonthly, draft.pricePerStudent * 500))} a month.
-      </p>
-      <fieldset className="mt-3 text-sm">
-        <legend className="mb-1 font-medium">Modules</legend>
-        {Object.entries(features).map(([key, label]) => (
-          <label key={key} className="flex items-center gap-2 py-0.5">
-            <input type="checkbox" checked={draft.features.includes(key)} onChange={() => toggle(key)} />
-            {label}
-          </label>
-        ))}
-      </fieldset>
-      <label className="mt-3 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={draft.isPublic} onChange={(e) => setDraft({ ...draft, isPublic: e.target.checked })} />
-        Schools can choose it themselves
-      </label>
-      <div className="mt-4 flex flex-col gap-2">
-        <ErrorText>{error}</ErrorText>
-        <Notice>{notice}</Notice>
-        <Button onClick={save}>Save {draft.name}</Button>
+      <div className="mt-auto">
+        <CardFooter className="justify-end">
+          <Button type="button" icon={<Save />} loading={saving} onClick={save} disabled={!canEdit}>
+            Save {draft.name}
+          </Button>
+        </CardFooter>
       </div>
     </Card>
   );
@@ -113,17 +149,35 @@ function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<
 
 export default function PlansPage() {
   const { data, error, reload } = usePlatformApi<{ features: Record<string, string>; plans: Plan[] }>("/plans");
+  const canEdit = isOwner(useConsoleAdmin());
   return (
-    <div className="flex flex-col gap-4">
-      <PageTitle>Plans</PageTitle>
-      <p className="text-sm opacity-70">
-        Student records, attendance, announcements, user management and the parent portal come with every plan. Changes
-        apply to every school on the plan straight away; existing bills keep their amounts.
-      </p>
-      <ErrorText>{error}</ErrorText>
-      <div className="grid gap-4 lg:grid-cols-3">
-        {data?.plans.map((p) => <PlanEditor key={p.id} plan={p} features={data.features} onSaved={reload} />)}
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Plans"
+        description="Student records, attendance, announcements, user management and the parent portal come with every plan. Changes apply to every school on the plan straight away; existing bills keep their amounts."
+      />
+      {!canEdit && <Alert tone="info">Only a SchoolSyncer owner can change plans. You can look at them here.</Alert>}
+      {error && !data ? (
+        <Card padding="none">
+          <ErrorState message={error} onRetry={reload} />
+        </Card>
+      ) : !data ? (
+        <div className="grid gap-6 lg:grid-cols-3" role="status" aria-label="Loading plans">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-[560px] w-full rounded-xl" />
+          ))}
+        </div>
+      ) : data.plans.length === 0 ? (
+        <Card padding="none">
+          <EmptyState icon={<Tags />} title="No plans" description="Plans are created by the database seed." />
+        </Card>
+      ) : (
+        <div className="grid items-stretch gap-6 lg:grid-cols-3">
+          {data.plans.map((p) => (
+            <PlanEditor key={p.id} plan={p} features={data.features} onSaved={reload} canEdit={canEdit} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

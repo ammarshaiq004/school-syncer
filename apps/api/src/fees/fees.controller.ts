@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -65,6 +65,7 @@ const fullName = (s: { firstName: string; lastName: string | null }) =>
   [s.firstName, s.lastName].filter(Boolean).join(' ');
 
 @Controller('fees')
+@Permission('fees')
 @RequiresFeature('fees')
 export class FeesController {
   constructor(

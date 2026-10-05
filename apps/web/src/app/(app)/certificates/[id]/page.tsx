@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { QrCode } from "@/components/qr-code";
-import { Badge, Button, Card, ErrorText, Field } from "@/components/ui";
+import { Award, Ban, Printer } from "lucide-react";
+import { Alert, Button, Card, Dialog, ErrorState, PageHeader, Skeleton, StatusPill, TextField, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
 import {
   CERTIFICATE_TITLE,
@@ -22,70 +23,109 @@ import { useApi } from "@/lib/use-api";
 export default function CertificatePage() {
   const { id } = useParams<{ id: string }>();
   const user = useSession();
+  const toast = useToast();
   const certificate = useApi<Certificate>(`/certificates/${id}`);
   const [cancelling, setCancelling] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const c = certificate.data;
 
   async function cancel(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const reason = String(new FormData(event.currentTarget).get("reason") ?? "");
+    setBusy(true);
     try {
       await api(`/certificates/${id}/cancel`, { method: "POST", body: { reason } });
       setCancelling(false);
       setError("");
+      toast.success("Certificate cancelled", "Its code no longer verifies.");
       await certificate.reload();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
-  if (!c) return <ErrorText>{certificate.error}</ErrorText>;
+  if (!c) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title="Certificate" breadcrumbs={[{ label: "Certificates", href: "/certificates" }, { label: "Certificate" }]} />
+        {certificate.error ? (
+          <Card padding="none">
+            <ErrorState message={certificate.error} onRetry={certificate.reload} />
+          </Card>
+        ) : (
+          <Card>
+            <Skeleton className="mx-auto h-[60vh] w-full max-w-[210mm]" />
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div>
-          <Link href="/certificates" className="text-sm text-brand">Certificates</Link>
-          <h1 className="text-2xl font-semibold">
-            {CERTIFICATE_TITLE[c.type]} {c.serialNo}
-          </h1>
-          <p className="text-sm opacity-70">
-            <Link className="text-brand" href={`/students/${c.studentId}`}>{c.details.studentName}</Link> · issued {day(c.issuedOn)} by {c.issuedBy}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {c.cancelledAt ? <Badge tone="red">cancelled</Badge> : <Badge tone="green">valid</Badge>}
-          {!c.cancelledAt && hasRole(user, SETUP) && (
-            <Button variant="ghost" onClick={() => setCancelling((v) => !v)}>Cancel certificate</Button>
-          )}
-          <Button onClick={() => window.print()} disabled={Boolean(c.cancelledAt)}>Print</Button>
-        </div>
-      </div>
-      <ErrorText>{error}</ErrorText>
+      <PageHeader
+        title={`${CERTIFICATE_TITLE[c.type]} ${c.serialNo}`}
+        breadcrumbs={[{ label: "Certificates", href: "/certificates" }, { label: c.serialNo }]}
+        leading={
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary-tint text-brand" aria-hidden>
+            <Award className="size-5" />
+          </span>
+        }
+        description={
+          <>
+            <Link className="font-medium text-brand hover:underline" href={`/students/${c.studentId}`}>{c.details.studentName}</Link>, issued {day(c.issuedOn)} by {c.issuedBy}
+          </>
+        }
+        meta={c.cancelledAt ? <StatusPill status="CANCELLED" tone="danger" /> : <StatusPill status="VALID" tone="success" />}
+        actions={
+          <>
+            {!c.cancelledAt && hasRole(user, SETUP) && (
+              <Button type="button" variant="secondary" icon={<Ban />} onClick={() => setCancelling(true)}>
+                Cancel certificate
+              </Button>
+            )}
+            <Button type="button" icon={<Printer />} onClick={() => window.print()} disabled={Boolean(c.cancelledAt)}>
+              Print
+            </Button>
+          </>
+        }
+      />
       {c.cancelledAt && (
-        <Card className="print:hidden">
-          <p className="text-sm">
-            Cancelled on {new Date(c.cancelledAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}: {c.cancelReason}. Anyone checking code {c.verifyCode} is told it is no longer valid.
-          </p>
-        </Card>
+        <Alert tone="danger" title={`Cancelled on ${day(c.cancelledAt)}`} className="print:hidden">
+          {c.cancelReason}. Anyone checking code {c.verifyCode} is told it is no longer valid.
+        </Alert>
       )}
-      {cancelling && (
-        <Card className="print:hidden">
-          <form onSubmit={cancel} className="flex flex-wrap items-end gap-3">
-            <div className="min-w-64 flex-1">
-              <Field label="Why is it being cancelled?" name="reason" required minLength={3} placeholder="Wrong leaving date" />
-            </div>
-            <Button type="submit" variant="ghost">Cancel it</Button>
-          </form>
-          <p className="mt-2 text-xs opacity-60">
-            The certificate stops verifying. The student&apos;s record is not changed; issue a corrected one if needed.
-          </p>
-        </Card>
-      )}
+      <Dialog
+        open={cancelling}
+        onOpenChange={(o) => {
+          setCancelling(o);
+          if (!o) setError("");
+        }}
+        title="Cancel this certificate?"
+        description="The certificate stops verifying. The student's record is not changed; issue a corrected one if needed."
+        size="sm"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setCancelling(false)} disabled={busy}>
+              Keep it
+            </Button>
+            <Button type="submit" form="cancel-certificate-form" variant="danger" loading={busy}>
+              Cancel it
+            </Button>
+          </>
+        }
+      >
+        <form id="cancel-certificate-form" onSubmit={cancel} className="flex flex-col gap-3">
+          <TextField label="Why is it being cancelled?" name="reason" required minLength={3} placeholder="Wrong leaving date" autoFocus />
+          {error && <Alert tone="danger">{error}</Alert>}
+        </form>
+      </Dialog>
 
       <article className="relative mx-auto w-full max-w-[210mm] bg-white p-3 text-black shadow print:max-w-none print:p-0 print:shadow-none">
-        <div className="flex min-h-[270mm] flex-col border-[3px] border-double border-black/70 p-8 print:min-h-[277mm]">
+        <div className="flex min-h-[270mm] flex-col border-[3px] border-double border-black/70 p-4 sm:p-8 print:min-h-[277mm] print:p-8">
           {c.cancelledAt && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-7xl font-bold uppercase tracking-widest text-red-600/20 -rotate-30">
               Cancelled
@@ -189,8 +229,8 @@ function LeavingBody({ d }: { d: CertificateDetails }) {
       <tbody>
         {rows.map(([label, value], i) => (
           <tr key={label} className="align-top">
-            <td className="w-8 py-2">{i + 1}.</td>
-            <td className="w-64 py-2">{label}</td>
+            <td className="w-6 py-2 sm:w-8">{i + 1}.</td>
+            <td className="w-[40%] py-2 pe-2 sm:w-64 print:w-64">{label}</td>
             <td className="border-b border-dotted border-black/50 py-2 font-medium">{value}</td>
           </tr>
         ))}

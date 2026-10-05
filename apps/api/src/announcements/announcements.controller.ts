@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -25,6 +25,7 @@ const announcementSchema = z
 type AnnouncementInput = z.infer<typeof announcementSchema>;
 
 @Controller('announcements')
+@Permission('announcements')
 export class AnnouncementsController {
   constructor(
     private readonly prisma: PrismaService,

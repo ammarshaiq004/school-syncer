@@ -2,121 +2,191 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { api, setToken, type Feature, type Role, type SchoolPlan, type SessionUser } from "@/lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { Lock, LogOut, Moon, X } from "lucide-react";
+import { Dialog as RDialog } from "radix-ui";
+import { BrandLockup, BrandMark } from "@/components/brand";
+import { Alert, EmptyState } from "@/components/kit/feedback";
+import { buttonClass } from "@/components/kit/button";
+import { CommandPalette, type PaletteCommand } from "@/components/kit/command-palette";
+import { Spinner } from "@/components/kit/feedback";
+import { Sidebar, SidebarNav } from "@/components/shell/sidebar";
+import { TopBar } from "@/components/shell/topbar";
+import { SupportBanner } from "@/components/platform/support-banner";
+import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
 import { day } from "@/lib/format";
-import { FEES, hasRole, SessionContext, SETUP, STAFF, TEACHING } from "@/lib/session";
+import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, viewFromPath, type ViewId } from "@/lib/nav";
+import { usePersistedState } from "@/lib/persisted";
+import { FEES, hasRole, SessionContext, STAFF } from "@/lib/session";
+import { setTheme } from "@/lib/theme";
 
-const NAV: { href: string; label: string; roles: Role[]; feature?: Feature }[] = [
-  { href: "/dashboard", label: "Dashboard", roles: STAFF },
-  { href: "/admissions", label: "Admissions", roles: SETUP, feature: "admissions" },
-  { href: "/students", label: "Students", roles: STAFF },
-  { href: "/attendance", label: "Attendance", roles: TEACHING },
-  { href: "/timetable", label: "Timetable", roles: STAFF, feature: "timetable" },
-  { href: "/homework", label: "Homework", roles: TEACHING, feature: "homework" },
-  { href: "/exams", label: "Exams and results", roles: TEACHING, feature: "exams" },
-  { href: "/fees", label: "Fees", roles: FEES, feature: "fees" },
-  { href: "/hr", label: "HR and payroll", roles: STAFF, feature: "hr" },
-  { href: "/transport", label: "Transport", roles: STAFF, feature: "transport" },
-  { href: "/library", label: "Library", roles: STAFF, feature: "library" },
-  { href: "/certificates", label: "Certificates and ID cards", roles: STAFF, feature: "certificates" },
-  { href: "/accounts", label: "Accounts", roles: FEES, feature: "accounts" },
-  { href: "/reports", label: "Reports", roles: FEES, feature: "reports" },
-  { href: "/announcements", label: "Announcements", roles: STAFF },
-  { href: "/messages", label: "Message log", roles: SETUP },
-  { href: "/campuses", label: "Campuses", roles: SETUP },
-  { href: "/classes", label: "Classes and sections", roles: SETUP },
-  { href: "/promotions", label: "Year-end promotions", roles: SETUP },
-  { href: "/users", label: "Users and roles", roles: SETUP },
-  { href: "/billing", label: "Plan and billing", roles: FEES },
-  { href: "/parent", label: "My children", roles: ["PARENT"] },
-];
-
-const COMING = [
-  { label: "Online fee payments", phase: 3 },
-];
+/** True when a parent or student account is on a page outside their own portal. */
+function outsidePortal(user: SessionUser, pathname: string) {
+  if (hasRole(user, STAFF)) return false;
+  const area = viewFromPath(pathname);
+  return !(area === "student" && hasRole(user, ["STUDENT"])) && !(area === "parent" && hasRole(user, ["PARENT"]));
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [signedInAt, setSignedInAt] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [savedView, setSavedView] = usePersistedState<ViewId | null>("schoolsyncer.view", null);
 
   useEffect(() => {
     api<SessionUser>("/auth/me")
       .then((me) => {
         setUser(me);
         setSignedInAt(Date.now());
-        // Parents only have their own portal.
-        if (!hasRole(me, STAFF) && !pathname.startsWith("/parent")) router.replace("/parent");
+        // Parents and students only have their own portals (an account with both can use either).
+        if (outsidePortal(me, pathname)) {
+          router.replace(hasRole(me, ["STUDENT"]) && !hasRole(me, ["PARENT"]) ? "/student" : "/parent");
+        }
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => {
+        // An expired or rejected support session ends in this tab only.
+        if (getSupportToken()) {
+          endSupportSession();
+          router.replace("/support/ended");
+        } else router.replace("/login");
+      });
   }, [router, pathname]);
+
+  const available = useMemo(() => (user ? availableViews(user) : []), [user]);
+  const view: ViewId = resolveView(pathname, savedView, available);
+  const mode = user?.school?.mode ?? null;
+  const groups = useMemo(() => (user ? navForView({ user, view, mode }) : []), [user, view, mode]);
 
   function signOut() {
     setToken(null);
     router.replace("/login");
   }
 
-  if (!user) {
-    return <div className="p-8 text-sm opacity-60">Loading...</div>;
+  function switchView(v: ViewId) {
+    if (!available.includes(v)) return;
+    setSavedView(v);
+    setMenuOpen(false);
+    router.push(viewDef(v).home);
   }
 
-  const features = user.plan?.features;
-  const nav = NAV.filter(
-    (item) => hasRole(user, item.roles) && (!item.feature || !features || features.includes(item.feature)),
-  );
+  const commands = useMemo<PaletteCommand[]>(() => {
+    if (!user) return [];
+    const pages: PaletteCommand[] = allNavItems(user, mode).map((i) => ({
+      id: `page-${i.href}`,
+      label: i.label,
+      group: i.group,
+      icon: i.icon,
+      href: i.href,
+      keywords: i.keywords,
+      hint: i.href,
+    }));
+    const views: PaletteCommand[] = VIEWS.filter((v) => available.includes(v.id) && v.id !== view).map((v) => ({
+      id: `view-${v.id}`,
+      label: `Switch to ${v.label}`,
+      group: "Views",
+      icon: v.icon,
+      onSelect: () => switchView(v.id),
+    }));
+    const actions: PaletteCommand[] = [
+      {
+        id: "theme",
+        label: "Toggle dark theme",
+        group: "Actions",
+        icon: Moon,
+        keywords: "light dark mode appearance",
+        onSelect: () => setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark"),
+      },
+      { id: "signout", label: "Sign out", group: "Actions", icon: LogOut, keywords: "log out logout", onSelect: signOut },
+    ];
+    return [...pages, ...views, ...actions];
+    // switchView/signOut are stable enough for a palette list; rebuild when the user or view changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, available, view, mode]);
+
+  // Also hold the page while a parent or student is being sent to their portal, so staff pages never load (and call staff APIs).
+  if (!user || outsidePortal(user, pathname)) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-bg">
+        <div className="flex flex-col items-center gap-4">
+          <BrandMark className="size-10 animate-pulse motion-reduce:animate-none" />
+          <Spinner label="Loading your school" />
+        </div>
+      </div>
+    );
+  }
+
+  const home = viewDef(view).home;
+  const isStaff = hasRole(user, STAFF);
+  const blocked = blockedNavItem(user, pathname);
 
   return (
     <SessionContext.Provider value={user}>
-      <div className="flex min-h-screen flex-col md:flex-row print:block">
-        <aside className="border-b border-black/10 bg-white p-4 md:w-60 md:shrink-0 md:border-b-0 md:border-r dark:border-white/10 dark:bg-white/5 print:hidden">
-          <div className="flex items-center justify-between md:mb-6">
-            <Link href={nav[0]?.href ?? "/"} className="text-xl font-bold text-brand">SchoolSyncer</Link>
-            <button className="text-sm md:hidden" onClick={() => setMenuOpen((o) => !o)} aria-expanded={menuOpen}>
-              Menu
-            </button>
-          </div>
-          <nav className={`${menuOpen ? "flex" : "hidden"} mt-4 flex-col gap-1 md:mt-0 md:flex`}>
-            {nav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMenuOpen(false)}
-                className={`rounded-lg px-3 py-2 text-sm ${
-                  pathname.startsWith(item.href)
-                    ? "bg-brand/10 font-medium text-brand"
-                    : "hover:bg-black/5 dark:hover:bg-white/10"
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          {hasRole(user, STAFF) && (
-            <div className="mt-6 hidden md:block">
-              <div className="px-3 pb-1 text-xs uppercase tracking-wide opacity-50">Coming next</div>
-              {COMING.map((m) => (
-                <div key={m.label} className="flex justify-between px-3 py-1 text-sm opacity-50">
-                  <span>{m.label}</span>
-                  <span className="shrink-0 text-xs">Phase {m.phase}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </aside>
-        <div className="min-w-0 flex-1">
-          <header className="flex items-center justify-between border-b border-black/10 px-6 py-3 dark:border-white/10 print:hidden">
-            <span className="text-sm opacity-70">
-              {user.name} · {[...new Set(user.roles.map((r) => r.role.toLowerCase().replace("_", " ")))].join(", ")}
-            </span>
-            <button onClick={signOut} className="text-sm text-brand">Sign out</button>
-          </header>
-          {user.plan && hasRole(user, STAFF) && <PlanBanner plan={user.plan} canBill={hasRole(user, FEES)} now={signedInAt} />}
-          <main className="p-4 md:p-6 print:p-0">{children}</main>
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:start-3 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-overlay"
+      >
+        Skip to content
+      </a>
+      <div className="flex min-h-dvh bg-bg print:block print:bg-white">
+        <Sidebar groups={groups} pathname={pathname} view={view} viewLabel={viewDef(view).short} home={home} />
+
+        <RDialog.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <RDialog.Portal>
+            <RDialog.Overlay className="fixed inset-0 z-50 bg-overlay data-[state=closed]:animate-fade-out data-[state=open]:animate-fade-in lg:hidden" />
+            <RDialog.Content
+              aria-describedby={undefined}
+              className="fixed inset-y-0 start-0 z-50 flex w-72 max-w-[85vw] flex-col border-e border-border bg-surface shadow-overlay focus:outline-none data-[state=closed]:animate-sheet-out-left data-[state=open]:animate-sheet-in-left lg:hidden"
+            >
+              <RDialog.Title className="sr-only">Menu</RDialog.Title>
+              <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-4">
+                <Link href={home} onClick={() => setMenuOpen(false)} aria-label="SchoolSyncer home">
+                  <BrandLockup suffix={viewDef(view).short} />
+                </Link>
+                <RDialog.Close className="grid size-9 place-items-center rounded-lg text-fg-muted hover:bg-surface-3 hover:text-fg" aria-label="Close menu">
+                  <X className="size-[18px]" aria-hidden />
+                </RDialog.Close>
+              </div>
+              <SidebarNav groups={groups} pathname={pathname} view={view} onNavigate={() => setMenuOpen(false)} />
+            </RDialog.Content>
+          </RDialog.Portal>
+        </RDialog.Root>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopBar
+            name={user.name}
+            roles={user.roles}
+            view={view}
+            available={available}
+            onSwitchView={switchView}
+            onOpenMenu={() => setMenuOpen(true)}
+            onOpenPalette={() => setPaletteOpen(true)}
+            onSignOut={signOut}
+            showBell={isStaff}
+          />
+          {user.plan && isStaff && <PlanBanner plan={user.plan} canBill={hasRole(user, FEES)} now={signedInAt} />}
+          <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 focus:outline-none md:px-6 md:py-6 print:max-w-none print:p-0">
+            {blocked ? (
+              <EmptyState
+                icon={<Lock />}
+                title={`You don't have access to ${blocked.label}`}
+                description="Your role does not include this part of the school. Ask the school owner or principal if you need it."
+                action={
+                  <Link href={home} className={buttonClass("secondary")}>
+                    Back to the dashboard
+                  </Link>
+                }
+              />
+            ) : (
+              children
+            )}
+          </main>
+          {user.support && <SupportBanner adminName={user.support.adminName} />}
         </div>
       </div>
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
     </SessionContext.Provider>
   );
 }
@@ -136,18 +206,19 @@ function PlanBanner({ plan, canBill, now }: { plan: SchoolPlan; canBill: boolean
     return null;
   }
   return (
-    <div
-      role="status"
-      className={`flex flex-wrap items-center justify-between gap-2 px-6 py-2 text-sm print:hidden ${
-        urgent ? "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200" : "bg-brand/10 text-brand"
-      }`}
+    <Alert
+      banner
+      tone={urgent ? "warning" : "primary"}
+      className="print:hidden"
+      action={
+        canBill && (
+          <Link href="/billing" className="whitespace-nowrap font-medium underline underline-offset-2 hover:no-underline">
+            {plan.status === "TRIAL" ? "Choose a plan" : "Plan and billing"}
+          </Link>
+        )
+      }
     >
-      <span>{text}</span>
-      {canBill && (
-        <Link href="/billing" className="font-medium underline">
-          {plan.status === "TRIAL" ? "Choose a plan" : "Plan and billing"}
-        </Link>
-      )}
-    </div>
+      {text}
+    </Alert>
   );
 }

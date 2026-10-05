@@ -20,9 +20,53 @@ export interface SessionUser {
   sub: string;
   schoolId: string;
   name: string;
-  roles: { role: Role; campusId: string | null }[];
+  roles: { role: Role; campusId: string | null; customRoleId?: string | null }[];
   plan?: SchoolPlan;
+  /** Effective access per module (from /auth/me). Missing on old API versions: then only roles gate pages. */
+  permissions?: Partial<Record<PermissionModule, AccessLevel>>;
+  /** Set when SchoolSyncer staff opened this session from the console for support. */
+  support?: { adminId: string; adminName: string } | null;
+  /** The school, with its delivery mode (drives which modules the app shows). Missing on old API versions. */
+  school?: { id: string; name: string; slug: string; mode: SchoolMode; logoUrl: string | null };
+  /** The student record behind a STUDENT login, else null. */
+  studentId?: string | null;
 }
+
+/** How the school teaches: on campus, online, or both. */
+export type SchoolMode = "PHYSICAL" | "ONLINE" | "HYBRID";
+
+/** Access levels of the school permission layer, lowest first. */
+export type AccessLevel = "none" | "view" | "manage";
+
+/** Permission module keys (same as apps/api/src/common/permissions.ts). */
+export type PermissionModule =
+  | "dashboard"
+  | "students"
+  | "admissions"
+  | "attendance"
+  | "promotions"
+  | "certificates"
+  | "timetable"
+  | "homework"
+  | "exams"
+  | "elearning"
+  | "gradebook"
+  | "lesson_plans"
+  | "fees"
+  | "accounts"
+  | "reports"
+  | "billing"
+  | "hr"
+  | "transport"
+  | "library"
+  | "announcements"
+  | "messages"
+  | "chat"
+  | "campuses"
+  | "classes"
+  | "users"
+  | "settings"
+  | "audit";
 
 export type Feature =
   | "admissions"
@@ -36,7 +80,8 @@ export type Feature =
   | "reports"
   | "transport"
   | "library"
-  | "certificates";
+  | "certificates"
+  | "elearning";
 
 /** The school's SchoolSyncer plan, as /auth/me reports it. */
 export interface SchoolPlan {
@@ -65,8 +110,65 @@ function writeToken(key: string, token: string | null) {
   }
 }
 
-export const getToken = () => readToken(TOKEN_KEY);
-export const setToken = (token: string | null) => writeToken(TOKEN_KEY, token);
+/**
+ * A support session (SchoolSyncer staff signed in as a school's owner) lives in
+ * this tab's sessionStorage only, so it never replaces the normal school login
+ * kept in localStorage and other tabs stay signed in as themselves.
+ */
+const SUPPORT_TOKEN_KEY = "schoolsyncer.support-token";
+const SUPPORT_INFO_KEY = "schoolsyncer.support-info";
+
+export interface SupportInfo {
+  schoolName: string | null;
+  expiresAt: string | null;
+}
+
+export function getSupportToken(): string | null {
+  try {
+    return sessionStorage.getItem(SUPPORT_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function getSupportInfo(): SupportInfo {
+  try {
+    const raw = sessionStorage.getItem(SUPPORT_INFO_KEY);
+    if (raw) return { schoolName: null, expiresAt: null, ...(JSON.parse(raw) as Partial<SupportInfo>) };
+  } catch {
+    // Missing or unreadable: show the banner without these details.
+  }
+  return { schoolName: null, expiresAt: null };
+}
+
+export function startSupportSession(token: string, info: SupportInfo) {
+  try {
+    sessionStorage.setItem(SUPPORT_TOKEN_KEY, token);
+    sessionStorage.setItem(SUPPORT_INFO_KEY, JSON.stringify(info));
+  } catch {
+    // sessionStorage blocked: the support page reports it.
+  }
+}
+
+export function endSupportSession() {
+  try {
+    sessionStorage.removeItem(SUPPORT_TOKEN_KEY);
+    sessionStorage.removeItem(SUPPORT_INFO_KEY);
+  } catch {
+    // Nothing stored.
+  }
+}
+
+/** The school token for this tab: a support session first, else the normal login. */
+export const getToken = () => getSupportToken() ?? readToken(TOKEN_KEY);
+/** Signing out or in from a support tab ends the support session and leaves the normal login alone. */
+export const setToken = (token: string | null) => {
+  if (getSupportToken()) {
+    endSupportSession();
+    if (!token) return;
+  }
+  writeToken(TOKEN_KEY, token);
+};
 export const setPlatformToken = (token: string | null) => writeToken(PLATFORM_TOKEN_KEY, token);
 
 export class ApiError extends Error {

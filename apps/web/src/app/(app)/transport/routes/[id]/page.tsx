@@ -3,7 +3,34 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { Badge, Button, Card, ErrorText, Notice, rowClass, tableClass } from "@/components/ui";
+import { ArrowDown, ArrowUp, Armchair, Banknote, BusFront, Clock, MapPin, Plus, Printer, Save, Settings2, Trash2, UserPlus, UserX, Users } from "lucide-react";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmDialog,
+  DataTable,
+  DescriptionList,
+  Drawer,
+  EmptyState,
+  ErrorState,
+  IconButton,
+  Input,
+  KpiCard,
+  PageHeader,
+  ProgressBar,
+  SearchInput,
+  SelectField,
+  SkeletonCards,
+  SkeletonRows,
+  StatGrid,
+  StatusPill,
+  TextField,
+  useToast,
+  type Column,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { day, fullName, rupees, todayIso } from "@/lib/format";
 import { hasRole, SETUP, useSession } from "@/lib/session";
@@ -35,7 +62,6 @@ interface StudentHit {
   enrollments: { section: { name: string; class: { name: string } } }[];
 }
 
-const inputClass = "rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20";
 type StopDraft = { id?: string; name: string; pickupTime: string; dropTime: string; monthlyFee: string };
 const toDraft = (s: Stop): StopDraft => ({
   id: s.id,
@@ -45,9 +71,13 @@ const toDraft = (s: Stop): StopDraft => ({
   monthlyFee: s.monthlyFee?.toString() ?? "",
 });
 
-function StopsEditor({ route, onSaved }: { route: Detail; onSaved: () => Promise<void> }) {
+type PanelProps = { route: Detail; open: boolean; onOpenChange: (o: boolean) => void };
+
+function StopsEditor({ route, open, onOpenChange, onSaved }: PanelProps & { onSaved: () => Promise<void> }) {
+  const toast = useToast();
   const [stops, setStops] = useState<StopDraft[]>(route.stops.map(toDraft));
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   const set = (i: number, patch: Partial<StopDraft>) => setStops(stops.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const move = (i: number, by: number) => {
     const next = [...stops];
@@ -57,6 +87,7 @@ function StopsEditor({ route, onSaved }: { route: Detail; onSaved: () => Promise
 
   async function save() {
     setError("");
+    setSaving(true);
     try {
       await api(`/transport/routes/${route.id}/stops`, {
         method: "PUT",
@@ -70,134 +101,198 @@ function StopsEditor({ route, onSaved }: { route: Detail; onSaved: () => Promise
           })),
         },
       });
+      toast.success("Stops saved");
       await onSaved();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="overflow-x-auto">
-        <table className={tableClass}>
-          <thead className="opacity-60">
-            <tr><th className="py-2">Stop, in pick-up order</th><th>Pick-up</th><th>Drop</th><th>Own fee</th><th /></tr>
-          </thead>
-          <tbody>
-            {stops.map((s, i) => (
-              <tr key={s.id ?? `new-${i}`} className={rowClass}>
-                <td className="py-1"><input className={`${inputClass} w-full min-w-40`} value={s.name} onChange={(e) => set(i, { name: e.target.value })} aria-label="Stop name" /></td>
-                <td><input type="time" className={inputClass} value={s.pickupTime} onChange={(e) => set(i, { pickupTime: e.target.value })} aria-label="Pick-up time" /></td>
-                <td><input type="time" className={inputClass} value={s.dropTime} onChange={(e) => set(i, { dropTime: e.target.value })} aria-label="Drop time" /></td>
-                <td><input type="number" min={0} placeholder={String(route.monthlyFee)} className={`${inputClass} w-28`} value={s.monthlyFee} onChange={(e) => set(i, { monthlyFee: e.target.value })} aria-label="Own fee" /></td>
-                <td className="whitespace-nowrap">
-                  <button className="px-1 disabled:opacity-20" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
-                  <button className="px-1 disabled:opacity-20" disabled={i === stops.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>
-                  <button className="px-1 text-red-600" onClick={() => setStops(stops.filter((_, j) => j !== i))} aria-label="Remove">✕</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <Drawer
+      open={open}
+      onOpenChange={onOpenChange}
+      size="lg"
+      title="Edit stops"
+      description={`In pick-up order. Leave a stop's fee empty to charge the route's ${rupees(route.monthlyFee)}.`}
+      footer={
+        <>
+          <Button type="button" variant="secondary" icon={<Plus />} onClick={() => setStops([...stops, { name: "", pickupTime: "", dropTime: "", monthlyFee: "" }])}>Add a stop</Button>
+          <Button type="button" icon={<Save />} loading={saving} onClick={save}>Save stops</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        {error && <Alert tone="danger">{error}</Alert>}
+        {stops.length === 0 && <EmptyState compact icon={<MapPin />} title="No stops yet" description="Add the first stop on this route." />}
+        <ol className="flex flex-col gap-3">
+          {stops.map((s, i) => (
+            <li key={s.id ?? `new-${i}`} className="flex gap-3 rounded-lg border border-border bg-surface-2 p-3">
+              <span className="mt-1.5 grid size-6 shrink-0 place-items-center rounded-full bg-primary-tint text-xs font-semibold text-brand tabular-nums" aria-hidden>{i + 1}</span>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <Input className="h-9" value={s.name} onChange={(e) => set(i, { name: e.target.value })} aria-label={`Stop ${i + 1} name`} placeholder="Stop name" />
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="flex flex-col gap-1 text-xs text-fg-muted">Pick-up<Input type="time" className="h-9" value={s.pickupTime} onChange={(e) => set(i, { pickupTime: e.target.value })} aria-label={`Stop ${i + 1} pick-up time`} /></label>
+                  <label className="flex flex-col gap-1 text-xs text-fg-muted">Drop<Input type="time" className="h-9" value={s.dropTime} onChange={(e) => set(i, { dropTime: e.target.value })} aria-label={`Stop ${i + 1} drop time`} /></label>
+                  <label className="flex flex-col gap-1 text-xs text-fg-muted">Own fee<Input type="number" min={0} className="h-9 tabular-nums" placeholder={String(route.monthlyFee)} value={s.monthlyFee} onChange={(e) => set(i, { monthlyFee: e.target.value })} aria-label={`Stop ${i + 1} own fee`} /></label>
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col gap-0.5">
+                <IconButton size="sm" aria-label={`Move ${s.name || `stop ${i + 1}`} up`} disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp /></IconButton>
+                <IconButton size="sm" aria-label={`Move ${s.name || `stop ${i + 1}`} down`} disabled={i === stops.length - 1} onClick={() => move(i, 1)}><ArrowDown /></IconButton>
+                <IconButton size="sm" aria-label={`Remove ${s.name || `stop ${i + 1}`}`} onClick={() => setStops(stops.filter((_, j) => j !== i))}><Trash2 /></IconButton>
+              </div>
+            </li>
+          ))}
+        </ol>
       </div>
-      <p className="text-xs opacity-60">Leave a stop&apos;s fee empty to charge the route&apos;s {rupees(route.monthlyFee)}.</p>
-      <ErrorText>{error}</ErrorText>
-      <div className="flex gap-2">
-        <Button variant="ghost" onClick={() => setStops([...stops, { name: "", pickupTime: "", dropTime: "", monthlyFee: "" }])}>Add a stop</Button>
-        <Button onClick={save}>Save stops</Button>
-      </div>
-    </div>
+    </Drawer>
   );
 }
 
-function RouteSettings({ route, onSaved }: { route: Detail; onSaved: () => Promise<void> }) {
+function RouteSettings({ route, open, onOpenChange, onSaved }: PanelProps & { onSaved: () => Promise<void> }) {
+  const toast = useToast();
   const vehicles = useApi<Vehicle[]>("/transport/vehicles");
   const [name, setName] = useState(route.name);
   const [fee, setFee] = useState(String(route.monthlyFee));
   const [vehicleId, setVehicleId] = useState(route.vehicleId ?? "");
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  async function save(body: Record<string, unknown>) {
+  async function save(body: Record<string, unknown>, done: string) {
     setError("");
+    setSaving(true);
     try {
       await api(`/transport/routes/${route.id}`, { method: "PATCH", body });
+      toast.success(done);
       await onSaved();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <div className="flex flex-col gap-3 text-sm">
-      <label className="flex flex-col gap-1"><span className="font-medium">Name</span><input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></label>
-      <label className="flex flex-col gap-1"><span className="font-medium">Monthly fee (Rs)</span><input type="number" min={0} className={inputClass} value={fee} onChange={(e) => setFee(e.target.value)} /></label>
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Vehicle</span>
-        <select className={inputClass} value={vehicleId} onChange={(e) => setVehicleId(e.target.value)}>
-          <option value="">None</option>
-          {vehicles.data?.filter((v) => v.isActive || v.id === route.vehicleId).map((v) => (
-            <option key={v.id} value={v.id}>{vehicleLabel(v)} ({v.capacity} seats)</option>
-          ))}
-        </select>
-      </label>
-      <ErrorText>{error}</ErrorText>
-      <Button onClick={() => save({ name, monthlyFee: Number(fee), vehicleId: vehicleId || null })}>Save</Button>
-      <button className="text-left text-xs opacity-70 hover:opacity-100" onClick={() => save({ isActive: !route.isActive })}>
-        {route.isActive ? "Close this route" : "Reopen this route"}
-      </button>
-    </div>
+    <Drawer
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Route settings"
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="button" icon={<Save />} loading={saving} onClick={() => save({ name, monthlyFee: Number(fee), vehicleId: vehicleId || null }, "Route saved")}>Save</Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {error && <Alert tone="danger">{error}</Alert>}
+        <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        <TextField label="Monthly fee (Rs)" type="number" min={0} value={fee} onChange={(e) => setFee(e.target.value)} />
+        <SelectField
+          label="Vehicle"
+          value={vehicleId}
+          onChange={(e) => setVehicleId(e.target.value)}
+          options={[
+            { value: "", label: "None" },
+            ...(vehicles.data ?? []).filter((v) => v.isActive || v.id === route.vehicleId).map((v) => ({ value: v.id, label: `${vehicleLabel(v)} (${v.capacity} seats)` })),
+          ]}
+          hint={vehicles.error ? `Could not load vehicles: ${vehicles.error}` : undefined}
+        />
+        <div className="mt-2 flex flex-col gap-2 rounded-lg border border-border p-4">
+          <p className="text-sm font-medium text-fg">{route.isActive ? "Close this route" : "Reopen this route"}</p>
+          <p className="text-[13px] text-fg-muted">{route.isActive ? "A closed route stays on record but is hidden from new assignments." : "Reopening lets you add riders again."}</p>
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              variant={route.isActive ? "danger" : "secondary"}
+              disabled={saving}
+              onClick={() => save({ isActive: !route.isActive }, route.isActive ? "Route closed" : "Route reopened")}
+            >
+              {route.isActive ? "Close route" : "Reopen route"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Drawer>
   );
 }
 
-function AddRider({ route, onAdded }: { route: Detail; onAdded: () => Promise<void> }) {
+function AddRider({ route, open, onOpenChange, onAdded }: PanelProps & { onAdded: () => Promise<void> }) {
+  const toast = useToast();
   const [search, setSearch] = useState("");
-  const hits = useApi<StudentHit[]>(search.trim().length >= 2 ? `/students?search=${encodeURIComponent(search.trim())}` : null);
+  const query = search.trim().length >= 2 ? `/students?search=${encodeURIComponent(search.trim())}` : null;
+  const hits = useApi<StudentHit[]>(query);
   const [stopId, setStopId] = useState(route.stops[0]?.id ?? "");
   const [startsOn, setStartsOn] = useState(todayIso());
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [adding, setAdding] = useState<string | null>(null);
   const onRoute = new Set(route.riders.map((r) => r.studentId));
 
   async function add(s: StudentHit) {
     setError("");
+    setAdding(s.id);
     try {
       await api("/transport/assignments", { method: "POST", body: { studentId: s.id, routeId: route.id, stopId: stopId || null, startsOn } });
-      setNotice(`${fullName(s)} added.`);
+      toast.success(`${fullName(s)} added.`);
       setSearch("");
       await onAdded();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setAdding(null);
     }
   }
 
   return (
-    <div className="flex flex-col gap-3 text-sm">
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">Stop</span>
-        <select className={inputClass} value={stopId} onChange={(e) => setStopId(e.target.value)}>
-          <option value="">No set stop</option>
-          {route.stops.map((s) => <option key={s.id} value={s.id}>{stopLabel(s)}</option>)}
-        </select>
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="font-medium">From</span>
-        <input type="date" className={inputClass} value={startsOn} onChange={(e) => setStartsOn(e.target.value)} />
-      </label>
-      <input className={inputClass} placeholder="Search a student by name or admission no." value={search} onChange={(e) => setSearch(e.target.value)} />
-      <ul className="max-h-64 overflow-y-auto">
-        {hits.data?.slice(0, 15).map((s) => (
-          <li key={s.id} className="flex items-center justify-between gap-2 border-t border-black/5 py-1.5 dark:border-white/10">
-            <span>
-              {fullName(s)} <span className="opacity-60">· {s.admissionNo}{s.enrollments[0] && ` · ${s.enrollments[0].section.class.name} ${s.enrollments[0].section.name}`}</span>
-            </span>
-            {onRoute.has(s.id) ? <span className="text-xs opacity-60">on this route</span> : <button className="text-brand" onClick={() => add(s)}>Add</button>}
-          </li>
-        ))}
-      </ul>
-      <p className="text-xs opacity-60">A student on another route is moved here; their old route ends the day before.</p>
-      <ErrorText>{error}</ErrorText>
-      <Notice>{notice}</Notice>
-    </div>
+    <Drawer open={open} onOpenChange={onOpenChange} title="Add riders" description="A student on another route is moved here; their old route ends the day before.">
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SelectField
+            label="Stop"
+            value={stopId}
+            onChange={(e) => setStopId(e.target.value)}
+            options={[{ value: "", label: "No set stop" }, ...route.stops.map((s) => ({ value: s.id, label: stopLabel(s) }))]}
+          />
+          <TextField label="From" type="date" value={startsOn} onChange={(e) => setStartsOn(e.target.value)} />
+        </div>
+        <SearchInput value={search} onChange={(e) => setSearch(e.target.value)} onClear={() => setSearch("")} placeholder="Search a student by name or admission no." />
+        {error && <Alert tone="danger">{error}</Alert>}
+        {!query ? (
+          <p className="text-[13px] text-fg-muted">Type at least two letters to find a student.</p>
+        ) : hits.error ? (
+          <ErrorState compact message={hits.error} onRetry={hits.reload} />
+        ) : !hits.data ? (
+          <SkeletonRows rows={3} columns={2} />
+        ) : hits.data.length === 0 ? (
+          <EmptyState compact title="No students match" description="Check the spelling or try the admission number." />
+        ) : (
+          <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
+            {hits.data.slice(0, 15).map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <Avatar name={fullName(s)} size="sm" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-fg">{fullName(s)}</span>
+                    <span className="block truncate text-xs text-fg-muted">
+                      {s.admissionNo}{s.enrollments[0] && `, ${s.enrollments[0].section.class.name} ${s.enrollments[0].section.name}`}
+                    </span>
+                  </span>
+                </span>
+                {onRoute.has(s.id) ? (
+                  <StatusPill status="ACTIVE" label="On this route" />
+                ) : (
+                  <Button type="button" size="sm" variant="secondary" icon={<Plus />} loading={adding === s.id} onClick={() => add(s)} aria-label={`Add ${fullName(s)}`}>Add</Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Drawer>
   );
 }
 
@@ -205,116 +300,213 @@ export default function RoutePage() {
   const { id } = useParams<{ id: string }>();
   const user = useSession();
   const canEdit = hasRole(user, SETUP);
+  const toast = useToast();
   const route = useApi<Detail>(`/transport/routes/${id}`);
   const [panel, setPanel] = useState<"" | "stops" | "settings" | "add">("");
-  const [error, setError] = useState("");
+  const [stopping, setStopping] = useState<Rider | null>(null);
+  const [busy, setBusy] = useState(false);
   const r = route.data;
 
-  async function stopRide(rider: Rider) {
-    if (!confirm(`Stop ${rider.name}'s transport from today? This month is still charged.`)) return;
-    setError("");
+  async function stopRide() {
+    if (!stopping) return;
+    setBusy(true);
     try {
-      await api(`/transport/assignments/${rider.assignmentId}/end`, { method: "POST", body: {} });
+      await api(`/transport/assignments/${stopping.assignmentId}/end`, { method: "POST", body: {} });
+      toast.success(`${stopping.name}'s transport stopped`);
+      setStopping(null);
       await route.reload();
     } catch (e) {
-      setError((e as Error).message);
+      toast.error("Could not stop transport", (e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
-  if (!r) return <ErrorText>{route.error}</ErrorText>;
+  const crumbs = [{ label: "Transport", href: "/transport" }, { label: r?.name ?? "Route" }];
+  if (!r)
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader title="Route" breadcrumbs={crumbs} />
+        {route.error ? <ErrorState message={route.error} onRetry={route.reload} /> : <><SkeletonCards count={4} /><SkeletonRows rows={5} /></>}
+      </div>
+    );
+
   const v = r.vehicle;
   const reload = async () => {
     await route.reload();
     setPanel("");
   };
+  const panelProps = (p: "stops" | "settings" | "add") => ({ route: r, open: panel === p, onOpenChange: (o: boolean) => setPanel(o ? p : "") });
+
+  const riderColumns: Column<Rider>[] = [
+    {
+      id: "student",
+      header: "Student",
+      sortValue: (x) => x.name,
+      cell: (x) => (
+        <span className="block">
+          <Link href={`/students/${x.studentId}`} className="font-medium text-fg hover:text-brand print:text-inherit">{x.name}</Link>
+          <span className="text-xs text-fg-muted"> · {x.admissionNo}</span>
+        </span>
+      ),
+    },
+    { id: "class", header: "Class", sortValue: (x) => x.class, cell: (x) => x.class ?? "–" },
+    {
+      id: "phone",
+      header: "Parent's phone",
+      cell: (x) =>
+        x.phones.length ? (
+          <span className="flex flex-wrap gap-x-2">
+            {x.phones.map((p) => <a key={p} className="tabular-nums text-brand hover:underline print:text-inherit" href={`tel:${p}`}>{p}</a>)}
+          </span>
+        ) : "–",
+    },
+    { id: "since", header: "Since", sortValue: (x) => x.since, cell: (x) => day(x.since), hideBelow: "sm" },
+    ...(canEdit
+      ? [{
+          id: "actions",
+          header: <span className="sr-only">Actions</span>,
+          align: "right" as const,
+          className: "print:hidden",
+          headerClassName: "print:hidden",
+          cell: (x: Rider) => (
+            <Button type="button" size="sm" variant="ghost" icon={<UserX />} onClick={() => setStopping(x)} aria-label={`Stop transport for ${x.name}`}>Stop</Button>
+          ),
+        }]
+      : []),
+  ];
+
+  const groups = [...r.stops.map((s) => ({ stop: s as Stop | null, key: s.id })), { stop: null, key: "none" }]
+    .map(({ stop, key }) => ({ stop, key, here: r.riders.filter((x) => x.stopId === (stop?.id ?? null)) }))
+    .filter((g) => g.stop || g.here.length);
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="print:hidden">
-        <Link href="/transport" className="text-sm text-brand">← Transport</Link>
-      </div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">{r.name}</h1>
-          <p className="text-sm opacity-70">
-            {r.campus ? `${r.campus.name} · ` : ""}
-            {rupees(r.monthlyFee)} a month · {r.riders.length} riders{v && ` of ${v.capacity} seats`}
-            {!r.isActive && " · closed"}
-          </p>
-          {v ? (
-            <p className="mt-1 text-sm">
-              {vehicleLabel(v)} · driver {v.driverName}, <a className="text-brand" href={`tel:${v.driverPhone}`}>{v.driverPhone}</a>
-              {v.conductorName && <> · conductor {v.conductorName}{v.conductorPhone && `, ${v.conductorPhone}`}</>}
-            </p>
-          ) : (
-            <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">No vehicle on this route yet.</p>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2 print:hidden">
-          {canEdit && (
-            <>
-              <Button variant={panel === "add" ? "primary" : "ghost"} onClick={() => setPanel(panel === "add" ? "" : "add")}>Add riders</Button>
-              <Button variant={panel === "stops" ? "primary" : "ghost"} onClick={() => setPanel(panel === "stops" ? "" : "stops")}>Edit stops</Button>
-              <Button variant={panel === "settings" ? "primary" : "ghost"} onClick={() => setPanel(panel === "settings" ? "" : "settings")}>Route settings</Button>
-            </>
-          )}
-          <Button variant="ghost" onClick={() => window.print()}>Print driver&apos;s list</Button>
-        </div>
-      </div>
-      <ErrorText>{error}</ErrorText>
+      <PageHeader
+        title={r.name}
+        breadcrumbs={crumbs}
+        leading={<span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary-tint text-brand" aria-hidden><BusFront className="size-5" /></span>}
+        description={`${r.campus ? `${r.campus.name}, ` : ""}${rupees(r.monthlyFee)} a month, ${r.riders.length} riders${v ? ` of ${v.capacity} seats` : ""}`}
+        meta={<StatusPill status={r.isActive ? "ACTIVE" : "CLOSED"} />}
+        actions={
+          <>
+            {canEdit && (
+              <>
+                <Button variant="secondary" icon={<Settings2 />} onClick={() => setPanel("settings")}>Route settings</Button>
+                <Button variant="secondary" icon={<MapPin />} onClick={() => setPanel("stops")}>Edit stops</Button>
+                <Button variant="secondary" icon={<UserPlus />} onClick={() => setPanel("add")} disabled={!r.isActive}>Add riders</Button>
+              </>
+            )}
+            <Button icon={<Printer />} onClick={() => window.print()}>Print driver&apos;s list</Button>
+          </>
+        }
+      />
 
-      {panel && (
-        <Card className="print:hidden">
-          {panel === "stops" && <StopsEditor route={r} onSaved={reload} />}
-          {panel === "settings" && <RouteSettings route={r} onSaved={reload} />}
-          {panel === "add" && <AddRider route={r} onAdded={route.reload} />}
+      {/* Shown only on paper: the PageHeader is hidden when printing. */}
+      <div className="hidden print:block">
+        <h1 className="text-2xl font-semibold">{r.name}</h1>
+        <p className="text-sm">
+          {r.campus ? `${r.campus.name} · ` : ""}
+          {rupees(r.monthlyFee)} a month · {r.riders.length} riders{v && ` of ${v.capacity} seats`}
+          {!r.isActive && " · closed"}
+        </p>
+      </div>
+
+      <StatGrid className="print:hidden">
+        <KpiCard label="Riders" value={r.riders.length} icon={<Users />} hint={v ? `${Math.max(0, v.capacity - r.riders.length)} seats free` : undefined} />
+        <KpiCard label="Stops" value={r.stops.length} icon={<MapPin />} tone="info" />
+        <KpiCard label="Monthly fee" value={rupees(r.monthlyFee)} icon={<Banknote />} tone="success" hint="Stops can charge their own fee" />
+        <KpiCard
+          label="Seats filled"
+          value={v ? `${Math.round((r.riders.length / v.capacity) * 100)}%` : "–"}
+          icon={<Armchair />}
+          tone={v && r.riders.length >= v.capacity ? "warning" : "neutral"}
+          hint={v ? undefined : "No vehicle yet"}
+          sparkline={v ? <ProgressBar className="w-20" size="sm" value={Math.min(r.riders.length, v.capacity)} max={v.capacity} tone={r.riders.length >= v.capacity ? "warning" : "primary"} /> : undefined}
+        />
+      </StatGrid>
+
+      {v ? (
+        <Card className="break-inside-avoid">
+          <CardHeader title="Vehicle and crew" icon={<BusFront />} />
+          <DescriptionList
+            columns={3}
+            items={[
+              { label: "Vehicle", value: vehicleLabel(v) },
+              { label: "Driver", value: <>{v.driverName}, <a className="text-brand hover:underline print:text-inherit" href={`tel:${v.driverPhone}`}>{v.driverPhone}</a></> },
+              { label: "Conductor", value: v.conductorName ? <>{v.conductorName}{v.conductorPhone && <>, <a className="text-brand hover:underline print:text-inherit" href={`tel:${v.conductorPhone}`}>{v.conductorPhone}</a></>}</> : "–" },
+            ]}
+          />
+        </Card>
+      ) : (
+        <Alert tone="warning" title="No vehicle on this route yet." action={canEdit ? <Button size="sm" variant="secondary" onClick={() => setPanel("settings")}>Choose a vehicle</Button> : undefined}>
+          Riders can still be added; pick a van in route settings when one is ready.
+        </Alert>
+      )}
+
+      {r.stops.length === 0 && r.riders.length === 0 && (
+        <Card padding="none">
+          <EmptyState
+            icon={<MapPin />}
+            title="No stops or riders yet"
+            description="Add the route's stops, then its riders."
+            action={canEdit ? <Button icon={<MapPin />} onClick={() => setPanel("stops")}>Add stops</Button> : undefined}
+          />
         </Card>
       )}
 
-      {r.stops.length === 0 && r.riders.length === 0 && <p className="text-sm opacity-60">Add the route&apos;s stops, then its riders.</p>}
-
-      {[...r.stops.map((s) => ({ stop: s as Stop | null, key: s.id })), { stop: null, key: "none" }].map(({ stop, key }) => {
-        const here = r.riders.filter((x) => x.stopId === (stop?.id ?? null));
-        if (!stop && !here.length) return null;
-        return (
-          <Card key={key} className="break-inside-avoid overflow-x-auto">
-            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-semibold">{stop ? stop.name : "No set stop"}</h2>
-              <span className="text-sm opacity-70">
-                {stop?.pickupTime && `Pick-up ${stop.pickupTime}`}
-                {stop?.dropTime && ` · drop ${stop.dropTime}`}
-                {stop?.monthlyFee != null && ` · ${rupees(stop.monthlyFee)} a month`}
+      {groups.map(({ stop, key, here }, i) => (
+        <Card key={key} padding="none" className="break-inside-avoid overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary-tint text-xs font-semibold tabular-nums text-brand" aria-hidden>
+                {stop ? i + 1 : "–"}
               </span>
+              <h2 className="truncate text-base font-semibold text-fg">{stop ? stop.name : "No set stop"}</h2>
+              <span className="text-xs text-fg-muted tabular-nums">{here.length} {here.length === 1 ? "rider" : "riders"}</span>
             </div>
-            {here.length === 0 ? (
-              <p className="text-sm opacity-60">Nobody picked up here.</p>
-            ) : (
-              <table className={tableClass}>
-                <thead className="opacity-60">
-                  <tr><th className="py-2">Student</th><th>Class</th><th>Parent&apos;s phone</th><th>Since</th><th className="print:hidden" /></tr>
-                </thead>
-                <tbody>
-                  {here.map((x) => (
-                    <tr key={x.assignmentId} className={rowClass}>
-                      <td className="py-2">
-                        <Link href={`/students/${x.studentId}`} className="text-brand print:text-inherit">{x.name}</Link>
-                        <span className="text-xs opacity-60"> · {x.admissionNo}</span>
-                      </td>
-                      <td>{x.class ?? "–"}</td>
-                      <td>{x.phones.join(", ") || "–"}</td>
-                      <td>{day(x.since)}</td>
-                      <td className="text-right print:hidden">
-                        {canEdit && <button className="text-sm opacity-70 hover:opacity-100" onClick={() => stopRide(x)}>Stop</button>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </Card>
-        );
-      })}
-      {!r.isActive && <Badge>This route is closed</Badge>}
+            <span className="flex flex-wrap items-center gap-x-3 text-[13px] text-fg-muted tabular-nums">
+              {stop?.pickupTime && <span className="inline-flex items-center gap-1"><Clock className="size-3.5" aria-hidden />Pick-up {stop.pickupTime}</span>}
+              {stop?.dropTime && <span>Drop {stop.dropTime}</span>}
+              {stop?.monthlyFee != null && <span>{rupees(stop.monthlyFee)} a month</span>}
+            </span>
+          </div>
+          {here.length === 0 ? (
+            <p className="border-t border-border px-5 py-4 text-sm text-fg-muted">Nobody picked up here.</p>
+          ) : (
+            <div className="border-t border-border">
+              <DataTable
+                bare
+                label={`Riders at ${stop ? stop.name : "no set stop"}`}
+                columns={riderColumns}
+                data={here}
+                getRowId={(x) => x.assignmentId}
+                pageSize={0}
+                defaultSort={{ id: "student", dir: "asc" }}
+              />
+            </div>
+          )}
+        </Card>
+      ))}
+
+      {canEdit && (
+        <>
+          <StopsEditor key={`stops-${panel === "stops"}`} {...panelProps("stops")} onSaved={reload} />
+          <RouteSettings key={`settings-${panel === "settings"}`} {...panelProps("settings")} onSaved={reload} />
+          <AddRider {...panelProps("add")} onAdded={route.reload} />
+        </>
+      )}
+
+      <ConfirmDialog
+        open={!!stopping}
+        onOpenChange={(o) => !o && setStopping(null)}
+        title={`Stop ${stopping?.name ?? ""}'s transport?`}
+        description="Transport stops from today. This month is still charged."
+        confirmLabel="Stop transport"
+        destructive
+        loading={busy}
+        onConfirm={stopRide}
+      />
     </div>
   );
 }

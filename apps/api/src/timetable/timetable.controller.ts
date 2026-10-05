@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { campusScope, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -56,6 +56,7 @@ const slotInclude = {
 } as const;
 
 @Controller('timetable')
+@Permission('timetable')
 @RequiresFeature('timetable')
 export class TimetableController {
   constructor(

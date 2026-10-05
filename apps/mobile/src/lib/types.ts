@@ -43,3 +43,55 @@ export interface Slot {
   section: string;
   room: string | null;
 }
+
+/** GET /student/today (the parts the student home uses). */
+export type LiveState = 'upcoming' | 'live' | 'ended' | 'cancelled';
+export type AssignmentState = 'pending' | 'overdue' | 'missing' | 'submitted' | 'graded' | 'returned';
+
+export interface StudentToday {
+  date: string;
+  dayOfWeek: number;
+  student: { id: string; name: string; firstName: string };
+  section: { id: string; name: string } | null;
+  liveClasses: {
+    id: string;
+    title: string;
+    subject: string | null;
+    teacher: string | null;
+    startsAt: string;
+    endsAt: string;
+    durationMin: number;
+    provider: 'JITSI' | 'ZOOM' | 'GOOGLE_MEET' | 'OTHER';
+    recordingUrl: string | null;
+    joined: boolean;
+    state: LiveState;
+    canJoin: boolean;
+  }[];
+  assignmentsDue: {
+    id: string;
+    title: string;
+    subject: string;
+    dueAt: string;
+    maxPoints: number;
+    status: AssignmentState;
+    submittedAt: string | null;
+    hoursLeft: number;
+  }[];
+}
+
+/** GET /student/results (exams only; the app does not show the other lists yet). */
+export interface StudentResults {
+  exams: {
+    examId: string;
+    exam: string;
+    academicYear: string;
+    publishedAt: string | null;
+    obtained: number;
+    maxTotal: number;
+    percent: number;
+    grade: string;
+    position: number | null;
+    passed: boolean;
+    subjects: { subject: string; max: number; marks: number | null; absent: boolean; passed: boolean }[];
+  }[];
+}

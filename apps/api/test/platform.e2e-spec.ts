@@ -233,12 +233,14 @@ describe('Platform and plans (e2e)', () => {
     const res = await request(server)
       .post(`/api/platform/schools/${schoolId}/support-login`)
       .set(admin)
+      .send({ reason: 'Owner asked for help with fee setup' })
       .expect(201);
+    expect(res.body.schoolSlug).toBe(schoolSlug);
     const me = await request(server)
       .get('/api/auth/me')
       .set({ Authorization: `Bearer ${res.body.accessToken}` })
       .expect(200);
-    expect(me.body.name).toMatch(/SchoolSyncer support: Ops/);
+    expect(me.body.support).toMatchObject({ adminName: 'Ops' });
     const logged = await prisma.auditLog.count({
       where: { schoolId, action: 'platform.support_login' },
     });

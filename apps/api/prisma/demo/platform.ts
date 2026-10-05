@@ -4,6 +4,7 @@
 import {
   Gender,
   PlatformInvoiceStatus,
+  PlatformRole,
   PrismaClient,
   Role,
   StudentStatus,
@@ -21,7 +22,8 @@ const DAY = 86_400_000;
 
 export const PLATFORM_ADMIN = {
   email: 'admin@schoolsyncer.pk',
-  name: 'SchoolSyncer Support',
+  // A person's name: the console shows it in the header, support banners and audit entries.
+  name: 'Adnan Qureshi',
 };
 
 /** Small schools that exist only as customers in the console. */
@@ -96,8 +98,15 @@ export async function seedPlatformAdmin(
 ) {
   await prisma.platformAdmin.upsert({
     where: { email: PLATFORM_ADMIN.email },
-    create: { ...PLATFORM_ADMIN, passwordHash },
-    update: { passwordHash, isActive: true },
+    // The column defaults to SUPPORT, so the demo owner says so explicitly.
+    create: { ...PLATFORM_ADMIN, passwordHash, role: PlatformRole.OWNER },
+    update: {
+      name: PLATFORM_ADMIN.name,
+      passwordHash,
+      isActive: true,
+      role: PlatformRole.OWNER,
+      mustChangePassword: false,
+    },
   });
 }
 
