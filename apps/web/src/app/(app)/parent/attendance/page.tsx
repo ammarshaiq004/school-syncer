@@ -136,7 +136,7 @@ export default function ParentAttendancePage() {
 
 function ChildSwitcher({ list, selected, onSelect }: { list: ChildSummary[]; selected: string; onSelect: (id: string) => void }) {
   return (
-    <div role="radiogroup" aria-label="Choose a child" className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+    <div role="radiogroup" aria-label="Choose a child" className="flex flex-wrap gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:none]">
       {list.map((c) => {
         const active = c.id === selected;
         return (
@@ -175,9 +175,9 @@ function ChildHistory({ childId, childName, range }: { childId: string; childNam
   const columns: Column<MonthRow>[] = [
     { id: "month", header: "Month", sortValue: (r) => r.month, cell: (r) => <span className="font-medium text-fg">{monthLabel(r.month)}</span> },
     { id: "present", header: "Present", align: "right", sortValue: (r) => r.present, cell: (r) => r.present },
-    { id: "late", header: "Late", align: "right", sortValue: (r) => r.late, cell: (r) => r.late },
+    { id: "late", header: "Late", align: "right", sortValue: (r) => r.late, cell: (r) => r.late, hideBelow: "sm" },
     { id: "absent", header: "Absent", align: "right", sortValue: (r) => r.absent, cell: (r) => r.absent },
-    { id: "leave", header: "Leave", align: "right", sortValue: (r) => r.leave, cell: (r) => r.leave, hideBelow: "sm" },
+    { id: "leave", header: "Leave", align: "right", sortValue: (r) => r.leave, cell: (r) => r.leave },
     { id: "total", header: "Days marked", align: "right", sortValue: (r) => r.total, cell: (r) => r.total, hideBelow: "md" },
     {
       id: "rate",
@@ -231,7 +231,7 @@ function ChildHistory({ childId, childName, range }: { childId: string; childNam
         <Card className="min-w-0 lg:col-span-2">
           <CardHeader
             title={`${childName}'s attendance`}
-            description={d ? `${day(d.from)} to ${day(d.to)}. Hover or focus a day for details.` : "Each square is one day."}
+            description={d ? `${day(d.from)} to ${day(d.to)}. Tap or hover a day for details.` : "Each square is one day."}
             icon={<CalendarCheck />}
           />
           {!d ? (

@@ -3,6 +3,7 @@
 import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { Coffee, MapPin } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { roomLabel } from "@/lib/format";
 
 export interface Period { id: string; name: string; startTime: string; endTime: string; isBreak: boolean }
 export interface Slot {
@@ -149,7 +150,7 @@ export function SlotText({ slot, show }: { slot?: Slot; show: "teacher" | "secti
       {slot.room && (
         <div className="mt-0.5 flex items-center gap-1 text-xs text-fg-muted">
           <MapPin className="size-3" aria-hidden />
-          Room {slot.room}
+          {roomLabel(slot.room)}
         </div>
       )}
     </div>

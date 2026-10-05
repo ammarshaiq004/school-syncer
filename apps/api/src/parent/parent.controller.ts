@@ -3,6 +3,7 @@ import { InvoiceStatus, Role } from '@prisma/client';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { dayStart, daysBefore, localToday } from '../common/dates.js';
+import type { SubjectResult } from '../exams/result-calculator.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { learningSummary } from '../student/learning-summary.js';
 
@@ -99,6 +100,8 @@ export class ParentController {
         grade: r.grade,
         position: r.position,
         passed: r.passed,
+        // The per-subject marks let the dashboard name what failed, not just "not passed".
+        subjects: r.subjects as unknown as SubjectResult[],
       })),
       transport: student.transport[0]
         ? {

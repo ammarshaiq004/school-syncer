@@ -4,6 +4,7 @@ import { Printer } from "lucide-react";
 import { Button, ErrorState, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { day } from "@/lib/format";
+import { notPassedReason } from "@/lib/results";
 import { useApi } from "@/lib/use-api";
 
 interface ReportCard {
@@ -87,6 +88,10 @@ export function ReportCardView({ examId, studentId, path }: { examId: string; st
   const cell = "border border-slate-300 px-3 py-2 print:border-slate-500";
   const head = `${cell} bg-slate-100 text-left text-xs font-semibold uppercase tracking-[0.04em] text-slate-600`;
   const num = "text-right tabular-nums";
+  // Phones only have room for the marks and the result, so Total and Pass fold into the Obtained cell.
+  const hideSmall = "hidden sm:table-cell print:table-cell";
+  const showSmall = "sm:hidden print:hidden";
+  const notPassed = notPassedReason(c.subjects);
   const days = c.attendance.present + c.attendance.absent + c.attendance.leave;
 
   return (
@@ -129,8 +134,8 @@ export function ReportCardView({ examId, studentId, path }: { examId: string; st
             <thead>
               <tr>
                 <th scope="col" className={head}>Subject</th>
-                <th scope="col" className={cn(head, "text-right")}>Total</th>
-                <th scope="col" className={cn(head, "text-right")}>Pass</th>
+                <th scope="col" className={cn(head, num, hideSmall)}>Total</th>
+                <th scope="col" className={cn(head, num, hideSmall)}>Pass</th>
                 <th scope="col" className={cn(head, "text-right")}>Obtained</th>
                 <th scope="col" className={head}>Result</th>
               </tr>
@@ -139,24 +144,41 @@ export function ReportCardView({ examId, studentId, path }: { examId: string; st
               {c.subjects.map((s) => (
                 <tr key={s.subject} className={s.passed ? undefined : "bg-rose-50"}>
                   <th scope="row" className={cn(cell, "font-medium")}>{s.subject}</th>
-                  <td className={cn(cell, num)}>{s.max}</td>
-                  <td className={cn(cell, num, "text-slate-600")}>{s.pass}</td>
-                  <td className={cn(cell, num, "font-semibold")}>{s.absent ? "Absent" : s.marks}</td>
-                  <td className={cell}>{s.passed ? "Pass" : <span className="font-semibold text-rose-700">Fail</span>}</td>
+                  <td className={cn(cell, num, hideSmall)}>{s.max}</td>
+                  <td className={cn(cell, num, hideSmall, "text-slate-600")}>{s.pass}</td>
+                  <td className={cn(cell, num, "font-semibold")}>
+                    {s.absent ? "Absent" : s.marks}
+                    {!s.absent && <span className={cn("font-normal text-slate-500", showSmall)}> / {s.max}</span>}
+                  </td>
+                  <td className={cell}>{s.passed ? "Pass" : <span className="font-semibold text-rose-700">{s.absent ? "Absent" : "Fail"}</span>}</td>
                 </tr>
               ))}
               <tr className="bg-slate-50 font-semibold">
                 <th scope="row" className={cell}>Total</th>
-                <td className={cn(cell, num)}>{c.maxTotal}</td>
-                <td className={cell} />
-                <td className={cn(cell, num)}>{c.obtained}</td>
+                <td className={cn(cell, num, hideSmall)}>{c.maxTotal}</td>
+                <td className={cn(cell, hideSmall)} />
+                <td className={cn(cell, num)}>
+                  {c.obtained}
+                  <span className={cn("font-normal text-slate-500", showSmall)}> / {c.maxTotal}</span>
+                </td>
                 <td className={cell}>{c.passed ? "Pass" : <span className="text-rose-700">Fail</span>}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-3 text-center sm:grid-cols-4 print:grid-cols-4">
+        <div className="mb-6 grid grid-cols-2 gap-3 text-center sm:grid-cols-5 print:grid-cols-5">
+          <div
+            className={cn(
+              "rounded-lg border p-3 [print-color-adjust:exact]",
+              c.passed ? "border-emerald-300 bg-emerald-50" : "border-rose-300 bg-rose-50",
+            )}
+          >
+            <div className={cn("font-display text-lg font-semibold", c.passed ? "text-emerald-800" : "text-rose-800")}>
+              {c.passed ? "Pass" : "Fail"}
+            </div>
+            <div className="text-xs text-slate-500">Result</div>
+          </div>
           <div className="rounded-lg border border-slate-300 p-3">
             <div className="font-display text-lg font-semibold tabular-nums">{c.percent}%</div>
             <div className="text-xs text-slate-500">Percentage</div>
@@ -174,6 +196,12 @@ export function ReportCardView({ examId, studentId, path }: { examId: string; st
             <div className="text-xs text-slate-500">Days present</div>
           </div>
         </div>
+
+        {!c.passed && (
+          <p className="mb-6 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[13px] font-medium text-rose-800 [print-color-adjust:exact]">
+            Overall result: not passed{notPassed ? `, ${notPassed}` : ""}.
+          </p>
+        )}
 
         <section className="mb-8 flex flex-col gap-4">
           <div>

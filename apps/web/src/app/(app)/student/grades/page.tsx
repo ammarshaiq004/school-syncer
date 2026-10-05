@@ -25,6 +25,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { day } from "@/lib/format";
+import { notPassedLabel } from "@/lib/results";
 import { useSchoolMode, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
@@ -327,7 +328,7 @@ function ExamCard({ exam: e }: { exam: ExamResultItem }) {
             </div>
           </div>
           <LetterGrade grade={e.grade} />
-          <StatusPill status={e.passed ? "PASSED" : "FAILED"} />
+          <StatusPill status={e.passed ? "PASSED" : "FAILED"} label={e.passed ? undefined : notPassedLabel(e.subjects)} />
           <Link href={`/student/grades/${e.examId}`} className={buttonClass("secondary", "sm")} aria-label={`Report card for ${e.exam}`}>
             <FileText className="size-4" aria-hidden />
             Report card
