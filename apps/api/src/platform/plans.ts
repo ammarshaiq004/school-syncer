@@ -18,6 +18,7 @@ export const FEATURES = {
   library: 'Library',
   certificates: 'Certificates and ID cards',
   elearning: 'E-school: courses, live classes, assignments and quizzes',
+  ai_assistant: 'AI assistant: questions, drafts and at-risk students',
 } as const;
 
 export type Feature = keyof typeof FEATURES;
@@ -34,6 +35,7 @@ export const DEFAULT_PLANS = [
     minimumMonthly: 5000,
     maxStudents: 300,
     maxCampuses: 1,
+    maxStorageMb: 5120,
     features: [
       'admissions',
       'fees',
@@ -54,6 +56,7 @@ export const DEFAULT_PLANS = [
     minimumMonthly: 10000,
     maxStudents: 1500,
     maxCampuses: 3,
+    maxStorageMb: 25600,
     features: Object.keys(FEATURES) as Feature[],
     sortOrder: 2,
   },
@@ -66,6 +69,7 @@ export const DEFAULT_PLANS = [
     minimumMonthly: 25000,
     maxStudents: null,
     maxCampuses: null,
+    maxStorageMb: 102400,
     features: Object.keys(FEATURES) as Feature[],
     sortOrder: 3,
   },

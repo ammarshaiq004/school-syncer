@@ -29,6 +29,7 @@ import {
   ReceiptText,
   Settings,
   ShieldCheck,
+  Sparkles,
   Sun,
   Table2,
   TrendingUp,
@@ -115,7 +116,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "overview",
     label: "Overview",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard", roles: STAFF, views: ["admin", "teacher"], keywords: "home summary" }],
+    items: [
+      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard", roles: STAFF, views: ["admin", "teacher"], keywords: "home summary" },
+      { href: "/assistant", label: "AI assistant", icon: Sparkles, module: "assistant", roles: [...TEACHING, "ACCOUNTANT"], feature: "ai_assistant", views: ["admin", "teacher"], keywords: "ai ask question claude at risk struggling students remarks report card draft message parents" },
+    ],
   },
   {
     id: "people",

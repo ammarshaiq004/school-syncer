@@ -40,6 +40,7 @@ export type PermissionGroup = keyof typeof PERMISSION_GROUPS;
  */
 export const PERMISSION_MODULES = {
   dashboard: { label: 'Dashboard', group: 'overview' },
+  assistant: { label: 'AI assistant', group: 'overview' },
   students: { label: 'Students', group: 'students' },
   admissions: { label: 'Admissions', group: 'students' },
   attendance: { label: 'Attendance', group: 'students' },
@@ -105,6 +106,7 @@ function matrix(fill: AccessLevel, levels: PartialMatrix = {}): PermissionMatrix
 /** Teaching roles: today they reach these through STAFF_ROLES / ATTENDANCE_ROLES. */
 const TEACHING: PartialMatrix = {
   dashboard: 'view',
+  assistant: 'manage', // ask questions, draft remarks and messages
   students: 'view',
   attendance: 'manage',
   certificates: 'view',
@@ -145,6 +147,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
   [Role.ADMIN]: matrix('manage'),
   [Role.ACCOUNTANT]: matrix('none', {
     dashboard: 'view',
+    assistant: 'manage',
     students: 'view',
     attendance: 'view',
     certificates: 'view',
@@ -171,6 +174,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     homework: 'view',
     exams: 'view',
     elearning: 'none', // e-school is for teaching staff
+    assistant: 'none',
     gradebook: 'none',
     lesson_plans: 'none',
     chat: 'none',

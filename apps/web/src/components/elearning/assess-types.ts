@@ -2,6 +2,7 @@
 
 import { liveDate, liveTime, schoolInstant, SCHOOL_TZ } from "./live-types";
 import type { CourseSection } from "./courses-types";
+import type { FileInfo, FileLink } from "./file-upload";
 
 export interface AssessBase {
   id: string;
@@ -26,6 +27,8 @@ export interface AssessBase {
 
 export interface Assignment extends AssessBase {
   attachmentUrl: string | null;
+  /** Uploaded worksheet: with a link from detail endpoints, name and size only in lists. */
+  attachment: FileLink | FileInfo | null;
   dueAt: string;
   maxPoints: number;
   allowLate: boolean;
@@ -49,6 +52,8 @@ export interface Submission {
   studentId: string;
   body: string | null;
   linkUrl: string | null;
+  /** Uploaded work with a link to open it (missing on grade responses). */
+  file?: FileLink | null;
   submittedAt: string;
   isLate: boolean;
   status: SubmissionStatus;

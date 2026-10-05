@@ -34,6 +34,7 @@ import { ElearningModule } from './elearning/elearning.module.js';
 import { GradebookModule } from './gradebook/gradebook.module.js';
 import { LessonPlansModule } from './lesson-plans/lesson-plans.module.js';
 import { ChatModule } from './chat/chat.module.js';
+import { AssistantModule } from './assistant/assistant.module.js';
 import { ParentController } from './parent/parent.controller.js';
 import { ParentRecordsController } from './parent/parent-records.controller.js';
 import { StudentsController } from './students/students.controller.js';
@@ -79,6 +80,7 @@ import { UsersController } from './users/users.controller.js';
     GradebookModule,
     LessonPlansModule,
     ChatModule,
+    AssistantModule,
   ],
   controllers: [
     HealthController,

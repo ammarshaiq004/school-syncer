@@ -4,6 +4,7 @@ import type { AuthUser } from '../../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../../common/decorators.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { neighbours, progressPercent } from './course-rules.js';
+import { FilesService } from '../files/files.service.js';
 import { CoursesService } from './courses.service.js';
 
 const ordered = [{ sortOrder: 'asc' as const }, { createdAt: 'asc' as const }];
@@ -20,6 +21,7 @@ export class StudentCoursesController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly courses: CoursesService,
+    private readonly files: FilesService,
   ) {}
 
   @Get('courses')
@@ -84,6 +86,7 @@ export class StudentCoursesController {
                 title: true,
                 kind: true,
                 durationMin: true,
+                fileId: true,
                 progress: { where: { studentId: student.id }, select: { completedAt: true } },
               },
             },
@@ -128,6 +131,7 @@ export class StudentCoursesController {
       select: { completedAt: true },
     });
     const { prev, next } = neighbours(flat, lesson.id);
+    const file = lesson.file ? await this.files.link(lesson.file) : null;
     return {
       ...CoursesService.withEmbed({
         id: lesson.id,
@@ -138,6 +142,7 @@ export class StudentCoursesController {
         durationMin: lesson.durationMin,
         publishedAt: lesson.publishedAt,
       }),
+      file,
       completed: Boolean(progress),
       completedAt: progress?.completedAt ?? null,
       course: { id: course.id, title: course.title, color: course.color },
@@ -179,7 +184,7 @@ export class StudentCoursesController {
         isPublished: true,
         unit: { course: { schoolId: user.schoolId, sectionId: sectionId ?? '', isPublished: true } },
       },
-      include: { unit: { select: { id: true, title: true, courseId: true } } },
+      include: { unit: { select: { id: true, title: true, courseId: true } }, file: true },
     });
     if (!lesson) throw new NotFoundException('Lesson not found');
     const course = await this.prisma.course.findUniqueOrThrow({

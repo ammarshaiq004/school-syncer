@@ -28,6 +28,7 @@ import {
 } from "@/components/ui";
 import { AssignmentDialog } from "@/components/elearning/assess-assignment-dialog";
 import { GradeDrawer } from "@/components/elearning/assess-grade-drawer";
+import { FileChip } from "@/components/elearning/file-upload";
 import { WORK_STATE, whenText, type AssignmentRow, type StudentWorkState, type SubmissionRow, type SubmissionsResponse } from "@/components/elearning/assess-types";
 import { sectionName } from "@/components/elearning/courses-types";
 import { api } from "@/lib/api";
@@ -261,6 +262,7 @@ export default function AssignmentSubmissionsPage() {
               ...(a.createdBy ? [{ label: "Set by", value: a.createdBy.name }] : []),
             ]}
           />
+          {a.attachment && <FileChip file={a.attachment} className="mt-4" />}
           {a.attachmentUrl && (
             <a
               href={a.attachmentUrl}

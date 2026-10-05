@@ -17,6 +17,7 @@ import {
   StatusPill,
 } from "@/components/ui";
 import { courseColor, sectionName, type CourseSummary } from "@/components/elearning/courses-types";
+import { formatBytes } from "@/components/elearning/file-upload";
 import { LiveStatusPill, useNow } from "@/components/elearning/live-status";
 import { countdown, liveTime, sectionLabel, type LiveClass } from "@/components/elearning/live-types";
 import { day, todayIso } from "@/lib/format";
@@ -52,6 +53,12 @@ interface QuizRow {
   avgPercent: number | null;
 }
 
+interface StorageUsage {
+  usedBytes: number;
+  files: number;
+  limitBytes: number | null;
+}
+
 const sectionOf = (r: { section: { name: string; class: { name: string } } }) => `${r.section.class.name} ${r.section.name}`;
 
 export default function ElearningOverviewPage() {
@@ -63,6 +70,7 @@ export default function ElearningOverviewPage() {
   const assignments = useApi<AssignmentRow[]>("/elearning/assignments");
   const quizzes = useApi<QuizRow[]>("/elearning/quizzes");
   const courses = useApi<CourseSummary[]>("/elearning/courses");
+  const storage = useApi<StorageUsage>(canManage ? "/elearning/files/usage" : null);
 
   const liveToday = (live.data ?? []).filter((c) => c.status !== "CANCELLED");
   const liveNow = liveToday.filter((c) => c.status === "LIVE").length;
@@ -120,6 +128,26 @@ export default function ElearningOverviewPage() {
           href="/elearning/courses"
         />
       </StatGrid>
+
+      {storage.data && (
+        <Card padding="sm" className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6">
+          <p className="shrink-0 px-1 text-sm text-fg-secondary">
+            <span className="font-medium text-fg">File storage</span> · {storage.data.files} {storage.data.files === 1 ? "file" : "files"}
+          </p>
+          {storage.data.limitBytes ? (
+            <ProgressBar
+              className="flex-1"
+              size="sm"
+              value={storage.data.usedBytes}
+              max={storage.data.limitBytes}
+              valueText={`${formatBytes(storage.data.usedBytes)} of ${formatBytes(storage.data.limitBytes)}`}
+              tone={storage.data.usedBytes / storage.data.limitBytes > 0.9 ? "danger" : "primary"}
+            />
+          ) : (
+            <p className="text-sm tabular-nums text-fg-muted">{formatBytes(storage.data.usedBytes)} used, no limit on this plan</p>
+          )}
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
