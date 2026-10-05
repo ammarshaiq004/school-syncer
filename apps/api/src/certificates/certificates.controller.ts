@@ -34,6 +34,7 @@ import {
   RequiresFeature,
   Roles,
 } from '../common/decorators.js';
+import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -93,15 +94,7 @@ export class CertificatesController {
         ...(serial ? { serialNo: search!.trim().toUpperCase() } : {}),
         student: {
           ...(campuses ? { campusId: { in: campuses } } : {}),
-          ...(search && !serial
-            ? {
-                OR: [
-                  { firstName: { contains: search, mode: 'insensitive' } },
-                  { lastName: { contains: search, mode: 'insensitive' } },
-                  { admissionNo: { contains: search } },
-                ],
-              }
-            : {}),
+          ...(serial ? {} : (studentSearchWhere(search) ?? {})),
         },
       },
       orderBy: [{ issuedOn: 'desc' }, { serialNo: 'desc' }],

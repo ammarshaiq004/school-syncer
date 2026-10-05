@@ -6,16 +6,18 @@ import { Ban, CircleCheck, FilePlus, Receipt } from "lucide-react";
 import {
   Alert,
   Button,
-  ConfirmDialog,
   DataTable,
   Dialog,
   NativeSelect,
   PageHeader,
   SelectField,
   TextField,
+  Tooltip,
   useToast,
   type Column,
 } from "@/components/ui";
+import { ReasonDialog } from "@/components/platform/reason-dialog";
+import { isOwner, useConsoleAdmin } from "@/components/platform/session";
 import { platformApi } from "@/lib/api";
 import { day, rupees, thisMonth } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
@@ -45,6 +47,7 @@ const BILL_STATUSES = [
 
 export default function BillsPage() {
   const toast = useToast();
+  const canVoid = isOwner(useConsoleAdmin());
   // Links from the overview pass ?status=... (the console only renders in the browser).
   const [status, setStatus] = useState(() => new URLSearchParams(window.location.search).get("status") ?? "");
   const bills = usePlatformApi<Bill[]>(`/invoices${status ? `?status=${status}` : ""}`);
@@ -101,15 +104,12 @@ export default function BillsPage() {
     }
   }
 
-  async function voidBill() {
+  async function voidBill(reason: string) {
     const bill = voiding;
     if (!bill) return;
-    const failed = await run(async () => {
-      await platformApi(`/invoices/${bill.id}/void`, { method: "POST" });
-      return `${bill.number} voided.`;
-    });
-    if (failed) toast.error("Could not void the bill", failed);
-    else setVoiding(null);
+    await platformApi(`/invoices/${bill.id}/void`, { method: "POST", body: { reason } });
+    toast.success(`${bill.number} voided.`);
+    await bills.reload();
   }
 
   function openPay(b: Bill) {
@@ -164,9 +164,22 @@ export default function BillsPage() {
             <Button size="sm" variant="secondary" type="button" icon={<CircleCheck />} onClick={() => openPay(b)} aria-label={`Mark ${b.number} paid`}>
               Mark paid
             </Button>
-            <Button size="sm" variant="ghost" type="button" icon={<Ban />} onClick={() => setVoiding(b)} aria-label={`Void ${b.number}`}>
-              Void
-            </Button>
+            <Tooltip content="Only a SchoolSyncer owner can void a bill" disabled={canVoid}>
+              {/* A disabled button gets no hover, so the wrapper carries the tooltip. */}
+              <span tabIndex={canVoid ? undefined : 0}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  type="button"
+                  icon={<Ban />}
+                  disabled={!canVoid}
+                  onClick={() => setVoiding(b)}
+                  aria-label={`Void ${b.number}`}
+                >
+                  Void
+                </Button>
+              </span>
+            </Tooltip>
           </span>
         ) : null,
     },
@@ -279,15 +292,16 @@ export default function BillsPage() {
         </form>
       </Dialog>
 
-      <ConfirmDialog
+      <ReasonDialog
         open={!!voiding}
         onOpenChange={(open) => !open && setVoiding(null)}
         title={voiding ? `Void ${voiding.number}?` : "Void bill?"}
         description={voiding ? `${voiding.school.name} will no longer owe ${rupees(voiding.amount)} for this bill.` : ""}
         confirmLabel="Void bill"
         destructive
-        loading={busy}
-        onConfirm={voidBill}
+        reasonLabel="Why is this bill being voided?"
+        placeholder="Billed twice for September; the school asked by phone"
+        onSubmit={voidBill}
       />
     </div>
   );

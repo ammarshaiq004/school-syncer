@@ -14,13 +14,14 @@ export interface PlatformReports {
     name: string;
     slug: string;
     status: string;
-    reason: "past_due" | "trial_ending" | "inactive" | "students_falling";
+    reason: "past_due" | "trial_ended" | "trial_ending" | "inactive" | "students_falling";
     detail: string;
   }[];
 }
 
 export const RISK_LABELS: Record<PlatformReports["churnRisk"][number]["reason"], { label: string; tone: "danger" | "warning" | "info" | "neutral" }> = {
   past_due: { label: "Past due", tone: "danger" },
+  trial_ended: { label: "Trial ended", tone: "warning" },
   trial_ending: { label: "Trial ending", tone: "info" },
   inactive: { label: "No sign-ins", tone: "warning" },
   students_falling: { label: "Students falling", tone: "warning" },

@@ -33,6 +33,29 @@ export function timeLeft(hoursLeft: number) {
   return hoursLeft >= 0 ? `${text} left` : `${text} overdue`;
 }
 
+/** "Handed in on time" / "Handed in 2 days late", for work that is already in. */
+export function handedInText(dueAt: string, submittedAt: string) {
+  const hours = (new Date(submittedAt).getTime() - new Date(dueAt).getTime()) / 3_600_000;
+  if (hours <= 0) return "Handed in on time";
+  const late = hours >= 48 ? plural(Math.floor(hours / 24), "day") : hours >= 1 ? `${Math.floor(hours)} h` : `${Math.max(1, Math.round(hours * 60))} min`;
+  return `Handed in ${late} late`;
+}
+
+/**
+ * The one assignment average the student workspace shows: the mean of each
+ * marked assignment's percentage, so a 20-point worksheet counts the same as a
+ * 5-point task. The assignments page and the grades page both use it, so the
+ * two never disagree.
+ */
+export function assignmentAverage(marked: { points: number | null; maxPoints: number }[]) {
+  const scored = marked.filter((a) => a.points != null && a.maxPoints > 0);
+  if (!scored.length) return null;
+  return scored.reduce((n, a) => n + (a.points! / a.maxPoints) * 100, 0) / scored.length;
+}
+
+/** How `assignmentAverage` is worked out, for a hint line under the number. */
+export const ASSIGNMENT_AVERAGE_HINT = "Average of each assignment's percentage";
+
 export const URGENCY: Record<Exclude<Urgency, null>, { label: string; tone: "danger" | "warning" | "info" | "neutral" }> = {
   overdue: { label: "Overdue", tone: "danger" },
   today: { label: "Due today", tone: "warning" },

@@ -9,6 +9,9 @@ export const day = (d: string | Date) =>
 export const todayIso = () => new Date().toLocaleDateString("en-CA");
 export const thisMonth = () => todayIso().slice(0, 7);
 
+/** "Room 8A", whether the stored room is "8A" or already "Room 8A". */
+export const roomLabel = (room: string) => (/^room\b/i.test(room.trim()) ? room.trim() : `Room ${room}`);
+
 export const fullName = (s: { firstName: string; lastName?: string | null }) =>
   [s.firstName, s.lastName].filter(Boolean).join(" ");
 

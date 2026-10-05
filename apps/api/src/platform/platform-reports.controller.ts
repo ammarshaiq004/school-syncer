@@ -15,6 +15,7 @@ import {
   fallingStudents,
   monthKeys,
   trialConversion,
+  trialRisk,
 } from './reports.js';
 
 const PAGE_SIZE = 50;
@@ -44,7 +45,7 @@ export class PlatformReportsController {
       ...(adminId ? { adminId } : {}),
       ...(action ? { action: { startsWith: action } } : {}),
     };
-    const [rows, total, actions] = await Promise.all([
+    const [rows, total, actions, actorIds] = await Promise.all([
       this.prisma.platformAuditLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -57,7 +58,19 @@ export class PlatformReportsController {
         by: ['action'],
         orderBy: { action: 'asc' },
       }),
+      this.prisma.platformAuditLog.groupBy({ by: ['adminId'] }),
     ]);
+    // Everyone who appears in the log, for the staff filter (the staff list
+    // itself is owner-only, so support could not filter otherwise).
+    const actors = await this.prisma.platformAdmin.findMany({
+      where: {
+        id: {
+          in: actorIds.flatMap((a) => (a.adminId ? [a.adminId] : [])),
+        },
+      },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
     const schoolIds = [
       ...new Set(rows.map((r) => r.schoolId).filter((s) => s !== null)),
     ];
@@ -83,6 +96,7 @@ export class PlatformReportsController {
       page,
       pageSize: PAGE_SIZE,
       actions: actions.map((a) => a.action),
+      actors,
     };
   }
 
@@ -160,7 +174,12 @@ export class PlatformReportsController {
     }
 
     // Churn risk: one row per school and reason.
-    type Risk = 'past_due' | 'trial_ending' | 'inactive' | 'students_falling';
+    type Risk =
+      | 'past_due'
+      | 'trial_ended'
+      | 'trial_ending'
+      | 'inactive'
+      | 'students_falling';
     const risks: {
       schoolId: string;
       name: string;
@@ -169,7 +188,6 @@ export class PlatformReportsController {
       reason: Risk;
       detail: string;
     }[] = [];
-    const soon = new Date(now.getTime() + 7 * DAY);
     const idleSince = new Date(now.getTime() - 14 * DAY);
     const falling = fallingStudents(bills);
     for (const s of subs) {
@@ -182,18 +200,9 @@ export class PlatformReportsController {
       };
       if (s.status === SubscriptionStatus.PAST_DUE)
         risks.push({ ...base, reason: 'past_due', detail: 'Bill overdue' });
-      if (
-        s.status === SubscriptionStatus.TRIAL &&
-        s.trialEndsAt &&
-        s.trialEndsAt >= now &&
-        s.trialEndsAt <= soon
-      ) {
-        const days = Math.ceil((+s.trialEndsAt - +now) / DAY);
-        risks.push({
-          ...base,
-          reason: 'trial_ending',
-          detail: `Trial ends in ${days} day${days === 1 ? '' : 's'}`,
-        });
+      if (s.status === SubscriptionStatus.TRIAL) {
+        const trial = trialRisk(s.trialEndsAt, now);
+        if (trial) risks.push({ ...base, ...trial });
       }
       const seen = lastLogin.get(s.schoolId);
       // A school set up in the last two weeks is not idle yet.

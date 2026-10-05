@@ -51,6 +51,21 @@ export function dueUrgency(dueAt: Date, now: Date): Urgency {
   return 'later';
 }
 
+/**
+ * The urgency to show a student: only open work is pressing. Once the work is
+ * handed in, graded or returned there is nothing left to chase, so a past due
+ * date must not read as "overdue" (SCHOOL-104).
+ */
+export function openUrgency(
+  state: string,
+  dueAt: Date,
+  now: Date,
+): Urgency | null {
+  return state === 'pending' || state === 'overdue'
+    ? dueUrgency(dueAt, now)
+    : null;
+}
+
 /** Whole hours until the due date (negative once past). */
 export function hoursLeft(dueAt: Date, now: Date): number {
   const ms = dueAt.getTime() - now.getTime();

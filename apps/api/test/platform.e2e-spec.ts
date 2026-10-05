@@ -41,6 +41,7 @@ describe('Platform and plans (e2e)', () => {
       data: {
         email: adminEmail,
         name: 'Ops',
+        role: 'OWNER',
         passwordHash: await bcrypt.hash('password123', 4),
       },
     });
@@ -280,6 +281,7 @@ describe('Platform and plans (e2e)', () => {
     await request(server)
       .post(`/api/platform/invoices/${mine.id}/void`)
       .set(admin)
+      .send({ reason: 'Billed twice by mistake' })
       .expect(409);
     const sub = await request(server)
       .get('/api/subscription')

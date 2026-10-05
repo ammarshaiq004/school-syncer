@@ -50,6 +50,22 @@ export function countdown(ms: number) {
   return `${s} s`;
 }
 
+/** "Wed 8:00 am" in school time: the weekday and start time of a class days away. */
+export const weekdayTime = (iso: string | Date) =>
+  `${new Date(iso).toLocaleDateString("en-GB", { weekday: "short", timeZone: SCHOOL_TZ })} ${clockTime(iso)}`;
+
+/**
+ * How an upcoming class's start reads. A countdown is only useful within a day;
+ * past that it flattens to "1 day" for anything from 24 to 48 hours away, so the
+ * weekday and time are shown instead ("Starts Wed 8:00 am").
+ */
+export function startsText(startsAt: string | Date, now: number) {
+  const ms = new Date(startsAt).getTime() - now;
+  return ms >= 86_400_000
+    ? { prefix: "Starts", value: weekdayTime(startsAt) }
+    : { prefix: "Starts in", value: countdown(ms) };
+}
+
 export const PROVIDER_LABEL: Record<LiveProvider, string> = {
   JITSI: "Jitsi Meet",
   ZOOM: "Zoom",
@@ -138,6 +154,7 @@ export function LiveClassCard({ live, onJoined, compact }: { live: LiveCardData;
   if (now !== null && state === "live" && now > end) state = "ended";
   const canJoin = state === "live" || (state === "upcoming" && now !== null && now >= start - JOIN_EARLY_MS);
   const who = [live.subject, live.teacher].filter(Boolean).join(" with ");
+  const starts = state === "upcoming" && now !== null ? startsText(live.startsAt, now) : null;
 
   return (
     <div
@@ -174,9 +191,9 @@ export function LiveClassCard({ live, onJoined, compact }: { live: LiveCardData;
         </p>
       </div>
       <div className="flex shrink-0 flex-col items-stretch gap-1.5 sm:items-end">
-        {state === "upcoming" && now !== null && (
+        {starts && (
           <p className="text-[13px] tabular-nums text-fg-secondary" aria-live="off">
-            Starts in <span className="font-semibold text-fg">{countdown(start - now)}</span>
+            {starts.prefix} <span className="font-semibold text-fg">{starts.value}</span>
           </p>
         )}
         {(state === "live" || state === "upcoming") && (

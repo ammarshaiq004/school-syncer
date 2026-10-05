@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ScrollText } from "lucide-react";
 import { DataTable, DescriptionList, Drawer, NativeSelect, PageHeader, type Column } from "@/components/ui";
 import { auditIcon, auditLabel, auditReason } from "@/components/platform/audit-actions";
-import { isOwner, useConsoleAdmin, when } from "@/components/platform/session";
+import { when } from "@/components/platform/session";
 import { usePlatformApi } from "@/lib/use-api";
 
 interface Entry {
@@ -24,6 +24,8 @@ interface AuditPage {
   page: number;
   pageSize: number;
   actions: string[];
+  /** Staff members who appear in the log, for the filter. */
+  actors: { id: string; name: string }[];
 }
 
 const columns: Column<Entry>[] = [
@@ -71,7 +73,6 @@ const columns: Column<Entry>[] = [
 
 /** Every change made from the console, filterable by school, staff member and action. */
 export default function PlatformAuditPage() {
-  const admin = useConsoleAdmin();
   // Links from a school page pass ?schoolId=... (the console only renders in the browser).
   const [schoolId, setSchoolId] = useState(() => new URLSearchParams(window.location.search).get("schoolId") ?? "");
   const [adminId, setAdminId] = useState("");
@@ -82,8 +83,6 @@ export default function PlatformAuditPage() {
   const query = new URLSearchParams({ page: String(page), ...(schoolId && { schoolId }), ...(adminId && { adminId }), ...(action && { action }) });
   const audit = usePlatformApi<AuditPage>(`/audit?${query}`);
   const schools = usePlatformApi<{ id: string; name: string }[]>("/schools");
-  // The staff list is owner-only; support staff filter by school and action.
-  const staff = usePlatformApi<{ id: string; name: string }[]>(isOwner(admin) ? "/staff" : null);
 
   const filter = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLSelectElement>) => {
     set(e.target.value);
@@ -110,11 +109,11 @@ export default function PlatformAuditPage() {
               onChange={filter(setSchoolId)}
               wrapperClassName="w-52"
             />
-            {staff.data && (
+            {audit.data && (
               <NativeSelect
                 aria-label="Staff member"
                 placeholder="Every staff member"
-                options={staff.data.map((s) => ({ value: s.id, label: s.name }))}
+                options={audit.data.actors.map((s) => ({ value: s.id, label: s.name }))}
                 value={adminId}
                 onChange={filter(setAdminId)}
                 wrapperClassName="w-48"

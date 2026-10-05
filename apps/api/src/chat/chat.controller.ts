@@ -125,35 +125,22 @@ export class ChatController {
     });
   }
 
-  /** Parents start (or reopen) a conversation with one of their child's teachers. */
+  /**
+   * Starts (or reopens) a conversation. A parent names one of their child's
+   * teachers; a teacher or administrator names a guardian of a student they
+   * teach (any student in scope for administrators) and is the staff side.
+   * Either way the same thread is reused when one already exists.
+   */
   @Post('threads')
   @Permission('chat')
-  @Roles(Role.PARENT)
   async createThread(
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(createThreadSchema)) body: CreateThread,
   ) {
-    const link = await this.prisma.studentGuardian.findFirst({
-      where: {
-        studentId: body.studentId,
-        guardian: { userId: user.sub },
-        student: { schoolId: user.schoolId },
-      },
-      select: { studentId: true },
-    });
-    if (!link) throw new NotFoundException('Student not found');
-    const children = await this.chat.contacts(user);
-    const child = children.find((c) => c.student.id === body.studentId);
-    if (!child?.contacts.some((c) => c.userId === body.staffUserId)) {
-      throw new BadRequestException(
-        "You can only message your child's class teacher or subject teachers",
-      );
-    }
-    const key = {
-      studentId: body.studentId,
-      guardianUserId: user.sub,
-      staffUserId: body.staffUserId,
-    };
+    const asParent = Boolean(body.staffUserId);
+    const key = asParent
+      ? await this.parentThreadKey(user, body.studentId, body.staffUserId!)
+      : await this.staffThreadKey(user, body.studentId, body.guardianUserId!);
     const where = { studentId_guardianUserId_staffUserId: key };
     let thread = await this.prisma.chatThread.findUnique({
       where,
@@ -173,7 +160,7 @@ export class ChatController {
           { after: key },
         );
       } catch (e) {
-        // A concurrent request from the same parent created it first.
+        // A concurrent request from the same person created it first.
         if (
           !(e instanceof Prisma.PrismaClientKnownRequestError) ||
           e.code !== 'P2002'
@@ -186,7 +173,19 @@ export class ChatController {
       }
     }
     const unread = await this.chat.unreadByThread(user, [thread.id]);
-    return this.chat.toDto(thread, user, 'PARENT', unread.get(thread.id) ?? 0);
+    return this.chat.toDto(
+      thread,
+      user,
+      asParent ? 'PARENT' : 'STAFF',
+      unread.get(thread.id) ?? 0,
+    );
+  }
+
+  /** Students this staff member may start a conversation about, with their guardians. */
+  @Get('contacts')
+  @Roles(...ATTENDANCE_ROLES)
+  contacts(@CurrentUser() user: AuthUser) {
+    return this.chat.staffContacts(user);
   }
 
   /** Unread message counts across the user's own threads. */
@@ -310,6 +309,45 @@ export class ChatController {
       createdAt: message.createdAt,
       readAt: message.readAt,
     };
+  }
+
+  /** The parent side: the student must be their child and the staff member one of its teachers. */
+  private async parentThreadKey(
+    user: AuthUser,
+    studentId: string,
+    staffUserId: string,
+  ) {
+    if (!hasAnyRole(user, [Role.PARENT]))
+      throw new ForbiddenException('Only parents can message a teacher here');
+    const link = await this.prisma.studentGuardian.findFirst({
+      where: {
+        studentId,
+        guardian: { userId: user.sub },
+        student: { schoolId: user.schoolId },
+      },
+      select: { studentId: true },
+    });
+    if (!link) throw new NotFoundException('Student not found');
+    const children = await this.chat.contacts(user);
+    const child = children.find((c) => c.student.id === studentId);
+    if (!child?.contacts.some((c) => c.userId === staffUserId)) {
+      throw new BadRequestException(
+        "You can only message your child's class teacher or subject teachers",
+      );
+    }
+    return { studentId, guardianUserId: user.sub, staffUserId };
+  }
+
+  /** The staff side: the student must be one they teach (or any in scope for administrators). */
+  private async staffThreadKey(
+    user: AuthUser,
+    studentId: string,
+    guardianUserId: string,
+  ) {
+    if (!hasAnyRole(user, ATTENDANCE_ROLES))
+      throw new ForbiddenException('Your role cannot start a conversation');
+    await this.chat.assertCanStartThread(user, studentId, guardianUserId);
+    return { studentId, guardianUserId, staffUserId: user.sub };
   }
 
   /** Marks every message from the other side as read. Participants only. */

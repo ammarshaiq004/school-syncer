@@ -8,7 +8,10 @@ import { Avatar, Button, DataTable, NativeSelect, PageHeader, type Column } from
 import { CreateSchoolDialog } from "@/components/platform/create-school-dialog";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
-import { StatusBadge, STATUS_OPTIONS } from "../status";
+import { StatusBadge, STATUS_OPTIONS, statusLabel, trialEnded } from "../status";
+
+// The list can also be narrowed to trials that have run out (worked out by the API).
+const FILTER_OPTIONS = [...STATUS_OPTIONS.slice(0, 1), { value: "TRIAL_ENDED", label: statusLabel("TRIAL_ENDED") }, ...STATUS_OPTIONS.slice(1)];
 
 interface SchoolRow {
   id: string;
@@ -53,8 +56,17 @@ const columns: Column<SchoolRow>[] = [
     sortValue: (s) => s.status,
     cell: (s) => (
       <span className="flex flex-col items-start gap-0.5">
-        <StatusBadge status={s.status} />
-        {s.status === "TRIAL" && s.trialEndsAt && <span className="text-xs text-fg-muted">until {day(s.trialEndsAt)}</span>}
+        {trialEnded(s) ? (
+          <>
+            <StatusBadge status="TRIAL_ENDED" />
+            <span className="text-xs font-medium text-warning-text">ended {day(s.trialEndsAt!)}</span>
+          </>
+        ) : (
+          <>
+            <StatusBadge status={s.status} />
+            {s.status === "TRIAL" && s.trialEndsAt && <span className="text-xs text-fg-muted">until {day(s.trialEndsAt)}</span>}
+          </>
+        )}
       </span>
     ),
   },
@@ -115,12 +127,12 @@ export default function SchoolsPage() {
         search={search}
         onSearchChange={setSearch}
         manualFiltering
-        searchPlaceholder="Search name, code, city or email"
+        searchPlaceholder="Search name, code, email or phone"
         filters={
           <NativeSelect
             aria-label="Status"
             placeholder="Every status"
-            options={STATUS_OPTIONS}
+            options={FILTER_OPTIONS}
             value={status}
             onChange={(e) => setStatus(e.target.value)}
             wrapperClassName="w-40"

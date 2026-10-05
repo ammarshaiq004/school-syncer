@@ -10,6 +10,7 @@ import {
   Megaphone,
   Plus,
   Receipt,
+  TriangleAlert,
   UserPlus,
   Users,
   Wallet,
@@ -73,6 +74,14 @@ interface RecentPayment {
   invoiceStatus: string;
   student: { id: string; firstName: string; lastName: string | null; admissionNo: string };
 }
+interface Defaulter {
+  studentId: string;
+  name: string;
+  admissionNo: string;
+  className: string | null;
+  monthsOwed: number;
+  balance: number;
+}
 interface UpcomingExam {
   id: string;
   name: string;
@@ -85,7 +94,16 @@ export interface Summary {
   newStudentsThisMonth?: number;
   staff?: number;
   teachers?: number;
-  attendanceToday: { marked: number; present: number; absent: number; leave: number; late?: number };
+  attendanceToday: {
+    marked: number;
+    present: number;
+    absent: number;
+    leave: number;
+    late?: number;
+    /** Registers owed today and how many are in (missing on an older API). */
+    registersTotal?: number;
+    registersTaken?: number;
+  };
   attendanceWeek?: DayAttendance[];
   feesThisMonth: {
     period: string;
@@ -98,6 +116,7 @@ export interface Summary {
   overdue?: { invoices: number; amount: number };
   collectionTrend?: { period: string; billed: number; collected: number }[];
   recentPayments?: RecentPayment[];
+  topDefaulters?: Defaulter[];
   upcomingExams?: UpcomingExam[];
   announcements?: Notice[];
   studentsByClass?: { id: string; name: string; students: number }[];
@@ -135,6 +154,12 @@ export function AdminDashboard() {
   const t = s?.attendanceToday;
   const attendanceRate = t ? pct(t.present, t.marked) : null;
   const week = s?.attendanceWeek ?? [];
+  // How much of the school today's rate actually covers, so a partial figure is not read as the whole.
+  const registers =
+    t && t.registersTotal ? { taken: t.registersTaken ?? 0, total: t.registersTotal, pending: t.registersTotal - (t.registersTaken ?? 0) } : null;
+  const registerLine = registers
+    ? `${registers.taken} of ${registers.total} registers taken${registers.pending > 0 ? ` · ${registers.pending} pending` : ""}`
+    : null;
   const todayIso = now.toLocaleDateString("en-CA");
   const previousDay = [...week].reverse().find((d) => d.date < todayIso);
   const attendanceDelta =
@@ -256,7 +281,13 @@ export function AdminDashboard() {
           loading={loading}
           error={!s && !!summary.error}
           delta={attendanceDelta !== undefined ? { value: attendanceDelta, unit: " pts", label: "vs last school day" } : undefined}
-          hint={t && t.marked ? `${t.absent} absent of ${t.marked}` : t ? "No registers yet today" : undefined}
+          hint={
+            t && t.marked
+              ? `${t.absent} absent of ${t.marked}${registers && registers.pending > 0 ? `, ${registers.pending} registers pending` : ""}`
+              : t
+                ? "No registers yet today"
+                : undefined
+          }
           sparkline={week.length > 1 ? <Sparkline data={week.map((d) => d.rate)} color="var(--success)" label="Attendance rate, last school days" /> : undefined}
         />
         {canFees ? (
@@ -294,7 +325,7 @@ export function AdminDashboard() {
           <Card className="lg:col-span-2">
             <CardHeader
               title="Attendance"
-              description="Today and the last school days"
+              description={registerLine ?? "Today and the last school days"}
               icon={<CalendarCheck />}
               action={<ViewAll href="/attendance" label="Open registers" />}
             />
@@ -306,23 +337,34 @@ export function AdminDashboard() {
             ) : (
               <div className="grid items-center gap-6 sm:grid-cols-[minmax(0,200px)_1fr]">
                 {t && t.marked > 0 ? (
-                  <DonutChart
-                    label="Attendance today"
-                    size={152}
-                    centerValue={`${attendanceRate}%`}
-                    centerLabel="present"
-                    data={[
-                      { label: "Present", value: t.present - (t.late ?? 0), color: "var(--success)" },
-                      { label: "Late", value: t.late ?? 0, color: "var(--warning)" },
-                      { label: "Absent", value: t.absent, color: "var(--danger)" },
-                      { label: "Leave", value: t.leave, color: "var(--info)" },
-                    ]}
-                  />
+                  <div className="flex flex-col items-center gap-2">
+                    <DonutChart
+                      label="Attendance today"
+                      size={152}
+                      centerValue={`${attendanceRate}%`}
+                      centerLabel="present"
+                      data={[
+                        { label: "Present", value: t.present - (t.late ?? 0), color: "var(--success)" },
+                        { label: "Late", value: t.late ?? 0, color: "var(--warning)" },
+                        { label: "Absent", value: t.absent, color: "var(--danger)" },
+                        { label: "Leave", value: t.leave, color: "var(--info)" },
+                      ]}
+                    />
+                    {registers && registers.pending > 0 && (
+                      <p className="text-center text-xs text-fg-muted">
+                        Covers the {registers.taken} {registers.taken === 1 ? "register" : "registers"} taken so far, not the whole school.
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <EmptyState
                     icon={<CalendarCheck />}
                     title="No registers yet today"
-                    description="Today's split shows once teachers mark attendance."
+                    description={
+                      registers
+                        ? `None of today's ${registers.total} registers are in yet. The split shows once teachers mark attendance.`
+                        : "Today's split shows once teachers mark attendance."
+                    }
                     compact
                   />
                 )}
@@ -444,6 +486,44 @@ export function AdminDashboard() {
             </Card>
           )}
 
+          {/* Top defaulters */}
+          {canFees && (
+            <Card>
+              <CardHeader
+                title="Top defaulters"
+                description="Most owed across all open vouchers"
+                icon={<TriangleAlert />}
+                action={<ViewAll href="/fees#defaulters" label="All defaulters" />}
+              />
+              <SectionState
+                data={s ? (s.topDefaulters ?? []) : null}
+                error={summary.error}
+                onRetry={summary.reload}
+                rows={5}
+                empty={{ title: "Nothing outstanding", description: "Students with an unpaid balance show here.", icon: <TriangleAlert /> }}
+              >
+                {(list) => (
+                  <ul className="-my-2 divide-y divide-border">
+                    {list.map((d) => (
+                      <li key={d.studentId} className="flex items-center gap-3 py-2.5">
+                        <Avatar name={d.name} size="sm" />
+                        <span className="min-w-0 flex-1">
+                          <Link href={`/students/${d.studentId}`} className="block truncate text-sm font-medium text-fg hover:text-brand">
+                            {d.name}
+                          </Link>
+                          <span className="block truncate text-xs text-fg-muted">
+                            {d.className ?? "Not enrolled"} · {d.monthsOwed} {d.monthsOwed === 1 ? "month" : "months"} owed
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums text-danger-text">{rupees(d.balance)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </SectionState>
+            </Card>
+          )}
+
           {/* Upcoming exams */}
           {reachable.has("/exams") && (
             <Card>
@@ -483,7 +563,7 @@ export function AdminDashboard() {
 
           {/* Admissions pipeline */}
           {reachable.has("/admissions") && (
-            <Card className="lg:col-span-2">
+            <Card className="lg:col-span-3">
               <CardHeader title="Admissions pipeline" description="Applications at each stage" icon={<UserPlus />} action={<ViewAll href="/admissions" />} />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 {STAGES.map((stage) => (
@@ -505,7 +585,7 @@ export function AdminDashboard() {
           )}
 
           {/* Students by class */}
-          <Card>
+          <Card className="lg:col-span-2">
             <CardHeader title="Students by class" description="Active enrolments this year" icon={<Users />} action={<ViewAll href="/students" />} />
             <SectionState
               data={s ? (byClass ?? []) : null}

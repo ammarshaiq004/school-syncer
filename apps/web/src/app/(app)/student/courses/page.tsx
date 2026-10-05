@@ -92,18 +92,23 @@ function CourseCard({ course: c }: { course: StudentCourseCard }) {
             tone={finished ? "success" : "primary"}
             size="sm"
           />
-          <p className="flex items-center gap-1.5 text-[13px] font-medium text-brand">
-            {finished ? (
-              "Review the course"
-            ) : c.nextLesson ? (
+          {!finished && c.nextLesson ? (
+            // Straight to the lesson: the card's own overlay link covers the course page, so this sits above it.
+            <Link
+              href={`/student/courses/${c.id}/lessons/${c.nextLesson.id}`}
+              className="relative z-10 flex items-center gap-1.5 text-[13px] font-medium text-brand hover:underline"
+            >
               <span className="min-w-0 truncate">
                 {c.completedCount ? "Continue" : "Start"}: {c.nextLesson.title}
               </span>
-            ) : (
-              "Open course"
-            )}
-            <ArrowRight className="size-3.5 shrink-0" aria-hidden />
-          </p>
+              <ArrowRight className="size-3.5 shrink-0" aria-hidden />
+            </Link>
+          ) : (
+            <p className="flex items-center gap-1.5 text-[13px] font-medium text-brand">
+              {finished ? "Review the course" : "Open course"}
+              <ArrowRight className="size-3.5 shrink-0" aria-hidden />
+            </p>
+          )}
         </div>
       </div>
     </Card>

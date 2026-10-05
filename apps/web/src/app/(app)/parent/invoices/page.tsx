@@ -31,6 +31,10 @@ const STATUS_OPTIONS = [
   { value: "PAID", label: "Paid" },
 ];
 
+/** "Paid Rs 14,000 on 14 Sep 2026" once a voucher is settled, else null. */
+const settledText = (r: ParentInvoiceRow) =>
+  r.totalDue > 0 ? null : `Paid ${rupees(r.paid)}${r.paidAt ? ` on ${day(r.paidAt)}` : ""}`;
+
 /** Parent Dashboard: every fee voucher for all of the parent's children. */
 export default function ParentInvoicesPage() {
   const router = useRouter();
@@ -73,8 +77,9 @@ export default function ParentInvoicesPage() {
         <div className="min-w-0">
           <div className="font-medium text-fg">{r.student.name}</div>
           <div className="hidden text-xs text-fg-muted sm:block">{r.student.className ?? "Not enrolled"}</div>
-          {/* Phones: the month and status columns are hidden, so show them here. */}
+          {/* Phones: the month, due date and status columns are hidden, so show them here. */}
           <div className="text-xs text-fg-muted sm:hidden">{periodLabel(r.period)}</div>
+          <div className="text-xs text-fg-muted sm:hidden">{settledText(r) ?? `Due ${day(r.dueDate)}`}</div>
           <div className="mt-1 sm:hidden">
             <StatusPill status={r.displayStatus} tone={PARENT_INVOICE_TONE[r.displayStatus]} label={PARENT_INVOICE_LABEL[r.displayStatus]} />
           </div>
@@ -91,12 +96,20 @@ export default function ParentInvoicesPage() {
       headerClassName: "px-3 sm:px-4",
       align: "right",
       sortValue: (r) => r.totalDue,
-      cell: (r) => (
-        <div>
-          <div className={r.totalDue > 0 ? "font-medium text-fg" : "text-fg-muted"}>{rupees(r.totalDue)}</div>
-          {r.lateFine > 0 && r.totalDue > 0 && <div className="text-xs text-warning-text">incl. {rupees(r.lateFine)} late fee</div>}
-        </div>
-      ),
+      cell: (r) =>
+        r.totalDue > 0 ? (
+          <div>
+            <div className="font-medium text-fg">{rupees(r.totalDue)}</div>
+            {r.lateFine > 0 && <div className="text-xs text-warning-text">incl. {rupees(r.lateFine)} late fee</div>}
+          </div>
+        ) : (
+          // A settled voucher said "Rs 0", which read as if nothing had been paid.
+          <div>
+            <div className="text-fg-muted">Nothing due</div>
+            {/* Phones already carry this under the child's name. */}
+            <div className="hidden text-xs text-fg-muted sm:block">Paid {rupees(r.paid)}</div>
+          </div>
+        ),
     },
     {
       id: "status",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowRight,
   Ban,
@@ -12,6 +12,8 @@ import {
   CreditCard,
   History,
   LifeBuoy,
+  MessageCircle,
+  Phone,
   Receipt,
   RotateCcw,
   ShieldCheck,
@@ -58,7 +60,8 @@ import { isOwner, useConsoleAdmin, when } from "@/components/platform/session";
 import { platformApi } from "@/lib/api";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
-import { monthName, StatusBadge, STATUS_OPTIONS } from "../../status";
+import { whatsappNumber } from "@/components/students/directory-types";
+import { monthName, StatusBadge, STATUS_OPTIONS, trialEnded } from "../../status";
 
 interface Detail {
   id: string;
@@ -97,6 +100,81 @@ interface Detail {
 }
 
 type Invoice = Detail["invoices"][number];
+
+const DAY = 86_400_000;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * One line under the school name with what support needs when the school
+ * calls: how its trial or bills stand, and a number to call back on.
+ */
+function AtAGlance({ s }: { s: Detail }) {
+  const [now] = useState(() => Date.now());
+  const parts: ReactNode[] = [];
+  const sub = s.subscription;
+  if (sub?.status === "TRIAL" && sub.trialEndsAt) {
+    const days = Math.floor(Math.abs(now - +new Date(sub.trialEndsAt)) / DAY);
+    parts.push(
+      trialEnded(sub) ? (
+        <span className="font-medium text-warning-text">
+          Trial ended {day(sub.trialEndsAt)} ({days ? `${plural(days, "day")} ago` : "today"})
+        </span>
+      ) : (
+        <span>
+          Trial ends {day(sub.trialEndsAt)} (in {plural(Math.max(1, days), "day")})
+        </span>
+      ),
+    );
+  }
+  const unpaid = s.invoices.filter((i) => i.status === "UNPAID");
+  if (unpaid.length) {
+    const owed = unpaid.reduce((a, i) => a + i.amount, 0);
+    const oldest = unpaid.reduce((a, i) => (i.dueDate < a.dueDate ? i : a));
+    const late = Math.floor((now - +new Date(oldest.dueDate)) / DAY);
+    parts.push(
+      <span className={late > 0 ? "font-medium text-danger-text" : undefined}>
+        Owes {rupees(owed)} on {plural(unpaid.length, "bill")}, oldest due {day(oldest.dueDate)}
+        {late > 0 && ` (${plural(late, "day")} overdue)`}
+      </span>,
+    );
+  }
+  // The school's own number, else the first owner's.
+  const ownerPhone = s.owners.find((o) => o.phone)?.phone;
+  const contact = s.phone ? { phone: s.phone, who: "School" } : ownerPhone ? { phone: ownerPhone, who: "Owner" } : null;
+  if (contact) {
+    const mobile = /^(0|\+?92)3\d{9}$/.test(contact.phone.replace(/[\s-]/g, ""));
+    parts.push(
+      <span className="inline-flex items-center gap-3">
+        <a href={`tel:${contact.phone.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-1 text-fg-secondary hover:text-brand">
+          <Phone className="size-3.5" aria-hidden />
+          {contact.who} {contact.phone}
+        </a>
+        {mobile && (
+          <a
+            href={`https://wa.me/${whatsappNumber(contact.phone)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-fg-secondary hover:text-brand"
+          >
+            <MessageCircle className="size-3.5" aria-hidden />
+            WhatsApp
+          </a>
+        )}
+      </span>,
+    );
+  }
+  if (!parts.length) return null;
+  return (
+    <div className="flex basis-full flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-fg-muted">
+      {parts.map((p, i) => (
+        <span key={i} className="inline-flex items-center gap-2">
+          {i > 0 && <span aria-hidden>·</span>}
+          {p}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const ACCESS: Record<string, { tone: Tone; label: string }> = {
   full: { tone: "success", label: "Full access" },
@@ -189,8 +267,9 @@ export default function SchoolDetailPage() {
         description={[`School code ${s.slug}`, s.city, `joined ${day(s.createdAt)}`].filter(Boolean).join(", ")}
         meta={
           <>
-            <StatusBadge status={sub?.status ?? null} />
+            <StatusBadge status={sub && trialEnded(sub) ? "TRIAL_ENDED" : (sub?.status ?? null)} />
             {sub && <span className="text-[13px] text-fg-muted">{sub.plan.name} plan</span>}
+            <AtAGlance s={s} />
           </>
         }
         actions={

@@ -11,10 +11,20 @@ export const sendMessageSchema = z.object({
 });
 export type SendMessage = z.infer<typeof sendMessageSchema>;
 
-export const createThreadSchema = z.object({
-  studentId: z.string().min(1),
-  staffUserId: z.string().min(1),
-});
+/**
+ * Starting a conversation. A parent names the teacher they want
+ * (`staffUserId`); a staff member names the guardian (`guardianUserId`) and is
+ * the staff side themselves.
+ */
+export const createThreadSchema = z
+  .object({
+    studentId: z.string().min(1),
+    staffUserId: z.string().min(1).optional(),
+    guardianUserId: z.string().min(1).optional(),
+  })
+  .refine((b) => Boolean(b.staffUserId) !== Boolean(b.guardianUserId), {
+    message: 'Name either the teacher or the guardian, not both',
+  });
 export type CreateThread = z.infer<typeof createThreadSchema>;
 
 export const messagesQuerySchema = z.object({
@@ -65,6 +75,31 @@ export function canPost(
 ): boolean {
   if (role !== 'PARENT' && role !== 'STAFF') return false;
   return thread.guardianUserId !== null && thread.staffUserId !== null;
+}
+
+/** The teaching staff of a student's current section, as the access rule sees it. */
+export interface StudentSection {
+  classTeacherId: string | null;
+  subjects: { teacherId: string | null }[];
+}
+
+/**
+ * May this staff member start (or reopen) a conversation about a student?
+ * Administrators may for any student in their campus scope; everyone else only
+ * for a student in a section they class-teach or teach a subject in. `section`
+ * is the student's current section, or null when they have no active one.
+ */
+export function canStartThreadAbout(
+  section: StudentSection | null,
+  userId: string,
+  opts: { isAdmin: boolean },
+): boolean {
+  if (opts.isAdmin) return true;
+  if (!section) return false;
+  return (
+    section.classTeacherId === userId ||
+    section.subjects.some((s) => s.teacherId === userId)
+  );
 }
 
 export interface ContactSource {

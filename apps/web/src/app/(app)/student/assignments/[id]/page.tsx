@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ClipboardList, ExternalLink, Link2, MessageSquareText, Paperclip, Pencil, Send } from "lucide-react";
 import { ASSIGNMENT_STATE } from "@/components/student/format";
-import { dateTime, scoreTone, timeLeft } from "@/components/student-learning/format";
+import { dateTime, handedInText, scoreTone, timeLeft } from "@/components/student-learning/format";
 import { RichText } from "@/components/student-learning/rich-text";
 import type { StudentAssignmentDetail, StudentSubmission } from "@/components/student-learning/types";
 import {
@@ -184,7 +184,16 @@ export default function StudentAssignmentPage() {
               columns={1}
               items={[
                 { label: "Due", value: <span className="tabular-nums">{dateTime(a.dueAt)}</span> },
-                ...(a.urgency ? [{ label: "Time", value: <span className={a.hoursLeft < 0 ? "text-danger-text" : undefined}>{timeLeft(a.hoursLeft)}</span> }] : []),
+                ...(sub
+                  ? [
+                      {
+                        label: "Time",
+                        value: <span className={sub.isLate ? "text-danger-text" : "text-success-text"}>{handedInText(a.dueAt, sub.submittedAt)}</span>,
+                      },
+                    ]
+                  : a.urgency
+                    ? [{ label: "Time", value: <span className={a.hoursLeft < 0 ? "text-danger-text" : undefined}>{timeLeft(a.hoursLeft)}</span> }]
+                    : []),
                 { label: "Points", value: `${a.maxPoints} points` },
                 { label: "Late work", value: a.allowLate ? "Accepted, marked late" : "Not accepted" },
                 { label: "Subject", value: a.subject.name },

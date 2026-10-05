@@ -3,6 +3,7 @@ import {
   gradeProblem,
   hoursLeft,
   isLate,
+  openUrgency,
   studentOrder,
   submitBlock,
 } from './assignment-rules.js';
@@ -78,6 +79,20 @@ describe('dueUrgency / hoursLeft', () => {
     expect(hoursLeft(due, at('2026-10-10T16:30:00Z'))).toBe(2);
     expect(hoursLeft(due, at('2026-10-10T19:30:00Z'))).toBe(-1);
     expect(hoursLeft(due, due)).toBe(0);
+  });
+});
+
+describe('openUrgency', () => {
+  const past = at('2026-10-12T19:00:00Z');
+
+  it('keeps the urgency while the work is still open', () => {
+    expect(openUrgency('pending', due, at('2026-10-10T08:00:00Z'))).toBe('today');
+    expect(openUrgency('overdue', due, past)).toBe('overdue');
+  });
+
+  it('drops the urgency once the work is handed in, graded or returned', () => {
+    for (const state of ['submitted', 'graded', 'returned', 'missing'])
+      expect(openUrgency(state, due, past)).toBeNull();
   });
 });
 

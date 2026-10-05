@@ -25,6 +25,7 @@ import { z } from 'zod';
 import type { AuthUser, PlatformUser } from '../common/auth-user.js';
 import { CurrentAdmin, PlatformOnly } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { phoneSearchDigits } from '../notifications/phone.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PlatformAccessGuard, PlatformOwnerOnly } from './platform-access.guard.js';
 import { logPlatform } from './platform-audit.js';
@@ -58,6 +59,7 @@ const planSchema = z.object({
   isPublic: z.boolean().optional(),
 });
 
+/** A written reason for a recorded action (support session, voiding a bill). */
 const supportSchema = z.object({
   reason: z.string().trim().min(5).max(500),
 });
@@ -158,6 +160,20 @@ export class PlatformController {
     @Query('search') search?: string,
     @Query('status') status?: string,
   ) {
+    const now = new Date();
+    // Phones are stored as typed, so they are compared digits-only in SQL.
+    const digits = search ? phoneSearchDigits(search) : null;
+    const byPhone = digits
+      ? (
+          await this.prisma.$queryRaw<{ id: string }[]>`
+            SELECT s.id FROM "School" s
+            WHERE regexp_replace(coalesce(s.phone, ''), '[^0-9]', '', 'g') LIKE ${`%${digits}%`}
+            UNION
+            SELECT u."schoolId" FROM "User" u
+            JOIN "RoleAssignment" r ON r."userId" = u.id AND r.role = 'OWNER'
+            WHERE regexp_replace(coalesce(u.phone, ''), '[^0-9]', '', 'g') LIKE ${`%${digits}%`}`
+        ).map((r) => r.id)
+      : [];
     const where: Prisma.SchoolWhereInput = {
       ...(search
         ? {
@@ -166,12 +182,29 @@ export class PlatformController {
               { slug: { contains: search.toLowerCase() } },
               { city: { contains: search, mode: 'insensitive' } },
               { email: { contains: search, mode: 'insensitive' } },
+              {
+                users: {
+                  some: {
+                    email: { contains: search, mode: 'insensitive' },
+                    roles: { some: { role: Role.OWNER } },
+                  },
+                },
+              },
+              ...(byPhone.length ? [{ id: { in: byPhone } }] : []),
             ],
           }
         : {}),
-      ...(status && status in SubscriptionStatus
-        ? { subscription: { status: status as SubscriptionStatus } }
-        : {}),
+      // TRIAL_ENDED is not stored: a trial past its end date.
+      ...(status === 'TRIAL_ENDED'
+        ? {
+            subscription: {
+              status: SubscriptionStatus.TRIAL,
+              trialEndsAt: { lt: now },
+            },
+          }
+        : status && status in SubscriptionStatus
+          ? { subscription: { status: status as SubscriptionStatus } }
+          : {}),
     };
     const [schools, students, lastLogins, unpaid] = await Promise.all([
       this.prisma.school.findMany({
@@ -582,8 +615,17 @@ export class PlatformController {
     return after;
   }
 
+  /**
+   * Writes off an unpaid bill (and may lift a past-due block), so only an
+   * owner can do it and the reason is kept in the audit log.
+   */
   @Post('invoices/:id/void')
-  async void(@CurrentAdmin() admin: PlatformUser, @Param('id') id: string) {
+  @PlatformOwnerOnly()
+  async void(
+    @CurrentAdmin() admin: PlatformUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(supportSchema)) body: { reason: string },
+  ) {
     const invoice = await this.prisma.platformInvoice.findUnique({
       where: { id },
     });
@@ -597,6 +639,8 @@ export class PlatformController {
     this.subscriptions.forget(invoice.schoolId);
     await this.log(admin, 'invoice.void', invoice.schoolId, {
       number: invoice.number,
+      amount: invoice.amount,
+      reason: body.reason,
     });
     return after;
   }

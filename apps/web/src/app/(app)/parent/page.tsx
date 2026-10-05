@@ -31,8 +31,10 @@ import {
   StatGrid,
   StatusPill,
 } from "@/components/ui";
+import { periodLabel } from "@/components/invoices/invoice-breakdown";
 import { cn } from "@/lib/cn";
 import { day, rupees } from "@/lib/format";
+import { notPassedLabel, notPassedReason, type ResultSubject } from "@/lib/results";
 import { usePersistedState } from "@/lib/persisted";
 import { ChildLearning } from "@/components/student-learning/parent-learning";
 import { useSchoolMode, useSession } from "@/lib/session";
@@ -46,7 +48,7 @@ interface Child {
   class: string | null;
   attendanceThisMonth: { present: number; absent: number; leave: number; absentDates: string[] };
   homework: { id: string; subject: string; title: string; details: string | null; dueDate: string }[];
-  results: { examId: string; exam: string; percent: number; grade: string; position: number; passed: boolean }[];
+  results: { examId: string; exam: string; percent: number; grade: string; position: number; passed: boolean; subjects: ResultSubject[] }[];
   unpaidInvoices: { id: string; voucherNo: string; period: string; dueDate: string; balance: number }[];
   libraryBooks?: { title: string; dueOn: string; returned: boolean; overdue: boolean; fine: number }[];
   transport: {
@@ -65,6 +67,8 @@ const attendancePercent = (a: Child["attendanceThisMonth"]) => {
   return total ? Math.round((a.present / total) * 1000) / 10 : null;
 };
 const feesDue = (c: Child) => c.unpaidInvoices.reduce((n, i) => n + i.balance, 0);
+/** "FATHER" or "father" -> "Father", for the "You: Father" line on the child card. */
+const relationLabel = (r: string) => r.charAt(0).toUpperCase() + r.slice(1).toLowerCase();
 
 /** Parent Dashboard: a switcher across the parent's children and an overview of the chosen one. */
 export default function ParentPage() {
@@ -115,7 +119,7 @@ export default function ParentPage() {
 
 function ChildSwitcher({ list, selected, onSelect }: { list: Child[]; selected: string; onSelect: (id: string) => void }) {
   return (
-    <div role="radiogroup" aria-label="Choose a child" className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+    <div role="radiogroup" aria-label="Choose a child" className="flex flex-wrap gap-2 pb-1 sm:flex-nowrap sm:overflow-x-auto sm:[scrollbar-width:none]">
       {list.map((c) => {
         const active = c.id === selected;
         const due = c.unpaidInvoices.length > 0;
@@ -177,8 +181,9 @@ function ChildOverview({ child: c }: { child: Child }) {
             <div className="min-w-0">
               <h2 className="text-lg font-semibold text-fg">{c.name}</h2>
               <p className="text-[13px] text-fg-muted">
-                {c.class ?? "Not enrolled"}, admission no. {c.admissionNo}
-                {c.relation ? `, your ${c.relation.toLowerCase()}` : ""}
+                {[c.class ?? "Not enrolled", `Adm. ${c.admissionNo}`, c.relation ? `You: ${relationLabel(c.relation)}` : null]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             </div>
           </div>
@@ -214,7 +219,13 @@ function ChildOverview({ child: c }: { child: Child }) {
           value={latest ? `${latest.percent}%` : "None yet"}
           icon={<Trophy />}
           tone={!latest ? "neutral" : latest.passed ? "primary" : "danger"}
-          hint={latest ? `${latest.exam}, grade ${latest.grade}, position ${latest.position}` : "Published results appear here"}
+          hint={
+            !latest
+              ? "Published results appear here"
+              : latest.passed
+                ? `${latest.exam}, grade ${latest.grade}, position ${latest.position}`
+                : `${latest.exam}. ${notPassedLabel(latest.subjects)}`
+          }
           href={latest ? `/parent/results/${latest.examId}/${c.id}` : undefined}
         />
         {showTransport && (
@@ -306,12 +317,15 @@ function ChildOverview({ child: c }: { child: Child }) {
                     className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
                   >
                     <LetterGrade grade={r.grade} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-fg">{r.exam}</span>
-                      <span className="text-xs text-fg-muted">Position {r.position}</span>
+                    {/* The pill wraps under the exam on a phone, so the reason stays readable. */}
+                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="w-full truncate text-sm font-medium text-fg">{r.exam}</span>
+                      <span className="truncate text-xs text-fg-muted first-letter:uppercase">
+                        {r.passed ? `Position ${r.position}` : (notPassedReason(r.subjects) ?? "Not passed")}
+                      </span>
+                      {!r.passed && <StatusPill status="FAILED" label="Not passed" />}
                     </span>
                     <span className="text-sm font-semibold tabular-nums text-fg">{r.percent}%</span>
-                    {!r.passed && <StatusPill status="FAILED" label="Not passed" />}
                     <ChevronRight className="size-4 text-fg-muted" aria-hidden />
                   </Link>
                 </li>
@@ -329,17 +343,23 @@ function ChildOverview({ child: c }: { child: Child }) {
               {c.unpaidInvoices.map((i) => {
                 const late = new Date(i.dueDate) < new Date();
                 return (
-                  <li key={i.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium text-fg">{i.period}</span>
-                      <span className="text-xs text-fg-muted">
-                        Voucher {i.voucherNo}, due {day(i.dueDate)}
+                  <li key={i.id}>
+                    <Link
+                      href={`/parent/invoices/${i.id}`}
+                      className="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-fg">{periodLabel(i.period)}</span>
+                        <span className="text-xs text-fg-muted">
+                          Voucher {i.voucherNo}, due {day(i.dueDate)}
+                        </span>
                       </span>
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <StatusPill status={late ? "OVERDUE" : "DUE"} />
-                      <span className="text-sm font-semibold tabular-nums text-fg">{rupees(i.balance)}</span>
-                    </span>
+                      <span className="flex items-center gap-2">
+                        <StatusPill status={late ? "OVERDUE" : "DUE"} />
+                        <span className="text-sm font-semibold tabular-nums text-fg">{rupees(i.balance)}</span>
+                        <ChevronRight className="size-4 text-fg-muted" aria-hidden />
+                      </span>
+                    </Link>
                   </li>
                 );
               })}

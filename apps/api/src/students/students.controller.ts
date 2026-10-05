@@ -25,6 +25,7 @@ import { UserStatusService } from '../common/user-status.service.js';
 import { PermissionService } from '../common/permission.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
+import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
@@ -135,16 +136,7 @@ export class StudentsController {
             },
           }
         : {}),
-      ...(search
-        ? {
-            OR: [
-              { firstName: { contains: search, mode: 'insensitive' } },
-              { lastName: { contains: search, mode: 'insensitive' } },
-              { admissionNo: { contains: search } },
-              { guardians: { some: { guardian: { phone: { contains: search } } } } },
-            ],
-          }
-        : {}),
+      ...studentSearchWhere(search, { guardianPhone: true }),
     };
     return this.prisma.student.findMany({
       where,

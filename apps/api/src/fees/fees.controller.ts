@@ -22,6 +22,7 @@ import { FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
+import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -316,6 +317,8 @@ export class FeesController {
     @Query('studentId') studentId?: string,
     @Query('search') search?: string,
   ) {
+    // Every word of the search must match the student, so "Musa Sheikh" finds his vouchers.
+    const byStudent = studentSearchWhere(search);
     return this.prisma.invoice.findMany({
       where: {
         schoolId: user.schoolId,
@@ -326,8 +329,7 @@ export class FeesController {
           ? {
               OR: [
                 { voucherNo: { contains: search.toUpperCase() } },
-                { student: { firstName: { contains: search, mode: 'insensitive' } } },
-                { student: { admissionNo: { contains: search } } },
+                ...(byStudent ? [{ student: byStudent }] : []),
               ],
             }
           : {}),
