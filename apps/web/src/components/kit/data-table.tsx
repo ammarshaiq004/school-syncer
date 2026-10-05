@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, SearchX, X } from "lucide-react";
+import { ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Lock, SearchX, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { IconButton, Button } from "./button";
 import { Checkbox, NativeSelect, SearchInput } from "./inputs";
@@ -52,6 +52,8 @@ export interface DataTableProps<T> {
   loading?: boolean;
   /** Error message; shows ErrorState in place of rows. */
   error?: string | null;
+  /** HTTP status of the error (useApi().errorStatus). 403 shows a "no access" state without Retry. */
+  errorStatus?: number | null;
   onRetry?: () => void;
   /** Turn on the client-side search box: return the text to match for a row. */
   getSearchText?: (row: T) => string;
@@ -112,7 +114,7 @@ const INTERACTIVE = "a,button,input,select,textarea,label,[role=menuitem],[data-
  */
 export function DataTable<T>(props: DataTableProps<T>) {
   const {
-    columns, data, getRowId, label, error, onRetry, getSearchText, searchPlaceholder = "Search",
+    columns, data, getRowId, label, error, errorStatus, onRetry, getSearchText, searchPlaceholder = "Search",
     filters, toolbarActions, filtered, empty, defaultSort, pageSize: initialPageSize = 25,
     pageSizeOptions = [10, 25, 50, 100], serverPagination, selectable, bulkActions, onRowClick, getRowLabel,
     rowClassName, maxHeight, zebra = true, dense, bare, footer, skeletonRows = 6, className, manualFiltering,
@@ -296,7 +298,11 @@ export function DataTable<T>(props: DataTableProps<T>) {
             ) : error ? (
               <tr>
                 <td colSpan={colCount}>
-                  <ErrorState compact message={error} onRetry={onRetry} />
+                  {errorStatus === 403 ? (
+                    <EmptyState compact icon={<Lock />} title="You don't have access to this" description={error} />
+                  ) : (
+                    <ErrorState compact message={error} onRetry={onRetry} />
+                  )}
                 </td>
               </tr>
             ) : visible.length === 0 ? (

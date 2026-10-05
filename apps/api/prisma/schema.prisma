@@ -22,18 +22,27 @@ enum Role {
   STAFF
 }
 
+/// What kind of school this is. Only drives which screens are shown; every
+/// module keeps working in every mode.
+enum SchoolMode {
+  PHYSICAL
+  ONLINE
+  HYBRID
+}
+
 model School {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   name      String
-  slug      String   @unique
+  slug      String     @unique
+  mode      SchoolMode @default(PHYSICAL)
   city      String?
   phone     String?
   email     String?
   logoUrl   String?
-  locale    String   @default("en")
-  currency  String   @default("PKR")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  locale    String     @default("en")
+  currency  String     @default("PKR")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   campuses      Campus[]
   academicYears AcademicYear[]
@@ -66,6 +75,17 @@ model School {
   libraryLoanDays   Int               @default(14)
   libraryFinePerDay Int               @default(5)
   libraryMaxLoans   Int               @default(2)
+
+  customRoles     CustomRole[]
+  rolePermissions BuiltinRolePermission[]
+
+  courses     Course[]
+  liveClasses LiveClass[]
+  assignments Assignment[]
+  quizzes     Quiz[]
+
+  lessonPlans LessonPlan[]
+  chatThreads ChatThread[]
 }
 
 model Campus {
@@ -108,7 +128,8 @@ model AcademicYear {
   feeStructures FeeStructure[]
   promotions    Promotion[]
 
-  exams Exam[]
+  exams   Exam[]
+  courses Course[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -158,6 +179,13 @@ model Section {
   timetable TimetableSlot[]
   homework  Homework[]
 
+  courses     Course[]
+  liveClasses LiveClass[]
+  assignments Assignment[]
+  quizzes     Quiz[]
+
+  lessonPlans LessonPlan[]
+
   @@unique([classId, academicYearId, name])
   @@index([schoolId])
 }
@@ -176,6 +204,13 @@ model Subject {
 
   timetableSlots TimetableSlot[]
   homework       Homework[]
+
+  courses     Course[]
+  liveClasses LiveClass[]
+  assignments Assignment[]
+  quizzes     Quiz[]
+
+  lessonPlans LessonPlan[]
 
   @@unique([schoolId, name])
 }
@@ -201,6 +236,8 @@ model User {
   name         String
   email        String?
   phone        String?
+  /// Sign-in name for accounts without email/phone (students: admission number, lowercased).
+  username     String?
   passwordHash String?
   isActive     Boolean   @default(true)
   lastLoginAt  DateTime?
@@ -227,21 +264,87 @@ model User {
   bookLoans          BookLoan[]        @relation("BookLoans")
   certificatesIssued Certificate[]
 
+  studentProfile     Student?
+  coursesTaught      Course[]
+  liveClassesTaught  LiveClass[]
+  assignmentsCreated Assignment[] @relation("AssignmentCreatedBy")
+  submissionsGraded  Submission[] @relation("SubmissionGradedBy")
+  quizzesCreated     Quiz[]
+
+  lessonPlans         LessonPlan[]  @relation("LessonPlanTeacher")
+  lessonPlansReviewed LessonPlan[]  @relation("LessonPlanReviewer")
+  chatThreadsAsParent ChatThread[]  @relation("ChatThreadGuardian")
+  chatThreadsAsStaff  ChatThread[]  @relation("ChatThreadStaff")
+  chatMessagesSent    ChatMessage[]
+
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
+  @@unique([schoolId, username])
 }
 
 // A role held by a user, either school-wide (campusId null) or at one campus.
+// With customRoleId set, `role` is the custom role's baseRole: @Roles guards
+// see the base role, the permission layer uses the custom role's matrix.
 model RoleAssignment {
-  id       String  @id @default(cuid())
-  userId   String
-  role     Role
-  campusId String?
+  id           String  @id @default(cuid())
+  userId       String
+  role         Role
+  campusId     String?
+  customRoleId String?
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  campus Campus? @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campus     Campus?     @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  // Restrict: a custom role cannot be deleted while anyone holds it (DELETE /roles/:id answers 409).
+  customRole CustomRole? @relation(fields: [customRoleId], references: [id], onDelete: Restrict)
 
-  @@unique([userId, role, campusId])
+  // The same base role may be held plainly and through a custom role. The
+  // index is NULLS NOT DISTINCT (set in migration SQL, Postgres 15+), so a
+  // school-wide or plain grant cannot be stored twice either.
+  @@unique([userId, role, campusId, customRoleId])
+  @@index([customRoleId])
+}
+
+// ----- Roles and permissions (module layer under the @Roles ceiling) -----
+//
+// Design: both custom roles and edits to built-in roles store a sparse Json map
+// `{ [module]: "none" | "view" | "manage" }` (see src/common/permissions.ts)
+// rather than one row per (role, module). The matrix is always read whole and
+// cached per school, so one row per role is one cheap read; and modules added
+// by later releases simply fall back to the defaults when absent from the map,
+// with no data migration. Levels are validated by zod on write.
+
+// A school-defined role, e.g. "Exam coordinator". baseRole is a built-in role
+// other than OWNER, PARENT or STUDENT and is what @Roles guards check.
+model CustomRole {
+  id          String   @id @default(cuid())
+  schoolId    String
+  name        String
+  description String?
+  baseRole    Role
+  // Sparse module -> level map; missing modules use the base role's level.
+  permissions Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school      School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  assignments RoleAssignment[]
+
+  @@unique([schoolId, name])
+}
+
+// A school's edits to a built-in role's default matrix (never OWNER, which
+// always has manage everywhere). One row per edited role; absent = defaults.
+model BuiltinRolePermission {
+  id          String   @id @default(cuid())
+  schoolId    String
+  role        Role
+  // Sparse module -> level map overriding DEFAULT_PERMISSIONS[role].
+  permissions Json     @default("{}")
+  updatedAt   DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, role])
 }
 
 model AuditLog {
@@ -253,11 +356,16 @@ model AuditLog {
   entityId  String?
   before    Json?
   after     Json?
+  // Set when the change was made in a support session: { adminId, adminName }
+  // of the SchoolSyncer staff member acting as userId.
+  support   Json?
   createdAt DateTime @default(now())
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, createdAt])
+  @@index([schoolId, entity, createdAt])
+  @@index([schoolId, userId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -292,11 +400,14 @@ model Student {
   medicalNotes String?
   status       StudentStatus @default(ACTIVE)
   admittedOn   DateTime      @default(now()) @db.Date
+  /// The student's own sign-in (a User with the STUDENT role), if one was created.
+  userId       String?       @unique
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
   school      School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   campus      Campus             @relation(fields: [campusId], references: [id], onDelete: Restrict)
+  user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
   guardians   StudentGuardian[]
   enrollments Enrollment[]
   attendance  AttendanceRecord[]
@@ -310,6 +421,13 @@ model Student {
   bookLoans    BookLoan[]
   certificates Certificate[]
   promotions   Promotion[]
+
+  lessonProgress LessonProgress[]
+  liveAttendance LiveAttendance[]
+  submissions    Submission[]
+  quizAttempts   QuizAttempt[]
+
+  chatThreads ChatThread[]
 
   @@unique([schoolId, admissionNo])
   @@index([schoolId, status])
@@ -771,6 +889,8 @@ model TimetableSlot {
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   teacher User?   @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
+  liveClasses LiveClass[]
+
   @@unique([sectionId, dayOfWeek, periodId])
   // A teacher can only be in one class at a time.
   @@unique([teacherId, dayOfWeek, periodId])
@@ -1012,14 +1132,18 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id          String             @id @default(cuid())
-  schoolId    String             @unique
-  planId      String
-  status      SubscriptionStatus @default(TRIAL)
-  trialEndsAt DateTime?
-  notes       String? // SchoolSyncer staff notes, never shown to the school
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id              String             @id @default(cuid())
+  schoolId        String             @unique
+  planId          String
+  status          SubscriptionStatus @default(TRIAL)
+  trialEndsAt     DateTime?
+  notes           String? // SchoolSyncer staff notes, never shown to the school
+  // Per-school feature overrides (keys from src/platform/plans.ts FEATURES).
+  // Effective features = plan.features + featuresAdded - featuresRemoved.
+  featuresAdded   String[]           @default([])
+  featuresRemoved String[]           @default([])
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
@@ -1053,15 +1177,25 @@ model PlatformInvoice {
   @@index([status])
 }
 
+// OWNER can edit plans, platform staff, feature overrides and close schools;
+// SUPPORT can do everything else in the console.
+enum PlatformRole {
+  OWNER
+  SUPPORT
+}
+
 // SchoolSyncer's own staff, who run the platform. Not tied to any school.
 model PlatformAdmin {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
+  id                 String       @id @default(cuid())
+  name               String
+  email              String       @unique
+  passwordHash       String
+  role               PlatformRole @default(SUPPORT)
+  // Set when an owner creates the account or resets its password.
+  mustChangePassword Boolean      @default(false)
+  isActive           Boolean      @default(true)
+  lastLoginAt        DateTime?
+  createdAt          DateTime     @default(now())
 
   auditLogs PlatformAuditLog[]
 }
@@ -1077,6 +1211,9 @@ model PlatformAuditLog {
   admin PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, createdAt])
+  @@index([adminId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
 }
 
 // ----- Transport -----
@@ -1296,4 +1433,383 @@ model Promotion {
 
   @@unique([fromYearId, studentId])
   @@index([schoolId])
+}
+
+// ---------------------------------------------------------------------------
+// E-school (SCHOOL-26): courses, live classes, assignments, quizzes.
+// Content cascades from School/Section; student-owned rows (progress,
+// attendance, submissions, attempts) cascade from Student like every other
+// per-student record. Staff references are optional and SET NULL so removing
+// a user never deletes teaching material.
+// ---------------------------------------------------------------------------
+
+/// One subject's online course for one section (SCHOOL-119).
+model Course {
+  id             String   @id @default(cuid())
+  schoolId       String
+  academicYearId String
+  sectionId      String
+  subjectId      String
+  teacherId      String?
+  title          String
+  description    String?
+  color          String? // kit accent token or hex, e.g. "#4F46E5"
+  isPublished    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  school       School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher      User?        @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  units       CourseUnit[]
+  assignments Assignment[]
+  quizzes     Quiz[]
+
+  @@unique([sectionId, subjectId])
+  @@index([schoolId])
+  @@index([teacherId])
+}
+
+model CourseUnit {
+  id        String   @id @default(cuid())
+  courseId  String
+  title     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId, sortOrder])
+}
+
+enum LessonKind {
+  VIDEO
+  TEXT
+  LINK
+  DOCUMENT
+}
+
+model Lesson {
+  id          String     @id @default(cuid())
+  unitId      String
+  title       String
+  kind        LessonKind @default(TEXT)
+  body        String? // plain text / simple markdown, rendered without raw HTML
+  url         String? // https: YouTube, Vimeo, Drive or any link
+  durationMin Int?
+  sortOrder   Int        @default(0)
+  isPublished Boolean    @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  unit     CourseUnit       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  progress LessonProgress[]
+
+  @@index([unitId, sortOrder])
+}
+
+model LessonProgress {
+  id          String   @id @default(cuid())
+  lessonId    String
+  studentId   String
+  completedAt DateTime @default(now())
+
+  lesson  Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, studentId])
+  @@index([studentId])
+}
+
+enum LiveProvider {
+  JITSI
+  ZOOM
+  GOOGLE_MEET
+  OTHER
+}
+
+enum LiveStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+}
+
+/// A scheduled online lesson (SCHOOL-118).
+model LiveClass {
+  id              String       @id @default(cuid())
+  schoolId        String
+  sectionId       String
+  subjectId       String?
+  teacherId       String?
+  title           String
+  startsAt        DateTime
+  durationMin     Int          @default(40)
+  provider        LiveProvider @default(JITSI)
+  joinUrl         String
+  status          LiveStatus   @default(SCHEDULED)
+  recordingUrl    String?
+  timetableSlotId String?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  section       Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject       Subject?       @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher       User?          @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  timetableSlot TimetableSlot? @relation(fields: [timetableSlotId], references: [id], onDelete: SetNull)
+
+  attendance LiveAttendance[]
+
+  // "Schedule from timetable" skips a slot that already has a class at that time.
+  @@unique([timetableSlotId, startsAt])
+  @@index([schoolId, startsAt])
+  @@index([sectionId, startsAt])
+  @@index([teacherId, startsAt])
+}
+
+model LiveAttendance {
+  id          String    @id @default(cuid())
+  liveClassId String
+  studentId   String
+  joinedAt    DateTime  @default(now())
+  leftAt      DateTime?
+
+  liveClass LiveClass @relation(fields: [liveClassId], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([liveClassId, studentId])
+  @@index([studentId])
+}
+
+/// Online assignment with submissions and grading (SCHOOL-104). The older
+/// Homework model stays as the physical-school diary.
+model Assignment {
+  id            String   @id @default(cuid())
+  schoolId      String
+  sectionId     String
+  subjectId     String
+  courseId      String?
+  createdById   String?
+  title         String
+  instructions  String?
+  attachmentUrl String?
+  dueAt         DateTime
+  maxPoints     Int      @default(100)
+  allowLate     Boolean  @default(true)
+  isPublished   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  course    Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  submissions Submission[]
+
+  @@index([schoolId])
+  @@index([sectionId, dueAt])
+  @@index([courseId])
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  GRADED
+  RETURNED
+}
+
+model Submission {
+  id           String           @id @default(cuid())
+  assignmentId String
+  studentId    String
+  body         String?
+  linkUrl      String?
+  submittedAt  DateTime         @default(now())
+  isLate       Boolean          @default(false)
+  status       SubmissionStatus @default(SUBMITTED)
+  points       Int?
+  feedback     String?
+  gradedById   String?
+  gradedAt     DateTime?
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  gradedBy   User?      @relation("SubmissionGradedBy", fields: [gradedById], references: [id], onDelete: SetNull)
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+}
+
+/// Online quiz with auto-marking (SCHOOL-103).
+model Quiz {
+  id               String    @id @default(cuid())
+  schoolId         String
+  sectionId        String
+  subjectId        String
+  courseId         String?
+  createdById      String?
+  title            String
+  instructions     String?
+  timeLimitMin     Int?
+  opensAt          DateTime?
+  closesAt         DateTime?
+  attemptsAllowed  Int       @default(1)
+  shuffleQuestions Boolean   @default(false)
+  showResults      Boolean   @default(true)
+  isPublished      Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  course    Course? @relation(fields: [courseId], references: [id], onDelete: SetNull)
+  createdBy User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+
+  @@index([schoolId])
+  @@index([sectionId])
+  @@index([courseId])
+}
+
+enum QuestionKind {
+  SINGLE
+  MULTI
+  TRUE_FALSE
+  SHORT
+}
+
+model QuizQuestion {
+  id        String       @id @default(cuid())
+  quizId    String
+  kind      QuestionKind
+  prompt    String
+  /// string[]: the choices (empty for SHORT; ["True","False"] for TRUE_FALSE).
+  options   Json         @default("[]")
+  /// number[] of correct option indexes, or string[] of accepted answers for SHORT.
+  correct   Json         @default("[]")
+  points    Int          @default(1)
+  sortOrder Int          @default(0)
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId, sortOrder])
+}
+
+model QuizAttempt {
+  id          String    @id @default(cuid())
+  quizId      String
+  studentId   String
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  /// { [questionId]: number[] | string } as the student answered.
+  answers     Json      @default("{}")
+  /// Teacher overrides for SHORT answers: { [questionId]: points }.
+  review      Json?
+  score       Float?
+  maxScore    Float
+  needsReview Boolean   @default(false)
+
+  quiz    Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([quizId, studentId])
+  @@index([studentId])
+}
+
+enum LessonPlanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  NEEDS_CHANGES
+}
+
+/// A teacher's weekly plan for one section and subject, reviewed by setup
+/// roles. Plans outlive the teacher's account (teacherId SET NULL) so the
+/// school keeps its curriculum record.
+model LessonPlan {
+  id           String           @id @default(cuid())
+  schoolId     String
+  sectionId    String
+  subjectId    String
+  teacherId    String?
+  /// Monday of the planned week.
+  weekStart    DateTime         @db.Date
+  topic        String
+  objectives   String?
+  activities   String?
+  resources    String?
+  homework     String?
+  status       LessonPlanStatus @default(DRAFT)
+  submittedAt  DateTime?
+  reviewerNote String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  school     School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  section    Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject    Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teacher    User?   @relation("LessonPlanTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  reviewedBy User?   @relation("LessonPlanReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, status, weekStart])
+  @@index([teacherId, weekStart])
+  @@index([sectionId, subjectId, weekStart])
+}
+
+/// Parent-teacher conversation about one student (SCHOOL-25). Participant
+/// links are SET NULL so the conversation stays on record for safeguarding
+/// when an account is removed; a thread with a missing participant is
+/// read-only.
+model ChatThread {
+  id             String    @id @default(cuid())
+  schoolId       String
+  studentId      String
+  guardianUserId String?
+  staffUserId    String?
+  lastMessageAt  DateTime?
+  createdAt      DateTime  @default(now())
+
+  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianUser User?         @relation("ChatThreadGuardian", fields: [guardianUserId], references: [id], onDelete: SetNull)
+  staffUser    User?         @relation("ChatThreadStaff", fields: [staffUserId], references: [id], onDelete: SetNull)
+  messages     ChatMessage[]
+
+  @@unique([studentId, guardianUserId, staffUserId])
+  @@index([schoolId, lastMessageAt])
+  @@index([guardianUserId, lastMessageAt])
+  @@index([staffUserId, lastMessageAt])
+}
+
+model ChatMessage {
+  id        String    @id @default(cuid())
+  threadId  String
+  senderId  String?
+  /// Up to 2000 characters (validated in the API and by a DB CHECK).
+  body      String
+  createdAt DateTime  @default(now())
+  /// When the other participant read it; null = unread.
+  readAt    DateTime?
+
+  thread ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User?      @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  // Conversation paging (?after) and unread counts per thread.
+  @@index([threadId, createdAt])
+  @@index([threadId, readAt])
+  @@index([senderId])
 }

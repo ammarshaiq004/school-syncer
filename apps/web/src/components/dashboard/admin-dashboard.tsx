@@ -242,7 +242,7 @@ export function AdminDashboard() {
           value={s?.staff?.toLocaleString("en-PK") ?? ""}
           icon={<BriefcaseBusiness />}
           tone="info"
-          href={reachable.has("/users") ? "/users" : undefined}
+          href={reachable.has("/staff") ? "/staff" : undefined}
           loading={loading}
           error={!s && !!summary.error}
           hint={s?.teachers !== undefined ? `${s.teachers} teaching staff` : undefined}

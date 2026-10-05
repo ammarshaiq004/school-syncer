@@ -16,7 +16,7 @@ import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dateRange, nextDay } from '../common/date-range.js';
 import { dayStart, localDate, localToday, startOfLocalDay } from '../common/dates.js';
-import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { cashbook, type CashMovement } from './cashbook.js';
@@ -38,6 +38,7 @@ const entrySchema = z.object({
 });
 
 @Controller('accounts')
+@Permission('accounts')
 @Roles(...FEE_ROLES)
 @RequiresFeature('accounts')
 export class AccountsController {

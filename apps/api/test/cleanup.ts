@@ -1,13 +1,16 @@
 import type { PrismaService } from '../src/prisma/prisma.service.js';
 
 /**
- * Deletes test schools. Payments, payroll, account entries, exams, students
- * and applications are removed first because the schema deliberately refuses
+ * Deletes test schools. Payments, payroll, account entries, exams, students,
+ * applications and custom-role grants are removed first because the schema deliberately refuses
  * to cascade-delete money and enrollment history.
  */
 export async function deleteSchools(prisma: PrismaService, where: { slug?: string; email?: { endsWith: string } }) {
   const schools = await prisma.school.findMany({ where, select: { id: true } });
   const schoolId = { in: schools.map((s) => s.id) };
+  // RoleAssignment.customRoleId is ON DELETE RESTRICT, so custom-role grants
+  // must go before the school cascade reaches CustomRole.
+  await prisma.roleAssignment.deleteMany({ where: { customRoleId: { not: null }, user: { schoolId } } });
   await prisma.payment.deleteMany({ where: { schoolId } });
   await prisma.exam.deleteMany({ where: { schoolId } });
   await prisma.payrollRun.deleteMany({ where: { schoolId } });

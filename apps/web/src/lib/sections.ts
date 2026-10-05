@@ -6,7 +6,7 @@ interface ClassWithSections {
   id: string;
   name: string;
   campus: { name: string };
-  sections: { id: string; name: string }[];
+  sections: { id: string; name: string; classTeacher?: { id: string } | null }[];
 }
 
 /** Every section as "Grade 5 A" options (with the campus when there are several), for pickers. */

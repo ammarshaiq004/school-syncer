@@ -6,6 +6,7 @@ import {
 import { Role } from '@prisma/client';
 import type { Feature } from '../platform/plans.js';
 import type { AuthUser, PlatformUser } from './auth-user.js';
+import type { AccessLevel, PermissionModule } from './permissions.js';
 
 export const IS_PUBLIC = 'isPublic';
 export const ROLES = 'roles';
@@ -27,6 +28,24 @@ export const AllowWhenReadOnly = () => SetMetadata(ALLOW_READ_ONLY, true);
 
 /** Limits a route to users holding at least one of these roles. */
 export const Roles = (...roles: Role[]) => SetMetadata(ROLES, roles);
+
+export const PERMISSION = 'permission';
+
+/** What a route needs from the school's permission matrix (see PermissionGuard). */
+export interface PermissionRequirement {
+  module: PermissionModule;
+  /** Omitted: GET/HEAD/OPTIONS need view, every other method needs manage. */
+  level?: AccessLevel;
+}
+
+/**
+ * The permission module a controller (or a single handler) belongs to. Put it
+ * on the class so every handler inherits it; a handler-level annotation
+ * overrides the class one. Reads need `view`, writes need `manage`, unless an
+ * explicit level is given.
+ */
+export const Permission = (module: PermissionModule, level?: AccessLevel) =>
+  SetMetadata(PERMISSION, { module, level } satisfies PermissionRequirement);
 
 export const CurrentUser = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthUser =>

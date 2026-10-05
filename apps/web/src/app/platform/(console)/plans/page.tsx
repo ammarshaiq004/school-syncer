@@ -21,6 +21,7 @@ import {
 import { platformApi } from "@/lib/api";
 import { rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
+import { isOwner, useConsoleAdmin } from "@/components/platform/session";
 
 interface Plan {
   id: string;
@@ -38,7 +39,7 @@ interface Plan {
 
 const numberOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
 
-function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<string, string>; onSaved: () => void }) {
+function PlanEditor({ plan, features, onSaved, canEdit }: { plan: Plan; features: Record<string, string>; onSaved: () => void; canEdit: boolean }) {
   const toast = useToast();
   const [draft, setDraft] = useState(plan);
   const [error, setError] = useState("");
@@ -70,8 +71,7 @@ function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<
     }
   }
 
-  const toggle = (f: string) =>
-    setDraft({ ...draft, features: draft.features.includes(f) ? draft.features.filter((x) => x !== f) : [...draft.features, f] });
+  const toggle = (f: string) => setDraft({ ...draft, features: draft.features.includes(f) ? draft.features.filter((x) => x !== f) : [...draft.features, f] });
 
   return (
     <Card className="flex flex-col">
@@ -122,8 +122,8 @@ function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<
           />
         </div>
         <p className="rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-fg-secondary">
-          500 students would pay{" "}
-          <span className="font-medium tabular-nums text-fg">{rupees(Math.max(draft.minimumMonthly, draft.pricePerStudent * 500))}</span> a month.
+          500 students would pay <span className="font-medium tabular-nums text-fg">{rupees(Math.max(draft.minimumMonthly, draft.pricePerStudent * 500))}</span>{" "}
+          a month.
         </p>
         <fieldset>
           <legend className="mb-2 text-[13px] font-medium text-fg-secondary">Modules</legend>
@@ -138,7 +138,7 @@ function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<
       </div>
       <div className="mt-auto">
         <CardFooter className="justify-end">
-          <Button type="button" icon={<Save />} loading={saving} onClick={save}>
+          <Button type="button" icon={<Save />} loading={saving} onClick={save} disabled={!canEdit}>
             Save {draft.name}
           </Button>
         </CardFooter>
@@ -149,12 +149,14 @@ function PlanEditor({ plan, features, onSaved }: { plan: Plan; features: Record<
 
 export default function PlansPage() {
   const { data, error, reload } = usePlatformApi<{ features: Record<string, string>; plans: Plan[] }>("/plans");
+  const canEdit = isOwner(useConsoleAdmin());
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Plans"
         description="Student records, attendance, announcements, user management and the parent portal come with every plan. Changes apply to every school on the plan straight away; existing bills keep their amounts."
       />
+      {!canEdit && <Alert tone="info">Only a SchoolSyncer owner can change plans. You can look at them here.</Alert>}
       {error && !data ? (
         <Card padding="none">
           <ErrorState message={error} onRetry={reload} />
@@ -172,7 +174,7 @@ export default function PlansPage() {
       ) : (
         <div className="grid items-stretch gap-6 lg:grid-cols-3">
           {data.plans.map((p) => (
-            <PlanEditor key={p.id} plan={p} features={data.features} onSaved={reload} />
+            <PlanEditor key={p.id} plan={p} features={data.features} onSaved={reload} canEdit={canEdit} />
           ))}
         </div>
       )}

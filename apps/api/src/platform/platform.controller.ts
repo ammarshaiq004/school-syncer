@@ -9,10 +9,13 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
   PlatformInvoiceStatus,
+  PlatformRole,
   Prisma,
   Role,
   StudentStatus,
@@ -23,8 +26,11 @@ import type { AuthUser, PlatformUser } from '../common/auth-user.js';
 import { CurrentAdmin, PlatformOnly } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PlatformAccessGuard, PlatformOwnerOnly } from './platform-access.guard.js';
+import { logPlatform } from './platform-audit.js';
 import {
   accessFor,
+  effectiveFeatures,
   FEATURES,
   isFeature,
   monthlyAmount,
@@ -52,6 +58,12 @@ const planSchema = z.object({
   isPublic: z.boolean().optional(),
 });
 
+const supportSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+});
+
+const SUPPORT_SESSION_MS = 60 * 60_000;
+
 const paySchema = z.object({
   method: z.string().trim().min(2).max(30),
   reference: z.string().trim().max(60).optional(),
@@ -61,6 +73,7 @@ const paySchema = z.object({
 /** The SchoolSyncer console: every school, its plan, usage and bills. */
 @Controller('platform')
 @PlatformOnly()
+@UseGuards(PlatformAccessGuard)
 export class PlatformController {
   constructor(
     private readonly prisma: PrismaService,
@@ -276,6 +289,14 @@ export class PlatformController {
         status: sub.status,
         trialEndsAt: sub.trialEndsAt,
         notes: sub.notes,
+        planFeatures: sub.plan.features,
+        featuresAdded: sub.featuresAdded,
+        featuresRemoved: sub.featuresRemoved,
+        features: effectiveFeatures(
+          sub.plan.features,
+          sub.featuresAdded,
+          sub.featuresRemoved,
+        ),
         monthly: monthlyAmount(sub.plan, students),
         ...accessFor({
           status: sub.status,
@@ -301,6 +322,12 @@ export class PlatformController {
       include: { plan: true },
     });
     if (!before) throw new NotFoundException('School has no subscription');
+    if (
+      body.status === SubscriptionStatus.CANCELLED &&
+      before.status !== SubscriptionStatus.CANCELLED &&
+      admin.role !== PlatformRole.OWNER
+    )
+      throw new ForbiddenException('Only a SchoolSyncer owner can close a school');
     let planId: string | undefined;
     if (body.planCode) {
       const plan = await this.prisma.plan.findUnique({
@@ -337,13 +364,15 @@ export class PlatformController {
 
   /**
    * Signs a SchoolSyncer staff member in as the school's owner for an hour, to
-   * help with a support request. Recorded in both the platform's and the
-   * school's audit logs.
+   * help with a support request. The token carries `support` so the school
+   * app shows a banner, and the visit is recorded with its reason in both the
+   * platform's and the school's audit logs.
    */
   @Post('schools/:id/support-login')
   async supportLogin(
     @CurrentAdmin() admin: PlatformUser,
     @Param('id') id: string,
+    @Body(new ZodValidationPipe(supportSchema)) body: { reason: string },
   ) {
     const owner = await this.prisma.user.findFirst({
       where: {
@@ -351,7 +380,7 @@ export class PlatformController {
         isActive: true,
         roles: { some: { role: Role.OWNER } },
       },
-      include: { roles: true },
+      include: { roles: true, school: { select: { slug: true } } },
       orderBy: { createdAt: 'asc' },
     });
     if (!owner)
@@ -361,9 +390,15 @@ export class PlatformController {
     const payload: AuthUser = {
       sub: owner.id,
       schoolId: id,
-      name: `${owner.name} (SchoolSyncer support: ${admin.name})`,
-      roles: owner.roles.map(({ role, campusId }) => ({ role, campusId })),
+      name: owner.name,
+      roles: owner.roles.map(({ role, campusId, customRoleId }) => ({
+        role,
+        campusId,
+        customRoleId,
+      })),
+      support: { adminId: admin.sub, adminName: admin.name },
     };
+    const expiresAt = new Date(Date.now() + SUPPORT_SESSION_MS);
     await this.prisma.auditLog.create({
       data: {
         schoolId: id,
@@ -371,12 +406,20 @@ export class PlatformController {
         action: 'platform.support_login',
         entity: 'User',
         entityId: owner.id,
-        after: { by: admin.name },
+        after: { by: admin.name, byAdminId: admin.sub, reason: body.reason },
       },
     });
-    await this.log(admin, 'school.support_login', id, { as: owner.id });
+    await this.log(admin, 'school.support_login', id, {
+      as: owner.id,
+      reason: body.reason,
+      expiresAt,
+    });
     return {
-      accessToken: this.jwt.sign(payload, { expiresIn: '1h' }),
+      accessToken: this.jwt.sign(payload, {
+        expiresIn: SUPPORT_SESSION_MS / 1000,
+      }),
+      expiresAt,
+      schoolSlug: owner.school.slug,
       user: payload,
     };
   }
@@ -397,6 +440,7 @@ export class PlatformController {
   }
 
   @Patch('plans/:id')
+  @PlatformOwnerOnly()
   async updatePlan(
     @CurrentAdmin() admin: PlatformUser,
     @Param('id') id: string,
@@ -574,13 +618,6 @@ export class PlatformController {
     schoolId: string | null,
     details: unknown,
   ) {
-    return this.prisma.platformAuditLog.create({
-      data: {
-        adminId: admin.sub,
-        action,
-        schoolId,
-        details: details as Prisma.InputJsonValue,
-      },
-    });
+    return logPlatform(this.prisma, admin, action, schoolId, details);
   }
 }

@@ -22,7 +22,7 @@ import {
 import { CERTIFICATE_SHORT, type CertificateRow, type CertificateType } from "@/lib/certificates";
 import { day } from "@/lib/format";
 import { useSectionOptions } from "@/lib/sections";
-import { hasRole, SETUP, useSession } from "@/lib/session";
+import { hasRole, SETUP, useSchoolMode, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 type Tab = "issued" | "students" | "staff";
@@ -31,18 +31,20 @@ type Tab = "issued" | "students" | "staff";
 export default function CertificatesPage() {
   const user = useSession();
   const canIssue = hasRole(user, SETUP);
+  // ID cards are physical-only, so online schools see just the certificate register.
+  const idCards = useSchoolMode() !== "ONLINE";
   const [tab, setTab] = useState<Tab>("issued");
   const tabs = [
     { value: "issued", label: "Certificates issued", icon: <Award /> },
-    { value: "students", label: "Student ID cards", icon: <IdCard /> },
-    ...(canIssue ? [{ value: "staff", label: "Staff ID cards", icon: <Users /> }] : []),
+    ...(idCards ? [{ value: "students", label: "Student ID cards", icon: <IdCard /> }] : []),
+    ...(idCards && canIssue ? [{ value: "staff", label: "Staff ID cards", icon: <Users /> }] : []),
   ];
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Certificates and ID cards"
-        description="Leaving, character and enrolment certificates, each with a code anyone can check online, and printable ID cards."
+        title={idCards ? "Certificates and ID cards" : "Certificates"}
+        description={`Leaving, character and enrolment certificates, each with a code anyone can check online${idCards ? ", and printable ID cards" : ""}.`}
         breadcrumbs={[{ label: "Students" }, { label: "Certificates" }]}
         actions={
           canIssue && (
@@ -57,10 +59,12 @@ export default function CertificatesPage() {
         <TabPanel value="issued">
           <Register />
         </TabPanel>
-        <TabPanel value="students">
-          <StudentCards />
-        </TabPanel>
-        {canIssue && (
+        {idCards && (
+          <TabPanel value="students">
+            <StudentCards />
+          </TabPanel>
+        )}
+        {idCards && canIssue && (
           <TabPanel value="staff">
             <StaffCards />
           </TabPanel>

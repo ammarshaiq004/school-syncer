@@ -3,20 +3,29 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Moon, X } from "lucide-react";
+import { Lock, LogOut, Moon, X } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandLockup, BrandMark } from "@/components/brand";
-import { Alert } from "@/components/kit/feedback";
+import { Alert, EmptyState } from "@/components/kit/feedback";
+import { buttonClass } from "@/components/kit/button";
 import { CommandPalette, type PaletteCommand } from "@/components/kit/command-palette";
 import { Spinner } from "@/components/kit/feedback";
 import { Sidebar, SidebarNav } from "@/components/shell/sidebar";
 import { TopBar } from "@/components/shell/topbar";
-import { api, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
+import { SupportBanner } from "@/components/platform/support-banner";
+import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
 import { day } from "@/lib/format";
-import { allNavItems, availableViews, navForView, resolveView, VIEWS, viewDef, type ViewId } from "@/lib/nav";
+import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, viewFromPath, type ViewId } from "@/lib/nav";
 import { usePersistedState } from "@/lib/persisted";
 import { FEES, hasRole, SessionContext, STAFF } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
+
+/** True when a parent or student account is on a page outside their own portal. */
+function outsidePortal(user: SessionUser, pathname: string) {
+  if (hasRole(user, STAFF)) return false;
+  const area = viewFromPath(pathname);
+  return !(area === "student" && hasRole(user, ["STUDENT"])) && !(area === "parent" && hasRole(user, ["PARENT"]));
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -32,15 +41,24 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .then((me) => {
         setUser(me);
         setSignedInAt(Date.now());
-        // Parents only have their own portal.
-        if (!hasRole(me, STAFF) && !pathname.startsWith("/parent")) router.replace("/parent");
+        // Parents and students only have their own portals (an account with both can use either).
+        if (outsidePortal(me, pathname)) {
+          router.replace(hasRole(me, ["STUDENT"]) && !hasRole(me, ["PARENT"]) ? "/student" : "/parent");
+        }
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => {
+        // An expired or rejected support session ends in this tab only.
+        if (getSupportToken()) {
+          endSupportSession();
+          router.replace("/support/ended");
+        } else router.replace("/login");
+      });
   }, [router, pathname]);
 
   const available = useMemo(() => (user ? availableViews(user) : []), [user]);
   const view: ViewId = resolveView(pathname, savedView, available);
-  const groups = useMemo(() => (user ? navForView({ user, view }) : []), [user, view]);
+  const mode = user?.school?.mode ?? null;
+  const groups = useMemo(() => (user ? navForView({ user, view, mode }) : []), [user, view, mode]);
 
   function signOut() {
     setToken(null);
@@ -56,7 +74,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const commands = useMemo<PaletteCommand[]>(() => {
     if (!user) return [];
-    const pages: PaletteCommand[] = allNavItems(user).map((i) => ({
+    const pages: PaletteCommand[] = allNavItems(user, mode).map((i) => ({
       id: `page-${i.href}`,
       label: i.label,
       group: i.group,
@@ -86,9 +104,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return [...pages, ...views, ...actions];
     // switchView/signOut are stable enough for a palette list; rebuild when the user or view changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, available, view]);
+  }, [user, available, view, mode]);
 
-  if (!user) {
+  // Also hold the page while a parent or student is being sent to their portal, so staff pages never load (and call staff APIs).
+  if (!user || outsidePortal(user, pathname)) {
     return (
       <div className="grid min-h-dvh place-items-center bg-bg">
         <div className="flex flex-col items-center gap-4">
@@ -101,6 +120,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const home = viewDef(view).home;
   const isStaff = hasRole(user, STAFF);
+  const blocked = blockedNavItem(user, pathname);
 
   return (
     <SessionContext.Provider value={user}>
@@ -148,8 +168,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           />
           {user.plan && isStaff && <PlanBanner plan={user.plan} canBill={hasRole(user, FEES)} now={signedInAt} />}
           <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 focus:outline-none md:px-6 md:py-6 print:max-w-none print:p-0">
-            {children}
+            {blocked ? (
+              <EmptyState
+                icon={<Lock />}
+                title={`You don't have access to ${blocked.label}`}
+                description="Your role does not include this part of the school. Ask the school owner or principal if you need it."
+                action={
+                  <Link href={home} className={buttonClass("secondary")}>
+                    Back to the dashboard
+                  </Link>
+                }
+              />
+            ) : (
+              children
+            )}
           </main>
+          {user.support && <SupportBanner adminName={user.support.adminName} />}
         </div>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />

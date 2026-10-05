@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Building, CircleAlert, Hourglass, Receipt, Wallet } from "lucide-react";
+import { ArrowRight, Building, ChartColumn, CircleAlert, Hourglass, Receipt, Wallet } from "lucide-react";
+import type { PlatformReports } from "@/components/platform/reports";
 import {
   Alert,
+  AreaChart,
   BarChart,
   Card,
   CardFooter,
@@ -73,6 +75,7 @@ function lastSixMonths(): string[] {
 
 export default function OverviewPage() {
   const { data, error, reload } = usePlatformApi<Overview>("/overview");
+  const reports = usePlatformApi<PlatformReports>("/reports");
   const loading = !data && !error;
   const by = (s: string) => data?.byStatus[s] ?? 0;
 
@@ -205,6 +208,33 @@ export default function OverviewPage() {
               )}
             </Card>
           </div>
+
+          <Card>
+            <CardHeader
+              title="Revenue collected"
+              description="Paid SchoolSyncer bills per month, last 12 months"
+              action={
+                <Link href="/platform/reports" className={buttonClass("secondary", "sm")}>
+                  <ChartColumn aria-hidden />
+                  Reports
+                </Link>
+              }
+            />
+            {reports.error && !reports.data ? (
+              <ErrorState message={reports.error} onRetry={reports.reload} compact />
+            ) : !reports.data ? (
+              <Skeleton className="h-[220px] w-full" />
+            ) : reports.data.revenueByMonth.every((r) => r.amount === 0) ? (
+              <EmptyState icon={<Wallet />} title="No payments yet" description="Payments recorded on the Bills page show here." compact />
+            ) : (
+              <AreaChart
+                label="Revenue collected per month in rupees"
+                categories={reports.data.revenueByMonth.map((r) => monthName(r.month))}
+                series={[{ name: "Revenue collected", values: reports.data.revenueByMonth.map((r) => r.amount) }]}
+                formatValue={rupees}
+              />
+            )}
+          </Card>
 
           <Card padding="none">
             <div className="px-5 pt-5">

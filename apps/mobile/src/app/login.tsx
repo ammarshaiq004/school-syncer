@@ -31,11 +31,11 @@ export default function Login() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.wrap}>
         <View style={{ alignItems: 'center', gap: 4 }}>
           <Text style={styles.logo}>SchoolSyncer</Text>
-          <Muted>For parents and teachers</Muted>
+          <Muted>For parents, students and teachers</Muted>
         </View>
         <Card>
           <Input label="School code" value={school} onChangeText={setSchool} autoCapitalize="none" autoCorrect={false} placeholder="e.g. demo-school" />
-          <Input label="Phone or email" value={login} onChangeText={setLogin} autoCapitalize="none" keyboardType="email-address" placeholder="03001234567" />
+          <Input label="Phone, email or username" value={login} onChangeText={setLogin} autoCapitalize="none" autoCorrect={false} keyboardType="default" placeholder="03001234567 or admission no." />
           <Input label="Password" value={password} onChangeText={setPassword} secureTextEntry onSubmitEditing={submit} />
           <ErrorText>{error}</ErrorText>
           <Button title={busy ? 'Signing in...' : 'Sign in'} onPress={submit} disabled={busy} />
