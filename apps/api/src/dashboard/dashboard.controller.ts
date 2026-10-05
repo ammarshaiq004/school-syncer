@@ -61,6 +61,7 @@ export class DashboardController {
       classes,
       staff,
       teachers,
+      registers,
     ] = await Promise.all([
       this.prisma.student.count({ where: { schoolId, status: 'ACTIVE', ...campusFilter } }),
       this.prisma.student.count({
@@ -164,7 +165,18 @@ export class DashboardController {
       this.prisma.user.count({
         where: { schoolId, isActive: true, roles: { some: { role: { in: TEACHING_ROLES }, ...staffFilter } } },
       }),
+      // Every class with pupils owes a register today; whether it is in says how much of the school today's rate covers.
+      this.prisma.section.findMany({
+        where: {
+          schoolId,
+          academicYear: { isCurrent: true },
+          enrollments: { some: { status: 'ACTIVE' } },
+          ...(scope ? { class: { campusId: { in: scope } } } : {}),
+        },
+        select: { id: true, attendanceSessions: { where: { date: today }, select: { id: true } } },
+      }),
     ]);
+    const topDefaulters = canFees ? await this.topDefaulters(schoolId, campusFilter) : [];
 
     const count = (s: string) => attendance.find((a) => a.status === s)?._count ?? 0;
     const marked = attendance.reduce((n, a) => n + a._count, 0);
@@ -205,6 +217,8 @@ export class DashboardController {
         absent: count('ABSENT'),
         leave: count('LEAVE'),
         late: count('LATE'),
+        registersTotal: registers.length,
+        registersTaken: registers.filter((s) => s.attendanceSessions.length > 0).length,
       },
       attendanceWeek,
       feesThisMonth: {
@@ -238,6 +252,7 @@ export class DashboardController {
         invoiceStatus: p.invoice.status,
         student: p.invoice.student,
       })),
+      topDefaulters,
       upcomingExams: exams,
       announcements: announcements.map((a) => ({ ...a, createdBy: a.createdBy?.name ?? null })),
       studentsByClass: classes
@@ -250,6 +265,62 @@ export class DashboardController {
         .filter((c) => c.students > 0),
       admissions: Object.fromEntries(applications.map((a) => [a.stage, a._count])),
     };
+  }
+
+  /**
+   * The five students who owe the most across every open voucher, for the
+   * dashboard's defaulters card. Same open-invoice rule as /fees/defaulters,
+   * but summed per student rather than listed per voucher.
+   */
+  private async topDefaulters(schoolId: string, campusFilter: { campusId?: { in: string[] } }) {
+    const byStudent = await this.prisma.invoice.groupBy({
+      by: ['studentId'],
+      where: {
+        schoolId,
+        status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
+        student: campusFilter,
+      },
+      _sum: { total: true, paid: true },
+      _count: true,
+    });
+    const top = byStudent
+      .map((r) => ({
+        studentId: r.studentId,
+        balance: Math.max(0, (r._sum.total ?? 0) - (r._sum.paid ?? 0)),
+        monthsOwed: r._count,
+      }))
+      .filter((r) => r.balance > 0)
+      .sort((a, b) => b.balance - a.balance)
+      .slice(0, 5);
+    if (!top.length) return [];
+
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: top.map((r) => r.studentId) } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        admissionNo: true,
+        enrollments: {
+          where: { status: 'ACTIVE' },
+          take: 1,
+          select: { section: { select: { name: true, class: { select: { name: true } } } } },
+        },
+      },
+    });
+    return top.flatMap((r) => {
+      const student = students.find((s) => s.id === r.studentId);
+      if (!student) return [];
+      const enrolment = student.enrollments[0];
+      return [
+        {
+          ...r,
+          name: [student.firstName, student.lastName].filter(Boolean).join(' '),
+          admissionNo: student.admissionNo,
+          className: enrolment ? `${enrolment.section.class.name} ${enrolment.section.name}` : null,
+        },
+      ];
+    });
   }
 
   /** A teacher's day: the sections they teach (and whether today's register is in) and homework coming due. */

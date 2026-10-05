@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Phone, Plus } from "lucide-react";
-import { Avatar, Button, DataTable, PageHeader, ProgressBar, StatusPill, type Column } from "@/components/ui";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Phone, Plus } from "lucide-react";
+import { Avatar, Button, DataTable, PageHeader, ProgressBar, StatusPill, useToast, type Column } from "@/components/ui";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { rupees } from "@/lib/format";
+import { downloadCsv } from "@/lib/csv";
+import { rupees, todayIso } from "@/lib/format";
 import { useSectionOptions } from "@/lib/sections";
 import { AddStudentDrawer } from "./add-student-drawer";
 import {
@@ -31,6 +33,8 @@ import { useKeyedApi } from "./use-keyed-api";
 type SortKey = "name" | "admissionNo" | "attendance" | "class";
 const SORTS: SortKey[] = ["name", "admissionNo", "attendance", "class"];
 const PAGE_SIZES = [10, 25, 50, 100];
+/** Pages of 100 an export will fetch at most, so a huge school cannot hang the browser. */
+const EXPORT_PAGES = 30;
 
 interface DirectoryQuery {
   page: number;
@@ -115,11 +119,13 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
   const query = useMemo(() => readQuery(new URLSearchParams(qs)), [qs]);
   const sections = useSectionOptions();
   const recordPayment = useRecordPayment();
+  const toast = useToast();
 
   const [searchText, setSearchText] = useState(query.search);
   const [open, setOpen] = useState<DirectoryRow | null>(null);
   const [action, setAction] = useState<StudentAction>(null);
   const [adding, setAdding] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const apiParams = new URLSearchParams(writeQuery(query));
   apiParams.set("page", String(query.page));
@@ -167,6 +173,38 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
     if (directory.data && query.page > lastPage) update({ page: lastPage }, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [directory.data, query.page, lastPage]);
+
+  /** The whole filtered view (not just this page) as a CSV, in the order on screen. */
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams(writeQuery(query));
+      params.set("pageSize", "100");
+      const rows: DirectoryRow[] = [];
+      for (let page = 1; page <= EXPORT_PAGES; page++) {
+        params.set("page", String(page));
+        const result = await api<DirectoryPage>(`/students/directory?${params.toString()}`);
+        rows.push(...result.items);
+        if (!result.items.length || rows.length >= result.total) break;
+      }
+      downloadCsv(
+        `students-${todayIso()}.csv`,
+        ["Admission no.", "Student", "Class", "Guardian", "Phone", "Fee status"],
+        rows.map((r) => [
+          r.admissionNo,
+          r.name,
+          classLabel(r) ?? "",
+          r.guardian?.name ?? "",
+          r.guardian?.phone ?? "",
+          r.feeStatus ? (FEE_STATUS_OPTIONS.find((o) => o.value === r.feeStatus)?.label ?? r.feeStatus) : "",
+        ]),
+      );
+    } catch (e) {
+      toast.error("Could not export the list", (e as Error).message);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function onSort(k: SortKey) {
     update({ sort: k, dir: query.sort === k && query.dir === "asc" ? "desc" : "asc" });
@@ -290,6 +328,15 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
     </Button>
   ) : undefined;
 
+  const headerActions = (
+    <>
+      <Button variant="secondary" icon={<Download />} onClick={exportCsv} loading={exporting} disabled={!shown?.total}>
+        Export CSV
+      </Button>
+      {addButton}
+    </>
+  );
+
   const total = shown?.total ?? 0;
   const statusWord =
     query.status.length === 1 ? STATUS_OPTIONS.find((o) => o.value === query.status[0])?.label.toLowerCase() : query.status.length ? "" : "active";
@@ -304,7 +351,7 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
             : "Everyone enrolled at your school, with attendance and fee standing."
         }
         breadcrumbs={[{ label: "People" }, { label: "Student directory" }]}
-        actions={addButton}
+        actions={headerActions}
       />
 
       <DataTable

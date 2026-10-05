@@ -28,6 +28,7 @@ import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart, localToday } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
+import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { dueDate, lateFine, nextAccessionNumbers } from './library-rules.js';
@@ -393,11 +394,7 @@ export class LibraryController {
           schoolId: user.schoolId,
           status: StudentStatus.ACTIVE,
           ...(scope ? { campusId: { in: scope } } : {}),
-          OR: [
-            { firstName: { contains: q, mode: 'insensitive' } },
-            { lastName: { contains: q, mode: 'insensitive' } },
-            { admissionNo: { contains: q } },
-          ],
+          ...studentSearchWhere(q),
         },
         take: 15,
         orderBy: { firstName: 'asc' },

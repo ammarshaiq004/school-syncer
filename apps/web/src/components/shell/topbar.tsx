@@ -27,9 +27,11 @@ export interface TopBarProps {
   onOpenPalette: () => void;
   onSignOut: () => void;
   showBell: boolean;
+  /** What the search button offers, e.g. "Search students and pages". */
+  searchLabel?: string;
 }
 
-export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, showBell }: TopBarProps) {
+export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, showBell, searchLabel = "Search pages" }: TopBarProps) {
   const current = viewDef(view);
   const [theme, setTheme] = useTheme();
   const CurrentIcon = current.icon;
@@ -42,15 +44,15 @@ export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu,
       <button
         type="button"
         onClick={onOpenPalette}
-        aria-label="Search pages (Ctrl+K)"
+        aria-label={`${searchLabel} (Ctrl+K)`}
         aria-keyshortcuts="Control+K Meta+K"
         className="hidden h-9 w-full max-w-xs items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 text-sm text-fg-muted transition-colors hover:border-border-strong hover:text-fg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring sm:flex"
       >
         <Search className="size-4 shrink-0" aria-hidden />
-        <span className="flex-1 truncate text-left">Search pages</span>
+        <span className="flex-1 truncate text-left">{searchLabel}</span>
         <kbd className="rounded border border-border bg-surface px-1.5 font-sans text-[10px] font-semibold">Ctrl K</kbd>
       </button>
-      <IconButton aria-label="Search pages" className="sm:hidden" onClick={onOpenPalette}>
+      <IconButton aria-label={searchLabel} className="sm:hidden" onClick={onOpenPalette}>
         <Search />
       </IconButton>
 

@@ -3,6 +3,7 @@ import { InvoiceStatus, PaymentMethod, Prisma } from '@prisma/client';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { lateFine, paymentRejection } from './fee-calculator.js';
 import { receiptNo } from './invoice-codes.js';
 
 export interface PaymentInput {
@@ -42,6 +43,17 @@ export class PaymentsService {
         if (invoice.status === InvoiceStatus.CANCELLED) {
           throw new BadRequestException('This invoice was cancelled');
         }
+        // A voucher never takes more than it owes (the late fine may be collected with it).
+        const school = await tx.school.findUniqueOrThrow({
+          where: { id: schoolId },
+          select: { lateFeePerDay: true },
+        });
+        const rejection = paymentRejection(
+          input.amount,
+          invoice,
+          lateFine(invoice.dueDate, new Date(), school.lateFeePerDay),
+        );
+        if (rejection) throw new BadRequestException(rejection);
         const paid = invoice.paid + input.amount;
         await tx.invoice.update({
           where: { id: invoice.id },

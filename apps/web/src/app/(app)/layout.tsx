@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Lock, LogOut, Moon, X } from "lucide-react";
+import { GraduationCap, Lock, LogOut, Moon, X } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandLockup, BrandMark } from "@/components/brand";
 import { Alert, EmptyState } from "@/components/kit/feedback";
@@ -14,11 +14,20 @@ import { Sidebar, SidebarNav } from "@/components/shell/sidebar";
 import { TopBar } from "@/components/shell/topbar";
 import { SupportBanner } from "@/components/platform/support-banner";
 import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
-import { day } from "@/lib/format";
+import { day, fullName } from "@/lib/format";
 import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, viewFromPath, type ViewId } from "@/lib/nav";
 import { usePersistedState } from "@/lib/persisted";
 import { FEES, hasRole, SessionContext, STAFF } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
+
+/** The parts of GET /students the command palette shows. */
+interface PaletteStudent {
+  id: string;
+  firstName: string;
+  lastName: string | null;
+  admissionNo: string;
+  enrollments: { section: { name: string; class: { name: string } } }[];
+}
 
 /** True when a parent or student account is on a page outside their own portal. */
 function outsidePortal(user: SessionUser, pathname: string) {
@@ -106,6 +115,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, available, view, mode]);
 
+  // Ctrl+K also finds students, for roles that can open the directory.
+  const canFindStudents = !!user && allNavItems(user, mode).some((i) => i.href === "/students");
+  const searchStudents = useMemo(() => {
+    if (!canFindStudents) return undefined;
+    return async (query: string): Promise<PaletteCommand[]> => {
+      const rows = await api<PaletteStudent[]>(`/students?search=${encodeURIComponent(query)}`);
+      return rows.slice(0, 5).map((row) => {
+        const enrolment = row.enrollments[0];
+        return {
+          id: `student-${row.id}`,
+          label: fullName(row),
+          group: "Students",
+          icon: GraduationCap,
+          href: `/students/${row.id}`,
+          hint: [row.admissionNo, enrolment && `${enrolment.section.class.name} ${enrolment.section.name}`].filter(Boolean).join(" · "),
+        };
+      });
+    };
+  }, [canFindStudents]);
+
   // Also hold the page while a parent or student is being sent to their portal, so staff pages never load (and call staff APIs).
   if (!user || outsidePortal(user, pathname)) {
     return (
@@ -165,6 +194,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             onOpenPalette={() => setPaletteOpen(true)}
             onSignOut={signOut}
             showBell={isStaff}
+            searchLabel={canFindStudents ? "Search students and pages" : undefined}
           />
           {user.plan && isStaff && <PlanBanner plan={user.plan} canBill={hasRole(user, FEES)} now={signedInAt} />}
           <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 focus:outline-none md:px-6 md:py-6 print:max-w-none print:p-0">
@@ -186,7 +216,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {user.support && <SupportBanner adminName={user.support.adminName} />}
         </div>
       </div>
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        commands={commands}
+        placeholder={canFindStudents ? "Search students and pages" : undefined}
+        onSearch={searchStudents}
+      />
     </SessionContext.Provider>
   );
 }

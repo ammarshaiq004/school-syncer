@@ -258,7 +258,18 @@ export default function VoucherPage() {
         }
       >
         <form id="record-payment" onSubmit={pay} className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Amount (Rs)" name="amount" type="number" min={1} defaultValue={v.balance} required inputMode="numeric" />
+          {/* Nothing above the balance (plus any late fine collected with it) can be taken. */}
+          <TextField
+            label="Amount (Rs)"
+            name="amount"
+            type="number"
+            min={1}
+            max={v.balance + v.lateFine}
+            defaultValue={v.balance}
+            required
+            inputMode="numeric"
+            hint={`At most ${rupees(v.balance + v.lateFine)}`}
+          />
           <SelectField label="Method" name="method" options={METHODS.map((m) => ({ value: m, label: methodLabel(m) }))} />
           <TextField
             label="Reference"
