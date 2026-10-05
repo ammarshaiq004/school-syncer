@@ -3,8 +3,26 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
+import { ArrowLeftRight, ChevronRight, FileText, History, Search, UserRound } from "lucide-react";
 import { Select } from "@/components/select";
-import { Button, Card, ErrorText, Field, PageTitle } from "@/components/ui";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  CardHeader,
+  Checkbox,
+  DescriptionList,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  SearchInput,
+  SegmentedControl,
+  Skeleton,
+  SkeletonRows,
+  StatusPill,
+  TextField,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import {
   CERTIFICATE_SHORT,
@@ -54,7 +72,11 @@ function NewCertificate() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle>Issue a certificate</PageTitle>
+      <PageHeader
+        title="Issue a certificate"
+        description={studentId ? "Check the details from the school record, then issue." : "Find the student the certificate is for."}
+        breadcrumbs={[{ label: "Certificates", href: "/certificates" }, { label: "Issue a certificate" }]}
+      />
       {studentId ? (
         <IssueForm key={studentId} studentId={studentId} type={type} onType={setType} onChangeStudent={() => setStudentId("")} />
       ) : (
@@ -69,25 +91,52 @@ function StudentPicker({ onPick }: { onPick: (id: string) => void }) {
   const q = search.trim();
   const hits = useApi<StudentHit[]>(q.length >= 2 ? `/students?search=${encodeURIComponent(q)}` : null);
   return (
-    <Card>
-      <Field label="Find the student" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, admission number or parent's phone" autoFocus />
-      <ErrorText>{hits.error}</ErrorText>
-      {q.length >= 2 && hits.data && (
-        <ul className="mt-3 divide-y divide-black/5 text-sm dark:divide-white/10">
-          {hits.data.slice(0, 12).map((s) => (
-            <li key={s.id}>
-              <button className="flex w-full justify-between gap-3 py-2 text-left hover:text-brand" onClick={() => onPick(s.id)}>
-                <span>{fullName(s)}</span>
-                <span className="opacity-60">
-                  {s.enrollments[0] ? `${s.enrollments[0].section.class.name} ${s.enrollments[0].section.name} · ` : ""}
-                  {s.admissionNo}
-                </span>
-              </button>
-            </li>
-          ))}
-          {hits.data.length === 0 && <li className="py-2 opacity-60">No students on the rolls match. Students who have left can be found from the Students page.</li>}
-        </ul>
-      )}
+    <Card className="max-w-2xl">
+      <CardHeader icon={<Search />} title="Find the student" description="Type at least two letters of the name, admission number or a parent's phone." />
+      <SearchInput
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        onClear={() => setSearch("")}
+        placeholder="Name, admission number or parent's phone"
+        aria-label="Find the student"
+        autoFocus
+      />
+      <div className="mt-3">
+        {q.length < 2 ? null : hits.error ? (
+          <ErrorState message={hits.error} onRetry={hits.reload} compact />
+        ) : !hits.data ? (
+          <SkeletonRows rows={3} columns={2} />
+        ) : hits.data.length === 0 ? (
+          <EmptyState
+            icon={<UserRound />}
+            title="No students on the rolls match"
+            description="Students who have left can be found from the Students page."
+            compact
+          />
+        ) : (
+          <ul className="divide-y divide-border rounded-lg border border-border">
+            {hits.data.slice(0, 12).map((s) => (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none"
+                  onClick={() => onPick(s.id)}
+                >
+                  <Avatar name={fullName(s)} size="sm" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-fg">{fullName(s)}</span>
+                    <span className="block truncate text-xs text-fg-muted">
+                      {s.enrollments[0] ? `${s.enrollments[0].section.class.name} ${s.enrollments[0].section.name}, ` : ""}
+                      {s.admissionNo}
+                    </span>
+                  </span>
+                  <ChevronRight className="size-4 text-fg-muted" aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </Card>
   );
 }
@@ -134,7 +183,26 @@ function IssueForm({
     }
   }
 
-  if (!d) return <ErrorText>{draft.error}</ErrorText>;
+  if (!d) {
+    if (draft.error) {
+      return (
+        <Card padding="none">
+          <ErrorState message={draft.error} onRetry={draft.reload} />
+        </Card>
+      );
+    }
+    return (
+      <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+        <Card>
+          <Skeleton className="mb-3 h-6 w-48" />
+          <SkeletonRows rows={4} columns={2} />
+        </Card>
+        <Card>
+          <SkeletonRows rows={5} columns={2} />
+        </Card>
+      </div>
+    );
+  }
   const openLeaving = d.issued.find((c) => c.type === "LEAVING" && !c.cancelled);
   const blocked =
     type === "LEAVING"
@@ -151,48 +219,52 @@ function IssueForm({
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <Card>
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <div className="text-lg font-semibold">
-              <Link href={`/students/${studentId}`} className="text-brand">{d.details.studentName}</Link>
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar name={d.details.studentName} size="md" />
+            <div className="min-w-0">
+              <Link href={`/students/${studentId}`} className="text-base font-semibold text-fg hover:text-brand">
+                {d.details.studentName}
+              </Link>
+              <div className="text-[13px] text-fg-muted">
+                {[d.details.className, d.details.admissionNo, d.details.guardianName && `${d.details.guardianRelation ?? "Guardian"}: ${d.details.guardianName}`]
+                  .filter(Boolean)
+                  .join(", ")}
+              </div>
+              {d.status !== "ACTIVE" && (
+                <div className="mt-1">
+                  <StatusPill status={d.status} />
+                </div>
+              )}
             </div>
-            <div className="text-sm opacity-70">
-              {[d.details.className, d.details.admissionNo, d.details.guardianName && `${d.details.guardianRelation ?? "Guardian"}: ${d.details.guardianName}`]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
-            {d.status !== "ACTIVE" && <div className="text-sm opacity-70">Status: {d.status.toLowerCase()}</div>}
           </div>
-          <button className="text-sm text-brand" onClick={onChangeStudent}>Choose another student</button>
+          <Button type="button" variant="secondary" size="sm" icon={<ArrowLeftRight />} onClick={onChangeStudent}>
+            Choose another student
+          </Button>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-2" role="radiogroup" aria-label="Certificate">
-          {TYPES.map((t) => (
-            <button
-              key={t}
-              role="radio"
-              aria-checked={type === t}
-              onClick={() => onType(t)}
-              className={`rounded-full border px-4 py-1.5 text-sm ${type === t ? "border-brand bg-brand/10 font-medium text-brand" : "border-black/15 dark:border-white/20"}`}
-            >
-              {CERTIFICATE_SHORT[t]}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          aria-label="Certificate"
+          size="md"
+          value={type}
+          onChange={onType}
+          options={TYPES.map((t) => ({ value: t, label: CERTIFICATE_SHORT[t] }))}
+          className="mb-5"
+        />
 
-        <form onSubmit={issue} className="flex flex-col gap-3">
-          <h2 className="font-semibold">{CERTIFICATE_TITLE[type]}</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Date of issue" name="issuedOn" type="date" defaultValue={today} max={today} required />
+        <form onSubmit={issue} className="flex flex-col gap-4">
+          <h2 className="text-base font-semibold text-fg">{CERTIFICATE_TITLE[type]}</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField label="Date of issue" name="issuedOn" type="date" defaultValue={today} max={today} required />
             <Select label="Conduct and character" name="conduct" defaultValue="Good" options={CONDUCT.map((c) => ({ value: c, label: c }))} />
             {type === "LEAVING" && (
               <>
-                <Field label="Date of leaving" name="leavingOn" type="date" defaultValue={today} required />
-                <Field label="Reason for leaving" name="reason" placeholder="Family moved to Islamabad" maxLength={200} />
+                <TextField label="Date of leaving" name="leavingOn" type="date" defaultValue={today} required />
+                <TextField label="Reason for leaving" name="reason" placeholder="Family moved to Islamabad" maxLength={200} />
               </>
             )}
           </div>
-          <Field
+          <TextField
             label={type === "LEAVING" ? "Remarks (optional)" : "Issued for (optional)"}
             name="remarks"
             maxLength={300}
@@ -200,59 +272,78 @@ function IssueForm({
           />
 
           {type === "LEAVING" && d.duesOwed > 0 && !blocked && (
-            <label className="flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
-              <input type="checkbox" className="mt-1" checked={allowDues} onChange={(e) => setAllowDues(e.target.checked)} />
-              <span>
-                {rupees(d.duesOwed)} in fees is still owed. Tick to issue anyway; the certificate will show the amount outstanding.
-              </span>
-            </label>
+            <Alert tone="warning" title={`${rupees(d.duesOwed)} in fees is still owed`}>
+              <Checkbox
+                checked={allowDues}
+                onCheckedChange={setAllowDues}
+                label="Issue anyway; the certificate will show the amount outstanding."
+                className="mt-1 items-start text-inherit"
+              />
+            </Alert>
           )}
           {type === "LEAVING" && !blocked && (
-            <p className="text-sm opacity-70">
+            <Alert tone="info">
               Issuing it takes {d.details.studentName} off the rolls: out of {d.details.className ?? "their class"}, off the school van from the leaving date, and no more fee vouchers.
-            </p>
+            </Alert>
           )}
-          {blocked && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800 dark:bg-red-500/10 dark:text-red-200">{blocked}</p>}
-          <ErrorText>{error}</ErrorText>
-          <div>
-            <Button type="submit" disabled={busy || Boolean(blocked) || (type === "LEAVING" && d.duesOwed > 0 && !allowDues)}>
-              {busy ? "Issuing..." : `Issue ${CERTIFICATE_SHORT[type].toLowerCase()} certificate`}
+          {blocked && <Alert tone="danger">{blocked}</Alert>}
+          {error && <Alert tone="danger">{error}</Alert>}
+          <div className="flex justify-end">
+            <Button
+              type="submit"
+              icon={<FileText />}
+              loading={busy}
+              disabled={busy || Boolean(blocked) || (type === "LEAVING" && d.duesOwed > 0 && !allowDues)}
+            >
+              {busy ? "Issuing" : `Issue ${CERTIFICATE_SHORT[type].toLowerCase()} certificate`}
             </Button>
           </div>
         </form>
       </Card>
 
-      <Card>
-        <h2 className="mb-2 font-semibold">From the school record</h2>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-          <dt className="opacity-60">Date of birth</dt>
-          <dd>{d.details.dateOfBirth ? day(d.details.dateOfBirth) : "not recorded"}</dd>
-          <dt className="opacity-60">Admitted</dt>
-          <dd>{day(d.details.admittedOn)}{d.details.classAdmitted ? `, ${d.details.classAdmitted}` : ""}</dd>
-          <dt className="opacity-60">Campus</dt>
-          <dd>{d.details.campus}</dd>
-          <dt className="opacity-60">Fees owed</dt>
-          <dd>{d.duesOwed ? rupees(d.duesOwed) : "none"}</dd>
-          <dt className="opacity-60">Library</dt>
-          <dd>{d.booksOut.length ? `${d.booksOut.length} book${d.booksOut.length > 1 ? "s" : ""} out` : "nothing out"}</dd>
-        </dl>
-        {!d.details.dateOfBirth && (
-          <p className="mt-2 text-xs opacity-60">Add the date of birth on the student&apos;s page first if it should appear on the certificate.</p>
-        )}
-        {d.issued.length > 0 && (
-          <>
-            <h3 className="mb-1 mt-4 text-sm font-semibold">Issued before</h3>
-            <ul className="space-y-1 text-sm">
+      <div className="flex flex-col gap-6">
+        <Card>
+          <CardHeader icon={<UserRound />} title="From the school record" />
+          <DescriptionList
+            columns={1}
+            items={[
+              { label: "Date of birth", value: d.details.dateOfBirth ? day(d.details.dateOfBirth) : "Not recorded" },
+              { label: "Admitted", value: `${day(d.details.admittedOn)}${d.details.classAdmitted ? `, ${d.details.classAdmitted}` : ""}` },
+              { label: "Campus", value: d.details.campus },
+              {
+                label: "Fees owed",
+                value: d.duesOwed ? <span className="font-medium text-warning-text tabular-nums">{rupees(d.duesOwed)}</span> : "None",
+              },
+              { label: "Library", value: d.booksOut.length ? `${d.booksOut.length} book${d.booksOut.length > 1 ? "s" : ""} out` : "Nothing out" },
+            ]}
+          />
+          {!d.details.dateOfBirth && (
+            <p className="mt-3 text-xs text-fg-muted">Add the date of birth on the student&apos;s page first if it should appear on the certificate.</p>
+          )}
+        </Card>
+        <Card>
+          <CardHeader icon={<History />} title="Issued before" />
+          {d.issued.length === 0 ? (
+            <p className="text-[13px] text-fg-muted">No certificates issued for this student yet.</p>
+          ) : (
+            <ul className="divide-y divide-border">
               {d.issued.map((c) => (
-                <li key={c.id}>
-                  <Link className="text-brand" href={`/certificates/${c.id}`}>{c.serialNo}</Link>{" "}
-                  <span className="opacity-60">{CERTIFICATE_SHORT[c.type].toLowerCase()}, {day(c.issuedOn)}{c.cancelled ? ", cancelled" : ""}</span>
+                <li key={c.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    <Link className="font-mono text-[13px] font-medium text-brand hover:underline" href={`/certificates/${c.id}`}>
+                      {c.serialNo}
+                    </Link>
+                    <span className="block text-xs text-fg-muted">
+                      {CERTIFICATE_SHORT[c.type]}, {day(c.issuedOn)}
+                    </span>
+                  </span>
+                  {c.cancelled ? <StatusPill status="CANCELLED" tone="danger" /> : <StatusPill status="VALID" tone="success" />}
                 </li>
               ))}
             </ul>
-          </>
-        )}
-      </Card>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

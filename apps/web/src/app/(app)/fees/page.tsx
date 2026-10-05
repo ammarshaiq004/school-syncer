@@ -1,10 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Select } from "@/components/select";
-import { Badge, Button, Card, ErrorText, Field, Notice, PageTitle, rowClass, tableClass } from "@/components/ui";
+import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock } from "lucide-react";
+import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  Checkbox,
+  DataTable,
+  Dialog,
+  EmptyState,
+  ErrorState,
+  KpiCard,
+  NativeSelect,
+  PageHeader,
+  SelectField,
+  SkeletonRows,
+  StatGrid,
+  TabPanel,
+  Tabs,
+  TextField,
+  useToast,
+  type Column,
+} from "@/components/ui";
+import { inputClass } from "@/components/kit/styles";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { day, fullName, rupees, thisMonth } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
@@ -32,56 +58,121 @@ interface Structure { classId: string; feeHeadId: string; amount: number }
 interface SchoolClass { id: string; name: string; campus: { name: string } }
 interface Year { id: string; name: string; isCurrent: boolean }
 
-const TABS = ["Invoices", "Defaulters", "Fee setup"] as const;
-const tone = (s: string) => (s === "PAID" ? "green" : s === "PARTIAL" ? "amber" : s === "UNPAID" ? "red" : "gray");
+const TABS = [
+  { value: "invoices", label: "Invoices", icon: <ReceiptText /> },
+  { value: "defaulters", label: "Defaulters", icon: <BellRing /> },
+  { value: "setup", label: "Fee setup", icon: <Wallet /> },
+];
+
+const STATUS_OPTIONS = [
+  { value: "UNPAID", label: "Unpaid" },
+  { value: "PARTIAL", label: "Partially paid" },
+  { value: "PAID", label: "Paid" },
+  { value: "CANCELLED", label: "Cancelled" },
+];
+
+const FREQUENCY_LABEL: Record<string, string> = { MONTHLY: "Every month", ANNUAL: "Once a year", ONE_TIME: "One time" };
+
+const monthLabel = (period: string) =>
+  /^\d{4}-\d{2}$/.test(period)
+    ? new Date(`${period}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
+    : period;
 
 export default function FeesPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Invoices");
-  return (
-    <div className="flex flex-col gap-6">
-      <PageTitle>Fees</PageTitle>
-      <div className="flex gap-2 border-b border-black/10 dark:border-white/10">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === t ? "border-brand font-medium text-brand" : "border-transparent opacity-70"}`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-      {tab === "Invoices" && <InvoicesTab />}
-      {tab === "Defaulters" && <DefaultersTab />}
-      {tab === "Fee setup" && <SetupTab />}
-    </div>
-  );
-}
-
-function InvoicesTab() {
+  const toast = useToast();
+  const [tab, setTab] = useState("invoices");
   const [period, setPeriod] = useState(thisMonth());
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
   const query = new URLSearchParams({ period, ...(status && { status }), ...(search && { search }) }).toString();
   const invoices = useApi<Invoice[]>(`/fees/invoices?${query}`);
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  // Remount the dialog each time it opens so it starts on the month being viewed.
+  const [generateKey, setGenerateKey] = useState(0);
+  const openGenerate = () => {
+    setGenerateKey((k) => k + 1);
+    setGenerateOpen(true);
+  };
 
-  async function generate(sendWhatsApp: boolean) {
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Fees"
+        description="Monthly vouchers, overdue balances and the fee each class pays."
+        breadcrumbs={[{ label: "Finance" }, { label: "Fees" }]}
+        actions={
+          <Button icon={<FilePlus2 />} onClick={openGenerate}>
+            Generate vouchers
+          </Button>
+        }
+      />
+      <GenerateDialog
+        key={generateKey}
+        open={generateOpen}
+        onOpenChange={setGenerateOpen}
+        initialPeriod={period}
+        onDone={async (p, message) => {
+          toast.success("Vouchers generated", message);
+          setTab("invoices");
+          if (p !== period) setPeriod(p);
+          else await invoices.reload();
+        }}
+      />
+      <Tabs tabs={TABS} value={tab} onValueChange={setTab} aria-label="Fees sections">
+        <TabPanel value="invoices">
+          <InvoicesTab
+            invoices={invoices}
+            period={period}
+            setPeriod={setPeriod}
+            status={status}
+            setStatus={setStatus}
+            search={search}
+            setSearch={setSearch}
+            onGenerate={openGenerate}
+          />
+        </TabPanel>
+        <TabPanel value="defaulters">
+          <DefaultersTab />
+        </TabPanel>
+        <TabPanel value="setup">
+          <SetupTab />
+        </TabPanel>
+      </Tabs>
+    </div>
+  );
+}
+
+function GenerateDialog({
+  open,
+  onOpenChange,
+  initialPeriod,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialPeriod: string;
+  onDone: (period: string, message: string) => Promise<void> | void;
+}) {
+  const [period, setPeriod] = useState(initialPeriod);
+  const [sendWhatsApp, setSendWhatsApp] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function generate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     setBusy(true);
     try {
       const res = await api<{ created: number; skipped: number; totalBilled: number; messages: number }>(
         "/fees/invoices/generate",
         { method: "POST", body: { period, sendWhatsApp } },
       );
-      setNotice(
+      const message =
         `Created ${res.created} vouchers totalling ${rupees(res.totalBilled)}.` +
-          (res.messages ? ` ${res.messages} sent on WhatsApp.` : "") +
-          (res.created === 0 ? " Everyone already has a voucher for this month, or no fee structure is set." : ""),
-      );
+        (res.messages ? ` ${res.messages} sent on WhatsApp.` : "") +
+        (res.created === 0 ? " Everyone already has a voucher for this month, or no fee structure is set." : "");
       setError("");
-      await invoices.reload();
+      onOpenChange(false);
+      await onDone(period, message);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -89,140 +180,277 @@ function InvoicesTab() {
     }
   }
 
-  const rows = invoices.data ?? [];
-  const billed = rows.reduce((s, i) => s + i.total, 0);
-  const collected = rows.reduce((s, i) => s + i.paid, 0);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Generate vouchers"
+      description="Bills every active student for the month using the fee setup. Students who already have a voucher for the month are skipped, so it is safe to run again."
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" form="generate-vouchers" loading={busy} icon={sendWhatsApp ? <Send /> : <FilePlus2 />}>
+            {sendWhatsApp ? "Generate and send" : "Generate vouchers"}
+          </Button>
+        </>
+      }
+    >
+      <form id="generate-vouchers" onSubmit={generate} className="flex flex-col gap-4">
+        <TextField label="Month" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} required />
+        <Checkbox checked={sendWhatsApp} onCheckedChange={setSendWhatsApp} label="Also send each voucher to parents on WhatsApp" />
+        {error && <Alert tone="danger">{error}</Alert>}
+      </form>
+    </Dialog>
+  );
+}
+
+function InvoicesTab({
+  invoices,
+  period,
+  setPeriod,
+  status,
+  setStatus,
+  search,
+  setSearch,
+  onGenerate,
+}: {
+  invoices: { data: Invoice[] | null; error: string; reload: () => Promise<void> };
+  period: string;
+  setPeriod: (v: string) => void;
+  status: string;
+  setStatus: (v: string) => void;
+  search: string;
+  setSearch: (v: string) => void;
+  onGenerate: () => void;
+}) {
+  const router = useRouter();
+  const rows = invoices.data;
+  const billed = rows?.reduce((s, i) => s + i.total, 0) ?? 0;
+  const collected = rows?.reduce((s, i) => s + i.paid, 0) ?? 0;
+  const outstanding = rows?.filter((i) => i.status !== "CANCELLED").reduce((s, i) => s + Math.max(0, i.total - i.paid), 0) ?? 0;
+  const overdue = rows?.filter((i) => invoiceDisplay(i) === "OVERDUE") ?? [];
+  const loading = !rows && !invoices.error;
+  const rate = billed ? Math.round((collected / billed) * 1000) / 10 : 0;
+
+  const columns: Column<Invoice>[] = [
+    {
+      id: "voucher",
+      header: "Voucher",
+      sortValue: (i) => i.voucherNo,
+      cell: (i) => (
+        <Link className="font-mono text-xs font-medium text-brand hover:underline" href={`/fees/invoices/${i.id}`}>
+          {i.voucherNo}
+        </Link>
+      ),
+    },
+    {
+      id: "student",
+      header: "Student",
+      sortValue: (i) => fullName(i.student),
+      cell: (i) => (
+        <div className="min-w-0">
+          <div className="font-medium text-fg">{fullName(i.student)}</div>
+          <div className="text-xs text-fg-muted">{i.student.admissionNo}</div>
+        </div>
+      ),
+    },
+    { id: "due", header: "Due", sortValue: (i) => i.dueDate, cell: (i) => day(i.dueDate), hideBelow: "md" },
+    { id: "total", header: "Total", align: "right", sortValue: (i) => i.total, cell: (i) => rupees(i.total) },
+    { id: "paid", header: "Paid", align: "right", sortValue: (i) => i.paid, cell: (i) => rupees(i.paid), hideBelow: "sm" },
+    { id: "status", header: "Status", sortValue: (i) => invoiceDisplay(i), cell: (i) => <InvoiceStatusPill invoice={i} /> },
+  ];
 
   return (
-    <>
-      <Card>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Month</span>
-            <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="rounded-lg border border-black/15 bg-transparent px-3 py-2 dark:border-white/20" />
-          </label>
-          <Button onClick={() => generate(false)} disabled={busy}>Generate vouchers</Button>
-          <Button variant="ghost" onClick={() => generate(true)} disabled={busy}>Generate and send on WhatsApp</Button>
-        </div>
-        <p className="mt-3 text-xs opacity-60">
-          Bills every active student for the month using the fee setup. Students who already have a voucher for the month are skipped, so it is safe to run again.
-        </p>
-      </Card>
-      <Notice>{notice}</Notice>
-      <ErrorText>{error || invoices.error}</ErrorText>
-      <Card>
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <input placeholder="Search name, admission or voucher no." value={search} onChange={(e) => setSearch(e.target.value)} className="min-w-64 flex-1 rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20" />
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20">
-            <option value="">All statuses</option>
-            {["UNPAID", "PARTIAL", "PAID"].map((s) => <option key={s} value={s}>{s.toLowerCase()}</option>)}
-          </select>
-          <span className="text-sm opacity-70">{rows.length} vouchers · billed {rupees(billed)} · collected {rupees(collected)}</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className={tableClass}>
-            <thead className="opacity-60">
-              <tr><th className="py-2">Voucher</th><th>Student</th><th>Due</th><th>Total</th><th>Paid</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((i) => (
-                <tr key={i.id} className={rowClass}>
-                  <td className="py-2"><Link className="font-mono text-xs text-brand" href={`/fees/invoices/${i.id}`}>{i.voucherNo}</Link></td>
-                  <td>{fullName(i.student)} <span className="text-xs opacity-50">{i.student.admissionNo}</span></td>
-                  <td>{day(i.dueDate)}</td>
-                  <td>{rupees(i.total)}</td>
-                  <td>{rupees(i.paid)}</td>
-                  <td><Badge tone={tone(i.status)}>{i.status.toLowerCase()}</Badge></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length === 0 && <p className="py-6 text-center text-sm opacity-60">No vouchers for this month yet.</p>}
-        </div>
-      </Card>
-    </>
+    <div className="flex flex-col gap-6">
+      <StatGrid>
+        <KpiCard label="Billed" value={rupees(billed)} icon={<ReceiptText />} loading={loading} hint={rows ? `${rows.length} vouchers` : undefined} />
+        <KpiCard label="Collected" value={rupees(collected)} icon={<Banknote />} tone="success" loading={loading} hint={rows ? `${rate}% of billed` : undefined} />
+        <KpiCard label="Outstanding" value={rupees(outstanding)} icon={<Wallet />} tone="warning" loading={loading} />
+        <KpiCard label="Overdue vouchers" value={overdue.length.toLocaleString("en-PK")} icon={<CircleAlert />} tone="danger" loading={loading} hint={rows ? "Past the due date" : undefined} />
+      </StatGrid>
+      <DataTable
+        label="Fee vouchers"
+        columns={columns}
+        data={rows}
+        error={invoices.error}
+        onRetry={invoices.reload}
+        getRowId={(i) => i.id}
+        search={search}
+        onSearchChange={setSearch}
+        manualFiltering
+        getSearchText={(i) => `${fullName(i.student)} ${i.student.admissionNo} ${i.voucherNo}`}
+        searchPlaceholder="Search name, admission or voucher no."
+        filters={
+          <>
+            <input
+              type="month"
+              aria-label="Month"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className={cn(inputClass, "h-9 w-40")}
+            />
+            <NativeSelect
+              aria-label="Status"
+              placeholder="All statuses"
+              options={STATUS_OPTIONS}
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              wrapperClassName="w-40"
+            />
+          </>
+        }
+        filtered={!!status || !!search}
+        defaultSort={{ id: "voucher", dir: "asc" }}
+        onRowClick={(i) => router.push(`/fees/invoices/${i.id}`)}
+        getRowLabel={(i) => `Voucher ${i.voucherNo} for ${fullName(i.student)}`}
+        empty={{
+          icon: <ReceiptText />,
+          title: `No vouchers for ${monthLabel(period)} yet`,
+          description: "Generate this month's vouchers to bill every active student.",
+          action: (
+            <Button icon={<FilePlus2 />} onClick={onGenerate}>
+              Generate vouchers
+            </Button>
+          ),
+        }}
+      />
+    </div>
   );
 }
 
 function DefaultersTab() {
+  const toast = useToast();
   const defaulters = useApi<Defaulter[]>("/fees/defaulters");
   const [period, setPeriod] = useState(thisMonth());
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
-  const rows = defaulters.data ?? [];
+  const [busy, setBusy] = useState(false);
+  const rows = defaulters.data;
+  const loading = !rows && !defaulters.error;
 
   async function remind() {
+    setBusy(true);
     try {
       const res = await api<{ invoices: number; messages: number }>("/fees/reminders", { method: "POST", body: { period } });
-      setNotice(`Sent ${res.messages} WhatsApp reminders for ${res.invoices} unpaid vouchers.`);
-      setError("");
+      toast.success("Reminders sent", `Sent ${res.messages} WhatsApp reminders for ${res.invoices} unpaid vouchers.`);
     } catch (e) {
-      setError((e as Error).message);
+      toast.error("Could not send reminders", (e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
+  const guardian = (r: Defaulter) => r.student.guardians[0]?.guardian;
+  const columns: Column<Defaulter>[] = [
+    {
+      id: "student",
+      header: "Student",
+      sortValue: (r) => fullName(r.student),
+      cell: (r) => (
+        <div className="min-w-0">
+          <Link className="font-medium text-fg hover:text-brand" href={`/fees/invoices/${r.invoiceId}`}>
+            {fullName(r.student)}
+          </Link>
+          <div className="text-xs text-fg-muted">
+            {r.student.admissionNo} <span className="font-mono">{r.voucherNo}</span>
+          </div>
+        </div>
+      ),
+    },
+    { id: "period", header: "Month", sortValue: (r) => r.period, cell: (r) => monthLabel(r.period), hideBelow: "sm" },
+    { id: "balance", header: "Balance", align: "right", sortValue: (r) => r.balance, cell: (r) => <span className="font-medium text-fg">{rupees(r.balance)}</span> },
+    { id: "fine", header: "Late fine", align: "right", sortValue: (r) => r.lateFine, cell: (r) => (r.lateFine ? rupees(r.lateFine) : <span className="text-fg-muted">None</span>), hideBelow: "md" },
+    {
+      id: "days",
+      header: "Days late",
+      align: "right",
+      sortValue: (r) => r.daysOverdue,
+      cell: (r) => <Badge tone={r.daysOverdue > 30 ? "danger" : "warning"}>{r.daysOverdue} days</Badge>,
+    },
+    {
+      id: "guardian",
+      header: "Guardian",
+      hideBelow: "lg",
+      cell: (r) => {
+        const g = guardian(r);
+        return g ? (
+          <div>
+            <div className="text-fg">{g.name}</div>
+            <a className="text-xs text-fg-muted hover:text-brand" href={`tel:${g.phone}`}>
+              {g.phone}
+            </a>
+          </div>
+        ) : (
+          <span className="text-fg-muted">Not added</span>
+        );
+      },
+    },
+  ];
+
   return (
-    <>
-      <Card>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Remind parents for</span>
-            <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="rounded-lg border border-black/15 bg-transparent px-3 py-2 dark:border-white/20" />
-          </label>
-          <Button onClick={remind}>Send WhatsApp reminders</Button>
-        </div>
-      </Card>
-      <Notice>{notice}</Notice>
-      <ErrorText>{error || defaulters.error}</ErrorText>
-      <Card>
-        <h2 className="mb-3 font-semibold">
-          Overdue: {rows.length} vouchers, {rupees(rows.reduce((s, r) => s + r.balance, 0))} outstanding
-        </h2>
-        <div className="overflow-x-auto">
-          <table className={tableClass}>
-            <thead className="opacity-60">
-              <tr><th className="py-2">Student</th><th>Month</th><th>Balance</th><th>Late fine</th><th>Days late</th><th>Guardian</th></tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.invoiceId} className={rowClass}>
-                  <td className="py-2"><Link className="text-brand" href={`/fees/invoices/${r.invoiceId}`}>{fullName(r.student)}</Link></td>
-                  <td>{r.period}</td>
-                  <td>{rupees(r.balance)}</td>
-                  <td>{r.lateFine ? rupees(r.lateFine) : "–"}</td>
-                  <td>{r.daysOverdue}</td>
-                  <td>{r.student.guardians[0] ? `${r.student.guardians[0].guardian.name}, ${r.student.guardians[0].guardian.phone}` : "–"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length === 0 && <p className="py-6 text-center text-sm opacity-60">Nobody is overdue.</p>}
-        </div>
-      </Card>
-    </>
+    <div className="flex flex-col gap-6">
+      <StatGrid cols={3}>
+        <KpiCard label="Overdue vouchers" value={(rows?.length ?? 0).toLocaleString("en-PK")} icon={<CircleAlert />} tone="danger" loading={loading} />
+        <KpiCard label="Outstanding" value={rupees(rows?.reduce((s, r) => s + r.balance, 0) ?? 0)} icon={<Wallet />} tone="warning" loading={loading} />
+        <KpiCard label="Late fines so far" value={rupees(rows?.reduce((s, r) => s + r.lateFine, 0) ?? 0)} icon={<CalendarClock />} tone="neutral" loading={loading} />
+      </StatGrid>
+      <DataTable
+        label="Defaulters"
+        columns={columns}
+        data={rows}
+        error={defaulters.error}
+        onRetry={defaulters.reload}
+        getRowId={(r) => r.invoiceId}
+        getSearchText={(r) => `${fullName(r.student)} ${r.student.admissionNo} ${r.voucherNo} ${guardian(r)?.name ?? ""}`}
+        searchPlaceholder="Search student, voucher or guardian"
+        defaultSort={{ id: "days", dir: "desc" }}
+        toolbarActions={
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="month"
+              aria-label="Remind parents for month"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className={cn(inputClass, "h-8 w-40")}
+            />
+            <Button size="sm" icon={<Send />} loading={busy} onClick={remind}>
+              Send WhatsApp reminders
+            </Button>
+          </div>
+        }
+        empty={{ icon: <BellRing />, title: "Nobody is overdue", description: "Every voucher past its due date has been paid." }}
+      />
+    </div>
   );
 }
 
 function SetupTab() {
+  const toast = useToast();
   const heads = useApi<FeeHead[]>("/fees/heads");
   const classes = useApi<SchoolClass[]>("/classes");
   const years = useApi<Year[]>("/academic-years");
   const year = years.data?.find((y) => y.isCurrent) ?? years.data?.[0];
   const structures = useApi<Structure[]>(year ? `/fees/structures?academicYearId=${year.id}` : null);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [headError, setHeadError] = useState("");
+  const [addingHead, setAddingHead] = useState(false);
+  const [headOpen, setHeadOpen] = useState(false);
 
   async function addHead(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formEl = event.currentTarget;
     const f = new FormData(formEl);
+    setAddingHead(true);
     try {
       await api("/fees/heads", { method: "POST", body: { name: f.get("name"), frequency: f.get("frequency") } });
       formEl.reset();
-      setError("");
+      setHeadError("");
+      setHeadOpen(false);
+      toast.success("Fee head added");
       await heads.reload();
     } catch (e) {
-      setError((e as Error).message);
+      setHeadError((e as Error).message);
+    } finally {
+      setAddingHead(false);
     }
   }
 
@@ -233,58 +461,144 @@ function SetupTab() {
         method: "PUT",
         body: { classId, feeHeadId, academicYearId: year.id, amount: Number(value) },
       });
-      setNotice("Saved.");
-      setError("");
+      toast.success("Saved");
       await structures.reload();
     } catch (e) {
-      setError((e as Error).message);
+      toast.error("Could not save the amount", (e as Error).message);
     }
   }
 
   const amount = (classId: string, feeHeadId: string) =>
     structures.data?.find((s) => s.classId === classId && s.feeHeadId === feeHeadId)?.amount;
 
+  const addHeadButton = (
+    <Button size="sm" variant="secondary" icon={<Plus />} onClick={() => setHeadOpen(true)}>
+      Add fee head
+    </Button>
+  );
+
+  const matrixError = classes.error || years.error || structures.error || heads.error;
+  const matrixLoading = !classes.data || !years.data || !heads.data || (!!year && !structures.data);
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
       <Card>
-        <h2 className="mb-3 font-semibold">Fee heads</h2>
-        <ul className="mb-4 flex flex-col gap-1 text-sm">
-          {heads.data?.map((h) => (
-            <li key={h.id} className="flex justify-between"><span>{h.name}</span><Badge>{h.frequency.toLowerCase().replace("_", " ")}</Badge></li>
-          ))}
-        </ul>
-        <form onSubmit={addHead} className="flex flex-col gap-3">
-          <Field label="Name" name="name" placeholder="Tuition" required />
-          <Select label="Billed" name="frequency" options={[{ value: "MONTHLY", label: "Every month" }, { value: "ANNUAL", label: "Once a year (first month)" }, { value: "ONE_TIME", label: "One time" }]} />
-          <Button type="submit">Add fee head</Button>
-        </form>
+        <CardHeader title="Fee heads" description="What a voucher can charge for." action={addHeadButton} />
+        {heads.error ? (
+          <ErrorState message={heads.error} onRetry={heads.reload} compact />
+        ) : !heads.data ? (
+          <SkeletonRows rows={4} columns={2} />
+        ) : heads.data.length === 0 ? (
+          <EmptyState icon={<Wallet />} title="No fee heads yet" description="Add Tuition, Admission or Exam fee to start billing." action={addHeadButton} compact />
+        ) : (
+          <ul className="-mx-1 divide-y divide-border">
+            {heads.data.map((h) => (
+              <li key={h.id} className="flex items-center justify-between gap-3 px-1 py-2.5 text-sm">
+                <span className="font-medium text-fg">{h.name}</span>
+                <Badge tone={h.frequency === "MONTHLY" ? "primary" : "neutral"}>{FREQUENCY_LABEL[h.frequency] ?? h.frequency.toLowerCase().replace("_", " ")}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
-      <Card>
-        <h2 className="mb-1 font-semibold">Monthly fee by class {year ? `(${year.name})` : ""}</h2>
-        <p className="mb-3 text-xs opacity-60">Amounts in rupees. Changes save when you leave the box.</p>
-        <Notice>{notice}</Notice>
-        <ErrorText>{error}</ErrorText>
-        {!year ? (
-          <p className="text-sm opacity-70">Add an academic year on the Classes page first.</p>
+      <Dialog
+        open={headOpen}
+        onOpenChange={(o) => {
+          setHeadOpen(o);
+          if (o) setHeadError("");
+        }}
+        title="Add fee head"
+        description="Monthly heads appear on every voucher. Annual heads are billed in the first month of the year."
+        size="sm"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setHeadOpen(false)} disabled={addingHead}>
+              Cancel
+            </Button>
+            <Button type="submit" form="add-fee-head" loading={addingHead}>
+              Add fee head
+            </Button>
+          </>
+        }
+      >
+        <form id="add-fee-head" onSubmit={addHead} className="flex flex-col gap-4">
+          <TextField label="Name" name="name" placeholder="Tuition" required />
+          <SelectField
+            label="Billed"
+            name="frequency"
+            options={[
+              { value: "MONTHLY", label: "Every month" },
+              { value: "ANNUAL", label: "Once a year (first month)" },
+              { value: "ONE_TIME", label: "One time" },
+            ]}
+          />
+          {headError && <Alert tone="danger">{headError}</Alert>}
+        </form>
+      </Dialog>
+
+      <Card padding="none" className="overflow-hidden">
+        <div className="p-4 pb-0 sm:p-5 sm:pb-0">
+          <CardHeader
+            title={`Monthly fee by class${year ? ` (${year.name})` : ""}`}
+            description="Amounts in rupees. Changes save when you leave the box."
+          />
+        </div>
+        {matrixError ? (
+          <ErrorState
+            message={matrixError}
+            onRetry={() => {
+              void heads.reload();
+              void classes.reload();
+              void years.reload();
+              void structures.reload();
+            }}
+            compact
+          />
+        ) : years.data && !year ? (
+          <EmptyState title="No academic year yet" description="Add an academic year on the Classes page first." action={<Link className="text-sm font-medium text-brand hover:underline" href="/classes">Go to Classes</Link>} compact />
+        ) : matrixLoading ? (
+          <div className="p-4 sm:p-5">
+            <SkeletonRows rows={5} columns={4} />
+          </div>
+        ) : classes.data!.length === 0 || heads.data!.length === 0 ? (
+          <EmptyState
+            title={classes.data!.length === 0 ? "No classes yet" : "No fee heads yet"}
+            description={classes.data!.length === 0 ? "Add classes on the Classes page to set their fees." : "Add a fee head to set what each class pays."}
+            compact
+          />
         ) : (
           <div className="overflow-x-auto">
-            <table className={tableClass}>
-              <thead className="opacity-60">
-                <tr><th className="py-2">Class</th>{heads.data?.map((h) => <th key={h.id}>{h.name}</th>)}</tr>
+            <table className="w-full min-w-max text-sm">
+              <thead className="bg-surface-2">
+                <tr className="border-y border-border">
+                  <th scope="col" className="px-4 py-2.5 text-start text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">
+                    Class
+                  </th>
+                  {heads.data!.map((h) => (
+                    <th key={h.id} scope="col" className="px-3 py-2.5 text-end text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">
+                      {h.name}
+                    </th>
+                  ))}
+                </tr>
               </thead>
-              <tbody>
-                {classes.data?.map((c) => (
-                  <tr key={c.id} className={rowClass}>
-                    <td className="py-2 font-medium">{c.name} <span className="text-xs opacity-50">{c.campus.name}</span></td>
-                    {heads.data?.map((h) => (
-                      <td key={h.id}>
+              <tbody className="divide-y divide-border">
+                {classes.data!.map((c) => (
+                  <tr key={c.id} className="transition-colors even:bg-surface-2/60 hover:bg-surface-3/70">
+                    <th scope="row" className="px-4 py-2 text-start font-medium text-fg">
+                      {c.name} <span className="ms-1 text-xs font-normal text-fg-muted">{c.campus.name}</span>
+                    </th>
+                    {heads.data!.map((h) => (
+                      <td key={h.id} className="px-3 py-1.5 text-end">
                         <input
                           type="number"
                           min={0}
+                          inputMode="numeric"
+                          aria-label={`${h.name} for ${c.name}, rupees`}
+                          placeholder="0"
                           defaultValue={amount(c.id, h.id)}
                           key={`${c.id}-${h.id}-${amount(c.id, h.id) ?? ""}`}
                           onBlur={(e) => e.target.value !== String(amount(c.id, h.id) ?? "") && setAmount(c.id, h.id, e.target.value)}
-                          className="w-24 rounded-lg border border-black/15 bg-transparent px-2 py-1 dark:border-white/20"
+                          className={cn(inputClass, "h-8 w-28 text-end tabular-nums")}
                         />
                       </td>
                     ))}

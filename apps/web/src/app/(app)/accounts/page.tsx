@@ -1,9 +1,28 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { ArrowDownLeft, ArrowUpRight, BookOpen, Download, Landmark, Plus, Scale, Tags, Trash2, Wallet } from "lucide-react";
 import { DateRange } from "@/components/date-range";
-import { Select } from "@/components/select";
-import { Badge, Button, Card, ErrorText, Field, Notice, PageTitle, rowClass, tableClass } from "@/components/ui";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  DataTable,
+  Drawer,
+  IconButton,
+  KpiCard,
+  PageHeader,
+  SegmentedControl,
+  SelectField,
+  StatGrid,
+  TabPanel,
+  Tabs,
+  TextField,
+  useToast,
+  type Column,
+} from "@/components/ui";
 import { api } from "@/lib/api";
 import { downloadCsv } from "@/lib/csv";
 import { day, rupees, todayIso } from "@/lib/format";
@@ -33,37 +52,55 @@ interface Entry {
   note: string | null;
   category: { name: string };
 }
+type Range = { from: string; to: string };
+type BookRow = Row & { key: string; opening?: boolean };
 
-const TABS = ["Cash book", "Income and expenses"] as const;
+const TABS = [
+  { value: "cash", label: "Cash book", icon: <BookOpen /> },
+  { value: "entries", label: "Income and expenses", icon: <Tags /> },
+];
 const monthStart = () => `${todayIso().slice(0, 7)}-01`;
+const methodText = (m: string) => m.charAt(0) + m.slice(1).toLowerCase();
 
 export default function AccountsPage() {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Cash book");
+  const [tab, setTab] = useState("cash");
   const [range, setRange] = useState({ from: monthStart(), to: todayIso() });
+  const [entryOpen, setEntryOpen] = useState(false);
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle>Accounts</PageTitle>
-      <div className="flex gap-2 border-b border-black/10 dark:border-white/10">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === t ? "border-brand font-medium text-brand" : "border-transparent opacity-70"}`}
+      <PageHeader
+        title="Accounts"
+        description="Money in and out of the school. Fee receipts and paid salaries are added automatically."
+        breadcrumbs={[{ label: "Finance" }, { label: "Accounts" }]}
+        actions={
+          <Button
+            icon={<Plus />}
+            onClick={() => {
+              setTab("entries");
+              setEntryOpen(true);
+            }}
           >
-            {t}
-          </button>
-        ))}
-      </div>
-      <DateRange from={range.from} to={range.to} onChange={setRange} />
-      {tab === "Cash book" && <CashBook range={range} />}
-      {tab === "Income and expenses" && <Entries range={range} />}
+            Record entry
+          </Button>
+        }
+      />
+      <Tabs tabs={TABS} value={tab} onValueChange={setTab} aria-label="Accounts sections">
+        <DateRange from={range.from} to={range.to} onChange={setRange} className="pt-5" />
+        <TabPanel value="cash">
+          <CashBook range={range} />
+        </TabPanel>
+        <TabPanel value="entries">
+          <Entries range={range} drawerOpen={entryOpen} setDrawerOpen={setEntryOpen} />
+        </TabPanel>
+      </Tabs>
     </div>
   );
 }
 
-function CashBook({ range }: { range: { from: string; to: string } }) {
+function CashBook({ range }: { range: Range }) {
   const book = useApi<Book>(`/accounts/cashbook?from=${range.from}&to=${range.to}`);
   const b = book.data;
+  const loading = !b && !book.error;
 
   function exportCsv() {
     if (!b) return;
@@ -78,72 +115,96 @@ function CashBook({ range }: { range: { from: string; to: string } }) {
     );
   }
 
+  const rows: BookRow[] | null = b
+    ? [
+        { key: "opening", opening: true, date: b.from, flow: "IN", amount: 0, source: "ENTRY", description: "Opening balance", method: "", balance: b.opening },
+        ...b.rows.map((r, i) => ({ ...r, key: String(i) })),
+      ]
+    : null;
+
+  const columns: Column<BookRow>[] = [
+    { id: "date", header: "Date", width: "120px", cell: (r) => <span className="whitespace-nowrap">{day(r.date)}</span> },
+    {
+      id: "description",
+      header: "Description",
+      cell: (r) =>
+        r.opening ? (
+          <span className="font-medium text-fg">Opening balance</span>
+        ) : (
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-fg">{r.description}</span>
+            {r.source !== "ENTRY" && <Badge tone={r.source === "FEES" ? "success" : "info"}>{r.source === "FEES" ? "Fees" : "Salary"}</Badge>}
+          </span>
+        ),
+    },
+    { id: "method", header: "Method", hideBelow: "md", cell: (r) => (r.method ? <span className="text-xs text-fg-secondary">{methodText(r.method)}</span> : null) },
+    { id: "in", header: "In", align: "right", cell: (r) => (!r.opening && r.flow === "IN" ? <span className="text-success-text">{rupees(r.amount)}</span> : null) },
+    { id: "out", header: "Out", align: "right", cell: (r) => (!r.opening && r.flow === "OUT" ? <span className="text-danger-text">{rupees(r.amount)}</span> : null) },
+    { id: "balance", header: "Balance", align: "right", cell: (r) => <span className={r.opening ? "font-medium text-fg" : "text-fg"}>{rupees(r.balance)}</span> },
+  ];
+
+  const cell = "px-4 py-3";
   return (
-    <Card>
-      <ErrorText>{book.error}</ErrorText>
-      {b && (
-        <>
-          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-            {[
-              ["Opening", b.opening],
-              ["Money in", b.totalIn],
-              ["Money out", b.totalOut],
-              ["Closing", b.closing],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg bg-black/5 p-3 dark:bg-white/10">
-                <div className="text-xs opacity-60">{label}</div>
-                <div className="text-lg font-semibold">{rupees(value as number)}</div>
-              </div>
-            ))}
-          </div>
-          <div className="mb-2 flex justify-end">
-            <Button variant="ghost" onClick={exportCsv}>Download for Excel</Button>
-          </div>
-          <div className="overflow-x-auto">
-            <table className={tableClass}>
-              <thead className="opacity-60">
-                <tr><th className="py-2">Date</th><th>Description</th><th>Method</th><th className="text-right">In</th><th className="text-right">Out</th><th className="text-right">Balance</th></tr>
-              </thead>
-              <tbody>
-                <tr className={rowClass}><td className="py-2">{day(b.from)}</td><td className="font-medium">Opening balance</td><td /><td /><td /><td className="text-right font-medium">{rupees(b.opening)}</td></tr>
-                {b.rows.map((r, i) => (
-                  <tr key={i} className={rowClass}>
-                    <td className="py-2 whitespace-nowrap">{day(r.date)}</td>
-                    <td>
-                      {r.description}{" "}
-                      {r.source !== "ENTRY" && <Badge tone={r.source === "FEES" ? "green" : "blue"}>{r.source === "FEES" ? "fees" : "salary"}</Badge>}
-                    </td>
-                    <td className="text-xs">{r.method.toLowerCase()}</td>
-                    <td className="text-right text-green-700 dark:text-green-400">{r.flow === "IN" ? rupees(r.amount) : ""}</td>
-                    <td className="text-right text-red-700 dark:text-red-400">{r.flow === "OUT" ? rupees(r.amount) : ""}</td>
-                    <td className="text-right">{rupees(r.balance)}</td>
-                  </tr>
-                ))}
-                <tr className={`${rowClass} font-semibold`}><td className="py-2">{day(b.to)}</td><td>Closing balance</td><td /><td className="text-right">{rupees(b.totalIn)}</td><td className="text-right">{rupees(b.totalOut)}</td><td className="text-right">{rupees(b.closing)}</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-3 text-xs opacity-60">Fee receipts and paid salaries come in automatically. Record everything else on the Income and expenses tab.</p>
-        </>
-      )}
-    </Card>
+    <div className="flex flex-col gap-6">
+      <StatGrid>
+        <KpiCard label="Opening" value={rupees(b?.opening ?? 0)} icon={<Landmark />} tone="neutral" error={!b && !!book.error} loading={loading} />
+        <KpiCard label="Money in" value={rupees(b?.totalIn ?? 0)} icon={<ArrowDownLeft />} tone="success" error={!b && !!book.error} loading={loading} />
+        <KpiCard label="Money out" value={rupees(b?.totalOut ?? 0)} icon={<ArrowUpRight />} tone="danger" error={!b && !!book.error} loading={loading} />
+        <KpiCard label="Closing" value={rupees(b?.closing ?? 0)} icon={<Scale />} error={!b && !!book.error} loading={loading} />
+      </StatGrid>
+      <DataTable
+        label="Cash book"
+        columns={columns}
+        data={rows}
+        error={book.error}
+        onRetry={book.reload}
+        getRowId={(r) => r.key}
+        pageSize={0}
+        maxHeight="65vh"
+        rowClassName={(r) => (r.opening ? "font-medium" : undefined)}
+        toolbarActions={
+          <Button variant="secondary" size="sm" icon={<Download />} onClick={exportCsv} disabled={!b}>
+            Download for Excel
+          </Button>
+        }
+        footer={
+          b && (
+            <tr className="border-t border-border-strong bg-surface-2 font-semibold text-fg">
+              <td className={cell}>{day(b.to)}</td>
+              <td className={cell}>Closing balance</td>
+              <td className={`${cell} hidden md:table-cell`} />
+              <td className={`${cell} text-end tabular-nums`}>{rupees(b.totalIn)}</td>
+              <td className={`${cell} text-end tabular-nums`}>{rupees(b.totalOut)}</td>
+              <td className={`${cell} text-end tabular-nums`}>{rupees(b.closing)}</td>
+            </tr>
+          )
+        }
+      />
+      <p className="text-xs text-fg-muted">Fee receipts and paid salaries come in automatically. Record everything else on the Income and expenses tab.</p>
+    </div>
   );
 }
 
-function Entries({ range }: { range: { from: string; to: string } }) {
+function Entries({ range, drawerOpen, setDrawerOpen }: { range: Range; drawerOpen: boolean; setDrawerOpen: (open: boolean) => void }) {
+  const toast = useToast();
   const user = useSession();
   const canDelete = hasRole(user, SETUP);
   const entries = useApi<Entry[]>(`/accounts/entries?from=${range.from}&to=${range.to}`);
   const categories = useApi<Category[]>("/accounts/categories");
   const [kind, setKind] = useState<"EXPENSE" | "INCOME">("EXPENSE");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [categoryError, setCategoryError] = useState("");
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [toDelete, setToDelete] = useState<Entry | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const options = (categories.data ?? []).filter((c) => c.kind === kind);
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const f = new FormData(form);
+    setSaving(true);
     try {
       await api("/accounts/entries", {
         method: "POST",
@@ -159,96 +220,240 @@ function Entries({ range }: { range: { from: string; to: string } }) {
       });
       form.reset();
       setError("");
-      setNotice("Saved.");
+      setDrawerOpen(false);
+      toast.success(kind === "EXPENSE" ? "Expense saved" : "Income saved");
       await entries.reload();
     } catch (e) {
       setError((e as Error).message);
-      setNotice("");
+    } finally {
+      setSaving(false);
     }
   }
 
   async function addCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
+    setAddingCategory(true);
     try {
       await api("/accounts/categories", { method: "POST", body: { name: new FormData(form).get("name"), kind } });
       form.reset();
-      setError("");
+      setCategoryError("");
+      toast.success("Category added");
       await categories.reload();
     } catch (e) {
-      setError((e as Error).message);
+      setCategoryError((e as Error).message);
+    } finally {
+      setAddingCategory(false);
     }
   }
 
-  async function remove(e: Entry) {
-    if (!confirm(`Delete ${e.category.name} ${rupees(e.amount)}?`)) return;
+  async function remove() {
+    if (!toDelete) return;
+    setDeleting(true);
     try {
-      await api(`/accounts/entries/${e.id}`, { method: "DELETE" });
+      await api(`/accounts/entries/${toDelete.id}`, { method: "DELETE" });
+      toast.success("Entry deleted");
+      setToDelete(null);
       await entries.reload();
     } catch (err) {
-      setError((err as Error).message);
+      toast.error("Could not delete the entry", (err as Error).message);
+    } finally {
+      setDeleting(false);
     }
   }
 
+  const income = entries.data?.filter((e) => e.kind === "INCOME").reduce((s, e) => s + e.amount, 0) ?? 0;
+  const expense = entries.data?.filter((e) => e.kind === "EXPENSE").reduce((s, e) => s + e.amount, 0) ?? 0;
+  const loading = !entries.data && !entries.error;
+
+  const columns: Column<Entry>[] = [
+    { id: "date", header: "Date", sortValue: (e) => e.date, cell: (e) => <span className="whitespace-nowrap">{day(e.date)}</span> },
+    {
+      id: "category",
+      header: "Category",
+      sortValue: (e) => e.category.name,
+      cell: (e) => (
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-fg">{e.category.name}</span>
+          <Badge tone={e.kind === "INCOME" ? "success" : "danger"}>{e.kind === "INCOME" ? "Income" : "Expense"}</Badge>
+        </span>
+      ),
+    },
+    {
+      id: "party",
+      header: "Paid to or from",
+      hideBelow: "md",
+      sortValue: (e) => e.party,
+      cell: (e) => (
+        <div>
+          <div className="text-fg">{e.party}</div>
+          {e.note && <div className="text-xs text-fg-muted">{e.note}</div>}
+        </div>
+      ),
+    },
+    {
+      id: "method",
+      header: "Method",
+      hideBelow: "lg",
+      cell: (e) => (
+        <span className="text-xs text-fg-secondary">
+          {methodText(e.method)}
+          {e.reference ? `, ${e.reference}` : ""}
+        </span>
+      ),
+    },
+    {
+      id: "amount",
+      header: "Amount",
+      align: "right",
+      sortValue: (e) => e.amount,
+      cell: (e) => <span className={e.kind === "INCOME" ? "font-medium text-success-text" : "font-medium text-fg"}>{rupees(e.amount)}</span>,
+    },
+    ...(canDelete
+      ? [
+          {
+            id: "actions",
+            header: <span className="sr-only">Actions</span>,
+            width: "56px",
+            cell: (e: Entry) => (
+              <IconButton size="sm" aria-label={`Delete ${e.category.name} ${rupees(e.amount)}`} onClick={() => setToDelete(e)}>
+                <Trash2 />
+              </IconButton>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  const openDrawer = () => {
+    setError("");
+    setDrawerOpen(true);
+  };
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <Card>
-        <ErrorText>{entries.error}</ErrorText>
-        {entries.data?.length === 0 && <p className="text-sm opacity-70">Nothing recorded in these dates.</p>}
-        {!!entries.data?.length && (
-          <div className="overflow-x-auto">
-            <table className={tableClass}>
-              <thead className="opacity-60"><tr><th className="py-2">Date</th><th>Category</th><th>Paid to / from</th><th>Method</th><th className="text-right">Amount</th><th /></tr></thead>
-              <tbody>
-                {entries.data.map((e) => (
-                  <tr key={e.id} className={rowClass}>
-                    <td className="py-2 whitespace-nowrap">{day(e.date)}</td>
-                    <td>{e.category.name} <Badge tone={e.kind === "INCOME" ? "green" : "red"}>{e.kind.toLowerCase()}</Badge></td>
-                    <td>{e.party}{e.note && <div className="text-xs opacity-60">{e.note}</div>}</td>
-                    <td className="text-xs">{e.method.toLowerCase()}{e.reference ? ` · ${e.reference}` : ""}</td>
-                    <td className="text-right font-medium">{rupees(e.amount)}</td>
-                    <td>{canDelete && <button className="text-sm text-red-600" onClick={() => remove(e)}>Delete</button>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-      <div className="flex flex-col gap-6">
-        <Card>
-          <div className="mb-4 flex gap-2">
-            {(["EXPENSE", "INCOME"] as const).map((k) => (
-              <button
-                key={k}
-                onClick={() => setKind(k)}
-                className={`rounded-full px-3 py-1 text-sm ${kind === k ? "bg-brand text-white" : "bg-black/5 dark:bg-white/10"}`}
-              >
-                {k === "EXPENSE" ? "Expense" : "Other income"}
-              </button>
-            ))}
-          </div>
-          <form className="flex flex-col gap-3" onSubmit={add}>
-            <Select label="Category" name="categoryId" required options={options.map((c) => ({ value: c.id, label: c.name }))} />
-            <Field label="Amount (Rs)" name="amount" type="number" min={1} required />
-            <Field label="Date" name="date" type="date" max={todayIso()} defaultValue={todayIso()} required />
-            <Field label={kind === "EXPENSE" ? "Paid to" : "Received from"} name="party" />
-            <Select label="Method" name="method" options={[{ value: "CASH", label: "Cash" }, { value: "BANK", label: "Bank" }, { value: "CHEQUE", label: "Cheque" }]} />
-            <Field label="Reference (optional)" name="reference" placeholder="Bill or cheque number" />
-            <Field label="Note (optional)" name="note" />
-            <Button type="submit" disabled={!options.length}>Save</Button>
-            <Notice>{notice}</Notice>
-            <ErrorText>{error}</ErrorText>
+    <div className="flex flex-col gap-6">
+      <StatGrid cols={3}>
+        <KpiCard label="Other income" value={rupees(income)} icon={<ArrowDownLeft />} tone="success" error={!entries.data && !!entries.error} loading={loading} />
+        <KpiCard label="Expenses" value={rupees(expense)} icon={<ArrowUpRight />} tone="danger" error={!entries.data && !!entries.error} loading={loading} />
+        <KpiCard label="Net" value={rupees(income - expense)} icon={<Wallet />} tone={income - expense >= 0 ? "primary" : "warning"} error={!entries.data && !!entries.error} loading={loading} hint="Not counting fees and salaries" />
+      </StatGrid>
+      <DataTable
+        label="Income and expense entries"
+        columns={columns}
+        data={entries.data}
+        error={entries.error}
+        onRetry={entries.reload}
+        getRowId={(e) => e.id}
+        getSearchText={(e) => `${e.category.name} ${e.party ?? ""} ${e.note ?? ""} ${e.reference ?? ""}`}
+        searchPlaceholder="Search category, party or note"
+        defaultSort={{ id: "date", dir: "desc" }}
+        toolbarActions={
+          <Button size="sm" icon={<Plus />} onClick={openDrawer}>
+            Record entry
+          </Button>
+        }
+        empty={{
+          icon: <Tags />,
+          title: "Nothing recorded in these dates",
+          description: "Record rent, utilities, canteen income and other money that is not fees or salaries.",
+          action: (
+            <Button icon={<Plus />} onClick={openDrawer}>
+              Record entry
+            </Button>
+          ),
+        }}
+      />
+
+      <Drawer
+        open={drawerOpen}
+        onOpenChange={(o) => {
+          if (o) setError("");
+          setDrawerOpen(o);
+        }}
+        title="Record entry"
+        description="For money that is not a fee receipt or a salary."
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setDrawerOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="account-entry" loading={saving} disabled={!options.length}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-5">
+          <SegmentedControl
+            aria-label="Entry type"
+            size="md"
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: "EXPENSE", label: "Expense", icon: <ArrowUpRight /> },
+              { value: "INCOME", label: "Other income", icon: <ArrowDownLeft /> },
+            ]}
+          />
+          <form id="account-entry" className="grid gap-4 sm:grid-cols-2" onSubmit={add}>
+            <SelectField
+              label="Category"
+              name="categoryId"
+              required
+              options={options.map((c) => ({ value: c.id, label: c.name }))}
+              placeholder={options.length ? undefined : "Add a category below first"}
+              wrapperClassName="sm:col-span-2"
+            />
+            <TextField label="Amount (Rs)" name="amount" type="number" min={1} required inputMode="numeric" />
+            <TextField label="Date" name="date" type="date" max={todayIso()} defaultValue={todayIso()} required />
+            <TextField label={kind === "EXPENSE" ? "Paid to" : "Received from"} name="party" wrapperClassName="sm:col-span-2" />
+            <SelectField
+              label="Method"
+              name="method"
+              options={[
+                { value: "CASH", label: "Cash" },
+                { value: "BANK", label: "Bank" },
+                { value: "CHEQUE", label: "Cheque" },
+              ]}
+            />
+            <TextField label="Reference (optional)" name="reference" placeholder="Bill or cheque number" />
+            <TextField label="Note (optional)" name="note" wrapperClassName="sm:col-span-2" />
+            {error && (
+              <Alert tone="danger" className="sm:col-span-2">
+                {error}
+              </Alert>
+            )}
           </form>
-        </Card>
-        <Card>
-          <h2 className="mb-3 text-sm font-semibold">Add a {kind === "EXPENSE" ? "expense" : "income"} category</h2>
-          <form className="flex gap-2" onSubmit={addCategory}>
-            <input name="name" required placeholder={kind === "EXPENSE" ? "Utilities" : "Canteen rent"} className="min-w-0 flex-1 rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20" />
-            <Button type="submit" variant="ghost">Add</Button>
-          </form>
-        </Card>
-      </div>
+
+          <Card padding="sm" className="bg-surface-2 shadow-none">
+            <h3 className="text-sm font-semibold text-fg">Add {kind === "EXPENSE" ? "an expense" : "an income"} category</h3>
+            <form className="mt-3 flex gap-2" onSubmit={addCategory}>
+              <TextField
+                name="name"
+                required
+                aria-label="Category name"
+                placeholder={kind === "EXPENSE" ? "Utilities" : "Canteen rent"}
+                wrapperClassName="min-w-0 flex-1"
+              />
+              <Button type="submit" variant="secondary" loading={addingCategory}>
+                Add
+              </Button>
+            </form>
+            {categoryError && <p className="mt-2 text-xs text-danger-text" role="alert">{categoryError}</p>}
+            {categories.error && <p className="mt-2 text-xs text-danger-text" role="alert">Could not load categories: {categories.error}</p>}
+          </Card>
+        </div>
+      </Drawer>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        onOpenChange={(o) => !o && setToDelete(null)}
+        title="Delete this entry?"
+        description={toDelete ? `${toDelete.category.name}, ${rupees(toDelete.amount)} on ${day(toDelete.date)}. This cannot be undone.` : ""}
+        confirmLabel="Delete entry"
+        destructive
+        loading={deleting}
+        onConfirm={remove}
+      />
     </div>
   );
 }

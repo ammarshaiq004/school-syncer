@@ -2,7 +2,51 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { Badge, Button, Card, ErrorText, Field, Notice, PageTitle, rowClass, tableClass } from "@/components/ui";
+import {
+  BookCopy,
+  BookMarked,
+  BookOpen,
+  Clock,
+  HandCoins,
+  Library,
+  Plus,
+  Printer,
+  RotateCcw,
+  Save,
+  ScanBarcode,
+  Search,
+  SlidersHorizontal,
+  TriangleAlert,
+  Undo2,
+} from "lucide-react";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  ConfirmDialog,
+  DataTable,
+  Drawer,
+  EmptyState,
+  ErrorState,
+  Field,
+  Input,
+  KpiCard,
+  NativeSelect,
+  PageHeader,
+  SearchInput,
+  SegmentedControl,
+  SkeletonRows,
+  StatGrid,
+  StatusPill,
+  TabPanel,
+  Tabs,
+  useToast,
+  type Column,
+} from "@/components/ui";
+import { COPY_STATUS } from "@/components/library/copy-status";
 import { api } from "@/lib/api";
 import { day, rupees } from "@/lib/format";
 import { daysOverdue, FINE_LABEL, type BookRow, type Loan } from "@/lib/library";
@@ -34,7 +78,6 @@ interface Borrower {
   onLoan: number;
 }
 
-const inputClass = "rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20";
 type Tab = "desk" | "loans" | "catalogue" | "settings";
 
 /** Issue and take back books by the number stamped inside them. */
@@ -42,34 +85,45 @@ function Desk({ onChange }: { onChange: () => Promise<void> }) {
   const [accessionNo, setAccessionNo] = useState("");
   const [copy, setCopy] = useState<CopyLookup | null>(null);
   const [search, setSearch] = useState("");
-  const borrowers = useApi<Borrower[]>(copy?.status === "AVAILABLE" && search.trim().length >= 2 ? `/library/borrowers?search=${encodeURIComponent(search.trim())}` : null);
+  const borrowerQuery = copy?.status === "AVAILABLE" && search.trim().length >= 2 ? `/library/borrowers?search=${encodeURIComponent(search.trim())}` : null;
+  const borrowers = useApi<Borrower[]>(borrowerQuery);
   const [lostCharge, setLostCharge] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmLost, setConfirmLost] = useState(false);
 
   async function lookUp(event?: FormEvent) {
     event?.preventDefault();
     setError("");
     setNotice("");
     setCopy(null);
+    setBusy(true);
     try {
       setCopy(await api<CopyLookup>(`/library/copies/${encodeURIComponent(accessionNo.trim())}`));
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function act(run: () => Promise<string>) {
     setError("");
+    setBusy(true);
     try {
       setNotice(await run());
       setCopy(null);
       setAccessionNo("");
       setSearch("");
       setLostCharge("");
+      setConfirmLost(false);
       await onChange();
     } catch (e) {
       setError((e as Error).message);
+      setConfirmLost(false);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -96,137 +150,252 @@ function Desk({ onChange }: { onChange: () => Promise<void> }) {
       return `${loan.title} recorded as lost; ${loan.borrower.name} owes ${rupees(loan.fine ?? 0)}.`;
     });
 
+  const status = copy ? COPY_STATUS[copy.status] : null;
+
   return (
-    <Card>
+    <Card className="max-w-3xl">
+      <CardHeader title="Issue and return" description="Type the number stamped inside the book." icon={<ScanBarcode />} />
       <form onSubmit={lookUp} className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="font-medium">Book number</span>
-          <input autoFocus className={`${inputClass} w-40 text-lg`} value={accessionNo} onChange={(e) => setAccessionNo(e.target.value)} placeholder="e.g. 42" />
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="text-[13px] font-medium text-fg-secondary">Book number</span>
+          <Input autoFocus className="h-11 w-44 text-lg tabular-nums" value={accessionNo} onChange={(e) => setAccessionNo(e.target.value)} placeholder="e.g. 42" />
         </label>
-        <Button type="submit" disabled={!accessionNo.trim()}>Look up</Button>
+        <Button type="submit" className="h-11" icon={<Search />} loading={busy && !copy} disabled={!accessionNo.trim()}>Look up</Button>
       </form>
-      <div className="mt-3"><ErrorText>{error}</ErrorText><Notice>{notice}</Notice></div>
+      {(error || notice) && (
+        <div className="mt-4 flex flex-col gap-2">
+          {error && <Alert tone="danger" onDismiss={() => setError("")}>{error}</Alert>}
+          {notice && <Alert tone="success" onDismiss={() => setNotice("")}>{notice}</Alert>}
+        </div>
+      )}
 
       {copy && (
-        <div className="mt-4 border-t border-black/10 pt-4 dark:border-white/10">
-          <p className="text-lg font-semibold">
-            <Link href={`/library/books/${copy.book.id}`} className="hover:underline">{copy.book.title}</Link>
-            <span className="ml-2 text-sm font-normal opacity-60">No. {copy.accessionNo}{copy.book.author && ` · ${copy.book.author}`}</span>
-          </p>
+        <div className="mt-5 animate-rise border-t border-border pt-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary-tint text-brand" aria-hidden><BookOpen className="size-5" /></span>
+              <div className="min-w-0">
+                <Link href={`/library/books/${copy.book.id}`} className="text-base font-semibold text-fg hover:text-brand">{copy.book.title}</Link>
+                <p className="text-[13px] text-fg-muted">No. {copy.accessionNo}{copy.book.author && `, ${copy.book.author}`}</p>
+              </div>
+            </div>
+            {status && <StatusPill status={copy.status} tone={status.tone} label={status.label} />}
+          </div>
+
           {copy.status === "AVAILABLE" && (
-            <div className="mt-3 flex flex-col gap-2">
-              <input className={inputClass} placeholder="Lend to: type a student's name or admission number, or a teacher's name" value={search} onChange={(e) => setSearch(e.target.value)} />
-              <ul>
-                {borrowers.data?.map((b) => (
-                  <li key={`${b.kind}-${b.id}`} className="flex items-center justify-between border-t border-black/5 py-2 text-sm dark:border-white/10">
-                    <span>{b.name} <span className="opacity-60">· {b.detail}{b.onLoan > 0 && ` · has ${b.onLoan}`}</span></span>
-                    <button className="text-brand" onClick={() => issue(b)}>Lend</button>
-                  </li>
-                ))}
-              </ul>
+            <div className="mt-4 flex flex-col gap-3">
+              <SearchInput
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onClear={() => setSearch("")}
+                placeholder="Lend to: type a student's name or admission number, or a teacher's name"
+                aria-label="Find a borrower"
+              />
+              {!borrowerQuery ? (
+                <p className="text-[13px] text-fg-muted">Type at least two letters to find a borrower.</p>
+              ) : borrowers.error ? (
+                <ErrorState compact message={borrowers.error} onRetry={borrowers.reload} />
+              ) : !borrowers.data ? (
+                <SkeletonRows rows={3} columns={2} />
+              ) : borrowers.data.length === 0 ? (
+                <EmptyState compact title="Nobody matches" description="Check the spelling or try an admission number." />
+              ) : (
+                <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
+                  {borrowers.data.map((b) => (
+                    <li key={`${b.kind}-${b.id}`} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <Avatar name={b.name} size="sm" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium text-fg">{b.name}</span>
+                          <span className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
+                            {b.detail}
+                            {b.onLoan > 0 && <Badge tone="info">has {b.onLoan}</Badge>}
+                          </span>
+                        </span>
+                      </span>
+                      <Button type="button" size="sm" variant="secondary" icon={<BookCopy />} disabled={busy} onClick={() => issue(b)} aria-label={`Lend to ${b.name}`}>Lend</Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
+
           {copy.status === "ON_LOAN" && copy.loan && (
-            <div className="mt-3 flex flex-col gap-3 text-sm">
-              <p>
-                With <strong>{copy.loan.borrower.name}</strong> ({copy.loan.borrower.detail}) since {day(copy.loan.issuedOn)}, due {day(copy.loan.dueOn)}
-                {copy.loan.overdue && <Badge tone="red">{daysOverdue(copy.loan.dueOn)} days overdue</Badge>}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button onClick={giveBack}>Take back</Button>
-                <span className="opacity-60">or if it&apos;s lost, charge</span>
-                <input type="number" min={0} className={`${inputClass} w-28`} placeholder="Rs" value={lostCharge} onChange={(e) => setLostCharge(e.target.value)} />
-                <Button variant="ghost" onClick={markLost}>Mark lost</Button>
+            <div className="mt-4 flex flex-col gap-4 text-sm">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-2 px-4 py-3">
+                <Avatar name={copy.loan.borrower.name} size="sm" />
+                <span>
+                  With <strong className="font-semibold">{copy.loan.borrower.name}</strong> <span className="text-fg-muted">({copy.loan.borrower.detail})</span> since {day(copy.loan.issuedOn)}, due {day(copy.loan.dueOn)}
+                </span>
+                {copy.loan.overdue && <StatusPill status="OVERDUE" label={`${daysOverdue(copy.loan.dueOn)} days overdue`} />}
+              </div>
+              <div className="flex flex-wrap items-end gap-3">
+                <Button type="button" icon={<Undo2 />} loading={busy} onClick={giveBack}>Take back</Button>
+                <span className="text-[13px] text-fg-muted">or if it&apos;s lost, charge</span>
+                <Input type="number" min={0} className="h-9 w-28 tabular-nums" placeholder="Rs" aria-label="Charge for the lost book (Rs)" value={lostCharge} onChange={(e) => setLostCharge(e.target.value)} />
+                <Button type="button" variant="danger" icon={<TriangleAlert />} disabled={busy} onClick={() => setConfirmLost(true)}>Mark lost</Button>
               </div>
             </div>
           )}
           {(copy.status === "LOST" || copy.status === "WITHDRAWN") && (
-            <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">This copy is marked {copy.status.toLowerCase()}. Bring it back on the book&apos;s page if it has turned up.</p>
+            <Alert tone="warning" className="mt-4">
+              This copy is marked {copy.status.toLowerCase()}. Bring it back on the <Link className="font-medium underline" href={`/library/books/${copy.book.id}`}>book&apos;s page</Link> if it has turned up.
+            </Alert>
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmLost}
+        onOpenChange={setConfirmLost}
+        title="Record this copy as lost?"
+        description={copy?.loan ? `${copy.loan.borrower.name} will owe ${rupees(Number(lostCharge || 0))}.` : undefined}
+        confirmLabel="Mark lost"
+        destructive
+        loading={busy}
+        onConfirm={markLost}
+      />
     </Card>
   );
 }
 
+type LoanStatus = "out" | "overdue" | "fines" | "recent";
+const LOAN_VIEWS: { value: LoanStatus; label: string }[] = [
+  { value: "overdue", label: "Overdue" },
+  { value: "out", label: "All books out" },
+  { value: "fines", label: "Fines to collect" },
+  { value: "recent", label: "Recently returned" },
+];
+const LOAN_EMPTY: Record<LoanStatus, string> = {
+  overdue: "No overdue books. Everything out is still within its loan period.",
+  out: "No books are out right now.",
+  fines: "No fines waiting to be collected.",
+  recent: "No books returned recently.",
+};
+
 function Loans({ onChange }: { onChange: () => Promise<void> }) {
   const user = useSession();
-  const [status, setStatus] = useState<"out" | "overdue" | "fines" | "recent">("overdue");
+  const toast = useToast();
+  const [status, setStatus] = useState<LoanStatus>("overdue");
   const loans = useApi<Loan[]>(`/library/loans?status=${status}`);
-  const [error, setError] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const canWaive = hasRole(user, [...SETUP, ...FEES]);
 
-  async function settle(l: Loan, action: "paid" | "waive") {
-    setError("");
+  async function run(l: Loan, fn: () => Promise<unknown>, done: string) {
+    setBusy(l.id);
     try {
-      await api(`/library/loans/${l.id}/fine`, { method: "POST", body: { action } });
+      await fn();
+      toast.success(done, l.title);
       await Promise.all([loans.reload(), onChange()]);
     } catch (e) {
-      setError((e as Error).message);
+      toast.error("Could not save", (e as Error).message);
+    } finally {
+      setBusy(null);
     }
   }
 
-  async function giveBack(l: Loan) {
-    setError("");
-    try {
-      await api(`/library/loans/${l.id}/return`, { method: "POST" });
-      await Promise.all([loans.reload(), onChange()]);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
+  const settle = (l: Loan, action: "paid" | "waive") =>
+    run(l, () => api(`/library/loans/${l.id}/fine`, { method: "POST", body: { action } }), action === "paid" ? "Fine collected" : "Fine let off");
+  const giveBack = (l: Loan) => run(l, () => api(`/library/loans/${l.id}/return`, { method: "POST" }), "Book taken back");
+
+  const showFine = status === "fines" || status === "recent";
+  const columns: Column<Loan>[] = [
+    {
+      id: "book",
+      header: "Book",
+      sortValue: (l) => l.title,
+      cell: (l) => <Link className="font-medium text-fg hover:text-brand print:text-inherit" href={`/library/books/${l.bookId}`}>{l.title}</Link>,
+    },
+    { id: "no", header: "No.", sortValue: (l) => l.accessionNo, cell: (l) => <span className="tabular-nums">{l.accessionNo}</span> },
+    {
+      id: "borrower",
+      header: "Borrower",
+      sortValue: (l) => l.borrower.name,
+      cell: (l) => (
+        <span className="block">
+          {l.borrower.kind === "student" ? <Link className="hover:text-brand hover:underline print:no-underline" href={`/students/${l.borrower.id}`}>{l.borrower.name}</Link> : l.borrower.name}
+          <span className="block text-xs text-fg-muted">{l.borrower.detail}</span>
+        </span>
+      ),
+    },
+    { id: "issued", header: "Issued", sortValue: (l) => l.issuedOn, cell: (l) => day(l.issuedOn), hideBelow: "md" },
+    {
+      id: "due",
+      header: "Due",
+      sortValue: (l) => l.dueOn,
+      cell: (l) => (
+        <span className="block">
+          {day(l.dueOn)}
+          {l.overdue && <span className="block text-xs font-medium text-danger-text">{daysOverdue(l.dueOn)} days late</span>}
+        </span>
+      ),
+    },
+    ...(showFine
+      ? [{
+          id: "fine",
+          header: "Fine",
+          align: "right" as const,
+          sortValue: (l: Loan) => l.fine ?? 0,
+          cell: (l: Loan) =>
+            l.fine ? (
+              <span className="block">
+                {rupees(l.fine)}
+                <span className="block text-xs text-fg-muted">{FINE_LABEL[l.fineStatus]}{l.lost && ", lost"}</span>
+              </span>
+            ) : l.returnedOn ? <span className="text-fg-muted">–</span> : null,
+        }]
+      : []),
+    {
+      id: "actions",
+      header: <span className="sr-only">Actions</span>,
+      align: "right",
+      className: "print:hidden",
+      headerClassName: "print:hidden",
+      cell: (l) => (
+        <span className="inline-flex items-center justify-end gap-1.5 whitespace-nowrap">
+          {!l.returnedOn && (
+            <Button type="button" size="sm" variant="secondary" icon={<Undo2 />} loading={busy === l.id} onClick={() => giveBack(l)} aria-label={`Take back ${l.title} from ${l.borrower.name}`}>Take back</Button>
+          )}
+          {l.fineStatus === "DUE" && (
+            <>
+              <Button type="button" size="sm" variant="secondary" icon={<HandCoins />} disabled={busy === l.id} onClick={() => settle(l, "paid")} aria-label={`Fine paid by ${l.borrower.name}`}>Paid</Button>
+              {canWaive && <Button type="button" size="sm" variant="ghost" disabled={busy === l.id} onClick={() => settle(l, "waive")} aria-label={`Let ${l.borrower.name} off the fine`}>Let off</Button>}
+            </>
+          )}
+        </span>
+      ),
+    },
+  ];
 
   return (
-    <Card className="overflow-x-auto">
-      <div className="mb-3 flex flex-wrap gap-2 print:hidden">
-        {(["overdue", "out", "fines", "recent"] as const).map((s) => (
-          <Button key={s} variant={status === s ? "primary" : "ghost"} onClick={() => setStatus(s)}>
-            {{ overdue: "Overdue", out: "All books out", fines: "Fines to collect", recent: "Recently returned" }[s]}
-          </Button>
-        ))}
-        <Button variant="ghost" className="ml-auto" onClick={() => window.print()}>Print</Button>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <SegmentedControl aria-label="Which loans" size="md" value={status} onChange={setStatus} options={LOAN_VIEWS} />
+        <Button type="button" variant="secondary" size="sm" icon={<Printer />} className="ms-auto" onClick={() => window.print()}>Print</Button>
       </div>
-      <ErrorText>{error || loans.error}</ErrorText>
-      <table className={tableClass}>
-        <thead className="opacity-60">
-          <tr><th className="py-2">Book</th><th>No.</th><th>Borrower</th><th>Issued</th><th>Due</th><th>{status === "fines" || status === "recent" ? "Fine" : ""}</th><th className="print:hidden" /></tr>
-        </thead>
-        <tbody>
-          {loans.data?.map((l) => (
-            <tr key={l.id} className={rowClass}>
-              <td className="py-2"><Link className="text-brand print:text-inherit" href={`/library/books/${l.bookId}`}>{l.title}</Link></td>
-              <td>{l.accessionNo}</td>
-              <td>
-                {l.borrower.kind === "student" ? <Link className="hover:underline" href={`/students/${l.borrower.id}`}>{l.borrower.name}</Link> : l.borrower.name}
-                <div className="text-xs opacity-60">{l.borrower.detail}</div>
-              </td>
-              <td>{day(l.issuedOn)}</td>
-              <td>
-                {day(l.dueOn)}
-                {l.overdue && <div className="text-xs text-red-600">{daysOverdue(l.dueOn)} days late</div>}
-              </td>
-              <td>
-                {l.fine ? <>{rupees(l.fine)} <span className="text-xs opacity-60">{FINE_LABEL[l.fineStatus]}{l.lost && " · lost"}</span></> : l.returnedOn ? <span className="opacity-50">–</span> : null}
-              </td>
-              <td className="whitespace-nowrap text-right print:hidden">
-                {!l.returnedOn && <button className="text-sm text-brand" onClick={() => giveBack(l)}>Take back</button>}
-                {l.fineStatus === "DUE" && (
-                  <>
-                    <button className="text-sm text-brand" onClick={() => settle(l, "paid")}>Paid</button>
-                    {hasRole(user, [...SETUP, ...FEES]) && <button className="ml-3 text-sm opacity-60 hover:opacity-100" onClick={() => settle(l, "waive")}>Let off</button>}
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {loans.data?.length === 0 && <p className="py-4 text-sm opacity-60">Nothing here.</p>}
-      {status === "fines" && <p className="mt-3 text-xs opacity-60">Fines not collected at the desk are added to the student&apos;s next monthly fee voucher.</p>}
-    </Card>
+      <h2 className="hidden text-lg font-semibold print:block">{LOAN_VIEWS.find((v) => v.value === status)?.label}</h2>
+      <DataTable
+        className="print:[&>div:first-child]:hidden"
+        label={LOAN_VIEWS.find((v) => v.value === status)?.label ?? "Loans"}
+        columns={columns}
+        data={loans.data}
+        error={loans.error}
+        onRetry={loans.reload}
+        getRowId={(l) => l.id}
+        getSearchText={(l) => `${l.title} ${l.accessionNo} ${l.borrower.name} ${l.borrower.detail}`}
+        searchPlaceholder="Search book, number or borrower"
+        pageSize={0}
+        maxHeight="70vh"
+        rowClassName={(l) => (l.overdue && !l.returnedOn ? "[&>td:first-child]:shadow-[inset_3px_0_0_var(--danger)]" : undefined)}
+        empty={{ title: "Nothing here", description: LOAN_EMPTY[status], icon: <BookMarked /> }}
+      />
+      {status === "fines" && <p className="text-xs text-fg-muted">Fines not collected at the desk are added to the student&apos;s next monthly fee voucher.</p>}
+    </div>
   );
 }
 
 function Catalogue({ onChange }: { onChange: () => Promise<void> }) {
+  const toast = useToast();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const query = new URLSearchParams({ ...(search.trim() && { search: search.trim() }), ...(category && { category }) }).toString();
@@ -234,12 +403,15 @@ function Catalogue({ onChange }: { onChange: () => Promise<void> }) {
   const categories = useApi<{ category: string; titles: number }[]>("/library/categories");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formEl = event.currentTarget;
     const f = new FormData(formEl);
     setError("");
+    setSaving(true);
     try {
       const book = await api<{ title: string; copies: { accessionNo: string }[] }>("/library/books", {
         method: "POST",
@@ -254,91 +426,143 @@ function Catalogue({ onChange }: { onChange: () => Promise<void> }) {
         },
       });
       const nos = book.copies.map((c) => c.accessionNo);
-      setNotice(`${book.title} added. Stamp ${nos.length === 1 ? `number ${nos[0]}` : `numbers ${nos[0]} to ${nos[nos.length - 1]}`} inside the ${nos.length === 1 ? "book" : "copies"}.`);
+      const msg = `${book.title} added. Stamp ${nos.length === 1 ? `number ${nos[0]}` : `numbers ${nos[0]} to ${nos[nos.length - 1]}`} inside the ${nos.length === 1 ? "book" : "copies"}.`;
+      setNotice(msg);
+      toast.success("Book added", msg);
       formEl.reset();
+      setAdding(false);
       await Promise.all([books.reload(), categories.reload(), onChange()]);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
+  const columns: Column<BookRow>[] = [
+    {
+      id: "title",
+      header: "Title",
+      sortValue: (b) => b.title,
+      cell: (b) => (
+        <span className="flex flex-wrap items-center gap-2">
+          <Link className="font-medium text-fg hover:text-brand" href={`/library/books/${b.id}`}>{b.title}</Link>
+          {b.language !== "English" && <Badge tone="neutral">{b.language}</Badge>}
+        </span>
+      ),
+    },
+    { id: "author", header: "Author", sortValue: (b) => b.author, cell: (b) => b.author ?? "–", hideBelow: "sm" },
+    { id: "category", header: "Category", sortValue: (b) => b.category, cell: (b) => b.category ?? "–", hideBelow: "md" },
+    { id: "shelf", header: "Shelf", sortValue: (b) => b.shelf, cell: (b) => b.shelf ?? "–", hideBelow: "lg" },
+    {
+      id: "available",
+      header: "On the shelf",
+      align: "right",
+      sortValue: (b) => b.available,
+      cell: (b) => (
+        <span className="inline-flex items-center justify-end gap-2">
+          {b.available === 0 && b.copies > 0 && <StatusPill status="OUT" tone="warning" label="All out" />}
+          <span>{b.available} of {b.copies}</span>
+        </span>
+      ),
+    },
+  ];
+
+  const openAdd = () => {
+    setError("");
+    setAdding(true);
+  };
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-      <Card className="overflow-x-auto">
-        <div className="mb-3 flex flex-wrap gap-3">
-          <input className={`${inputClass} w-72`} placeholder="Search title, author, ISBN or book number" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
-            <option value="">Every category</option>
-            {categories.data?.map((c) => <option key={c.category} value={c.category}>{c.category} ({c.titles})</option>)}
-          </select>
-        </div>
-        <table className={tableClass}>
-          <thead className="opacity-60">
-            <tr><th className="py-2">Title</th><th>Author</th><th>Category</th><th>Shelf</th><th>On the shelf</th></tr>
-          </thead>
-          <tbody>
-            {books.data?.map((b) => (
-              <tr key={b.id} className={rowClass}>
-                <td className="py-2">
-                  <Link className="text-brand" href={`/library/books/${b.id}`}>{b.title}</Link>
-                  {b.language !== "English" && <span className="ml-2 text-xs opacity-60">{b.language}</span>}
-                </td>
-                <td>{b.author ?? "–"}</td>
-                <td>{b.category ?? "–"}</td>
-                <td>{b.shelf ?? "–"}</td>
-                <td>{b.available} of {b.copies}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {books.data?.length === 0 && <p className="py-4 text-sm opacity-60">No books match.</p>}
-      </Card>
-      <Card>
-        <h2 className="mb-4 font-semibold">Add a book</h2>
-        <form onSubmit={add} className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
+      {notice && <Alert tone="success" onDismiss={() => setNotice("")}>{notice}</Alert>}
+      <DataTable
+        label="Catalogue"
+        columns={columns}
+        data={books.data}
+        error={books.error}
+        onRetry={books.reload}
+        getRowId={(b) => b.id}
+        search={search}
+        onSearchChange={setSearch}
+        manualFiltering
+        searchPlaceholder="Search title, author, ISBN or book number"
+        filters={
+          <NativeSelect
+            aria-label="Category"
+            wrapperClassName="w-52"
+            placeholder="Every category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            options={(categories.data ?? []).map((c) => ({ value: c.category, label: `${c.category} (${c.titles})` }))}
+          />
+        }
+        filtered={!!(search.trim() || category)}
+        toolbarActions={<Button size="sm" icon={<Plus />} onClick={openAdd}>Add book</Button>}
+        empty={{ title: "No books yet", description: "Add your first title and stamp its number inside.", icon: <Library />, action: <Button size="sm" icon={<Plus />} onClick={openAdd}>Add book</Button> }}
+      />
+
+      <Drawer
+        open={adding}
+        onOpenChange={setAdding}
+        title="Add a book"
+        description="Each copy gets its own number to stamp inside."
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setAdding(false)}>Cancel</Button>
+            <Button type="submit" form="add-book" icon={<Plus />} loading={saving}>Add book</Button>
+          </>
+        }
+      >
+        <form id="add-book" onSubmit={add} className="flex flex-col gap-4">
+          {error && <Alert tone="danger">{error}</Alert>}
           <Field label="Title" name="title" required />
           <Field label="Author" name="author" />
-          <Field label="Category" name="category" list="library-categories" placeholder="Fiction" />
-          <datalist id="library-categories">{categories.data?.map((c) => <option key={c.category} value={c.category} />)}</datalist>
-          <Field label="Language" name="language" defaultValue="English" />
-          <Field label="ISBN" name="isbn" />
-          <Field label="Shelf" name="shelf" placeholder="B-3" />
-          <Field label="Copies" name="copies" type="number" min={1} defaultValue={1} />
-          <ErrorText>{error}</ErrorText>
-          <Notice>{notice}</Notice>
-          <Button type="submit">Add book</Button>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Category" name="category" list="library-categories" placeholder="Fiction" />
+            <datalist id="library-categories">{categories.data?.map((c) => <option key={c.category} value={c.category} />)}</datalist>
+            <Field label="Language" name="language" defaultValue="English" />
+            <Field label="ISBN" name="isbn" />
+            <Field label="Shelf" name="shelf" placeholder="B-3" />
+            <Field label="Copies" name="copies" type="number" min={1} defaultValue={1} />
+          </div>
         </form>
-      </Card>
+      </Drawer>
     </div>
   );
 }
 
 function Settings({ summary, onChange }: { summary: Summary; onChange: () => Promise<void> }) {
+  const toast = useToast();
   const [s, setS] = useState(summary.settings);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
 
   async function save() {
     setError("");
+    setSaving(true);
     try {
       await api("/library/settings", { method: "PATCH", body: s });
-      setNotice("Saved. New loans use these rules.");
+      toast.success("Saved. New loans use these rules.");
       await onChange();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
-    <Card className="max-w-md">
-      <div className="flex flex-col gap-3">
+    <Card className="max-w-lg">
+      <CardHeader title="Lending rules" icon={<SlidersHorizontal />} description="Students with an overdue book can't borrow another until it's back. Staff can borrow any number of books." />
+      <div className="flex flex-col gap-4">
         <Field label="Days a student keeps a book" type="number" min={1} value={s.libraryLoanDays} onChange={(e) => setS({ ...s, libraryLoanDays: Number(e.target.value) })} />
         <Field label="Fine per day late (Rs)" type="number" min={0} value={s.libraryFinePerDay} onChange={(e) => setS({ ...s, libraryFinePerDay: Number(e.target.value) })} />
         <Field label="Books a student can have at once" type="number" min={1} value={s.libraryMaxLoans} onChange={(e) => setS({ ...s, libraryMaxLoans: Number(e.target.value) })} />
-        <p className="text-xs opacity-60">Students with an overdue book can&apos;t borrow another until it&apos;s back. Staff can borrow any number of books.</p>
-        <ErrorText>{error}</ErrorText>
-        <Notice>{notice}</Notice>
-        <Button onClick={save}>Save</Button>
+        {error && <Alert tone="danger">{error}</Alert>}
+        <div className="flex justify-end border-t border-border pt-4">
+          <Button type="button" icon={<Save />} loading={saving} onClick={save}>Save</Button>
+        </div>
       </div>
     </Card>
   );
@@ -349,38 +573,57 @@ export default function LibraryPage() {
   const summary = useApi<Summary>("/library/summary");
   const [tab, setTab] = useState<Tab>("desk");
   const s = summary.data;
-  const tabs: [Tab, string][] = [
-    ["desk", "Issue and return"],
-    ["loans", "Books out"],
-    ["catalogue", "Catalogue"],
-    ...(hasRole(user, SETUP) ? ([["settings", "Rules"]] as [Tab, string][]) : []),
+  const loading = !s && !summary.error;
+  const tabs = [
+    { value: "desk", label: "Issue and return", icon: <ScanBarcode /> },
+    { value: "loans", label: "Books out", icon: <Clock />, count: s?.onLoan },
+    { value: "catalogue", label: "Catalogue", icon: <Library />, count: s?.titles },
+    ...(hasRole(user, SETUP) ? [{ value: "settings", label: "Rules", icon: <SlidersHorizontal /> }] : []),
   ];
 
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle>Library</PageTitle>
-      <ErrorText>{summary.error}</ErrorText>
-      {s && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
-          <Card><div className="text-sm opacity-60">Books</div><div className="mt-1 text-2xl font-semibold">{(s.copies.AVAILABLE ?? 0) + (s.copies.ON_LOAN ?? 0)}</div><div className="text-xs opacity-60">{s.titles} titles</div></Card>
-          <Card><div className="text-sm opacity-60">Out now</div><div className="mt-1 text-2xl font-semibold">{s.onLoan}</div></Card>
-          <button className="text-left" onClick={() => setTab("loans")}>
-            <Card className="h-full"><div className="text-sm opacity-60">Overdue</div><div className={`mt-1 text-2xl font-semibold ${s.overdue ? "text-red-600" : ""}`}>{s.overdue}</div></Card>
+      <PageHeader
+        title="Library"
+        description="Lend and take back books, chase overdue loans and keep the catalogue up to date."
+        breadcrumbs={[{ label: "Operations" }, { label: "Library" }]}
+      />
+      {summary.error ? (
+        <ErrorState compact message={summary.error} onRetry={summary.reload} className="print:hidden" />
+      ) : (
+        <StatGrid className="print:hidden">
+          <KpiCard label="Books" value={s ? (s.copies.AVAILABLE ?? 0) + (s.copies.ON_LOAN ?? 0) : 0} icon={<BookCopy />} loading={loading} hint={s ? `${s.titles} titles` : undefined} />
+          <KpiCard label="Out now" value={s?.onLoan ?? 0} icon={<BookOpen />} tone="info" loading={loading} />
+          <button type="button" className="rounded-xl text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring" onClick={() => setTab("loans")} aria-label={`Overdue books: ${s?.overdue ?? 0}. Show books out`}>
+            <KpiCard
+              className="h-full transition-[box-shadow,border-color,transform] duration-150 hover:-translate-y-px hover:border-border-strong hover:shadow-raised"
+              label="Overdue"
+              value={<span className={s?.overdue ? "text-danger-text" : undefined}>{s?.overdue ?? 0}</span>}
+              icon={<RotateCcw />}
+              tone={s?.overdue ? "danger" : "neutral"}
+              loading={loading}
+              hint="Show books out"
+            />
           </button>
-          <Card><div className="text-sm opacity-60">Fines to collect</div><div className="mt-1 text-2xl font-semibold">{rupees(s.finesDue.amount)}</div><div className="text-xs opacity-60">{s.finesDue.count} books</div></Card>
-        </div>
+          <KpiCard label="Fines to collect" value={rupees(s?.finesDue.amount ?? 0)} icon={<HandCoins />} tone="warning" loading={loading} hint={s ? `${s.finesDue.count} books` : undefined} />
+        </StatGrid>
       )}
-      <div className="flex gap-1 border-b border-black/10 dark:border-white/10 print:hidden">
-        {tabs.map(([t, label]) => (
-          <button key={t} onClick={() => setTab(t)} className={`-mb-px border-b-2 px-4 py-2 text-sm ${tab === t ? "border-brand font-medium text-brand" : "border-transparent opacity-70"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {tab === "desk" && <Desk onChange={summary.reload} />}
-      {tab === "loans" && <Loans onChange={summary.reload} />}
-      {tab === "catalogue" && <Catalogue onChange={summary.reload} />}
-      {tab === "settings" && s && <Settings summary={s} onChange={summary.reload} />}
+      <Tabs tabs={tabs} value={tab} onValueChange={(v) => setTab(v as Tab)} aria-label="Library sections" listClassName="print:hidden">
+        <TabPanel value="desk">
+          <Desk onChange={summary.reload} />
+        </TabPanel>
+        <TabPanel value="loans">
+          <Loans onChange={summary.reload} />
+        </TabPanel>
+        <TabPanel value="catalogue">
+          <Catalogue onChange={summary.reload} />
+        </TabPanel>
+        {hasRole(user, SETUP) && (
+          <TabPanel value="settings">
+            {s ? <Settings summary={s} onChange={summary.reload} /> : summary.error ? <ErrorState compact message={summary.error} onRetry={summary.reload} /> : <SkeletonRows rows={3} columns={1} />}
+          </TabPanel>
+        )}
+      </Tabs>
     </div>
   );
 }
