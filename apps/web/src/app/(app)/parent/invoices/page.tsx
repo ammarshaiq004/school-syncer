@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CircleCheck, Clock, ReceiptText, TriangleAlert, Wallet } from "lucide-react";
+import { CheckoutResult } from "@/components/invoices/checkout-result";
 import { PayDuesDialog } from "@/components/invoices/pay-dues-dialog";
 import { periodLabel } from "@/components/invoices/invoice-breakdown";
 import {
@@ -144,6 +145,8 @@ export default function ParentInvoicesPage() {
         breadcrumbs={[{ label: "Parent Dashboard", href: "/parent" }, { label: "Fee invoices" }]}
       />
 
+      <CheckoutResult onSettled={res.reload} />
+
       <StatGrid>
         <KpiCard
           label="Total due now"
@@ -230,6 +233,7 @@ export default function ParentInvoicesPage() {
           open={!!paying}
           onOpenChange={(o) => !o && setPaying(null)}
           invoice={{
+            invoiceId: paying.id,
             voucherNo: paying.voucherNo,
             dueDate: paying.dueDate,
             totalDue: paying.totalDue,

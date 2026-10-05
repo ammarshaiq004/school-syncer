@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock } from "lucide-react";
+import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock } from "lucide-react";
+import { CHECKOUT_LABEL, CHECKOUT_TONE, PROVIDER_LABEL, type Checkout, type CheckoutStatus } from "@/components/invoices/online-payment";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
 import {
   Alert,
@@ -31,7 +32,8 @@ import {
 import { inputClass } from "@/components/kit/styles";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { day, fullName, rupees, thisMonth } from "@/lib/format";
+import { day, fullName, plural, rupees, thisMonth } from "@/lib/format";
+import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 interface Invoice {
@@ -61,6 +63,7 @@ interface Year { id: string; name: string; isCurrent: boolean }
 const TABS = [
   { value: "invoices", label: "Invoices", icon: <ReceiptText /> },
   { value: "defaulters", label: "Defaulters", icon: <BellRing /> },
+  { value: "online", label: "Online payments", icon: <Globe /> },
   { value: "setup", label: "Fee setup", icon: <Wallet /> },
 ];
 
@@ -80,13 +83,17 @@ const monthLabel = (period: string) =>
 
 export default function FeesPage() {
   const toast = useToast();
+  const user = useSession();
+  const tabs = TABS.filter((t) => t.value !== "online" || user.plan?.features.includes("online_payments") !== false);
   const [tab, setTab] = useState("invoices");
   // A link may point straight at a tab, e.g. /fees#defaulters from the dashboard.
   useEffect(() => {
     const wanted = window.location.hash.slice(1);
     // Reading the address bar on mount is exactly what this effect is for.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (TABS.some((t) => t.value === wanted)) setTab(wanted);
+    if (tabs.some((t) => t.value === wanted)) setTab(wanted);
+    // Only on first load; the tab list does not change while the page is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [period, setPeriod] = useState(thisMonth());
   const [status, setStatus] = useState("");
@@ -125,7 +132,7 @@ export default function FeesPage() {
           else await invoices.reload();
         }}
       />
-      <Tabs tabs={TABS} value={tab} onValueChange={setTab} aria-label="Fees sections">
+      <Tabs tabs={tabs} value={tab} onValueChange={setTab} aria-label="Fees sections">
         <TabPanel value="invoices">
           <InvoicesTab
             invoices={invoices}
@@ -140,6 +147,9 @@ export default function FeesPage() {
         </TabPanel>
         <TabPanel value="defaulters">
           <DefaultersTab />
+        </TabPanel>
+        <TabPanel value="online">
+          <OnlinePaymentsTab />
         </TabPanel>
         <TabPanel value="setup">
           <SetupTab />
@@ -321,6 +331,124 @@ function InvoicesTab({
               Generate vouchers
             </Button>
           ),
+        }}
+      />
+    </div>
+  );
+}
+
+interface OnlineRow extends Checkout {
+  voucherNo: string;
+  period: string;
+  student: { id: string; name: string; admissionNo: string };
+}
+interface OnlineList {
+  mode: "mock" | "sandbox" | "live" | "off";
+  summary: Record<CheckoutStatus, { count: number; amount: number }>;
+  items: OnlineRow[];
+}
+
+const CHECKOUT_OPTIONS = (Object.keys(CHECKOUT_LABEL) as CheckoutStatus[]).map((value) => ({ value, label: CHECKOUT_LABEL[value] }));
+
+/** Parents' JazzCash, Easypaisa and 1Bill checkouts; paid ones are already on the vouchers and in the cash book. */
+function OnlinePaymentsTab() {
+  const [status, setStatus] = useState("");
+  const list = useApi<OnlineList>(`/fees/online-payments${status ? `?status=${status}` : ""}`);
+  const data = list.data;
+  const loading = !data && !list.error;
+  const columns: Column<OnlineRow>[] = [
+    {
+      id: "student",
+      header: "Student",
+      sortValue: (r) => r.student.name,
+      cell: (r) => (
+        <div className="min-w-0">
+          <Link className="font-medium text-fg hover:text-brand" href={`/fees/invoices/${r.invoiceId}`}>
+            {r.student.name}
+          </Link>
+          <div className="text-xs text-fg-muted">
+            {r.student.admissionNo} <span className="font-mono">{r.voucherNo}</span>
+          </div>
+        </div>
+      ),
+    },
+    { id: "provider", header: "Gateway", sortValue: (r) => r.provider, cell: (r) => PROVIDER_LABEL[r.provider] },
+    { id: "amount", header: "Amount", align: "right", sortValue: (r) => r.amount, cell: (r) => <span className="font-medium text-fg">{rupees(r.amount)}</span> },
+    {
+      id: "status",
+      header: "Status",
+      sortValue: (r) => r.status,
+      cell: (r) => (
+        <div className="flex flex-col items-start gap-0.5">
+          <Badge tone={r.expired ? "neutral" : CHECKOUT_TONE[r.status]}>{r.expired ? "Timed out" : CHECKOUT_LABEL[r.status]}</Badge>
+          {r.status === "REVIEW" && r.message && <span className="max-w-64 text-xs text-fg-muted">{r.message}</span>}
+        </div>
+      ),
+    },
+    {
+      id: "ref",
+      header: "Reference",
+      hideBelow: "lg",
+      cell: (r) => (
+        <div className="font-mono text-xs text-fg-secondary">
+          {r.receiptNo && <div className="text-fg">{r.receiptNo}</div>}
+          <div>{r.providerRef ?? r.consumerNumber ?? r.txnRef}</div>
+        </div>
+      ),
+    },
+    { id: "created", header: "Started", hideBelow: "md", sortValue: (r) => r.createdAt, cell: (r) => day(r.createdAt) },
+  ];
+
+  return (
+    <div className="flex flex-col gap-6">
+      {data?.mode === "mock" && (
+        <Alert tone="info" title="Online payments are in sandbox mode">
+          Parents can try JazzCash, Easypaisa and 1Bill end to end, but no real money moves. Add the merchant credentials and set
+          PAYMENTS_MODE to sandbox or live on the server to take real payments.
+        </Alert>
+      )}
+      {data?.mode === "off" && (
+        <Alert tone="warning" title="Online payments are switched off on this server">
+          Set PAYMENTS_MODE and the gateway credentials to let parents pay online.
+        </Alert>
+      )}
+      <StatGrid cols={3}>
+        <KpiCard
+          label="Paid online"
+          value={rupees(data?.summary.PAID.amount ?? 0)}
+          hint={data ? plural(data.summary.PAID.count, "payment") : undefined}
+          icon={<CircleCheck />}
+          tone="success"
+          loading={loading}
+        />
+        <KpiCard label="Waiting for the gateway" value={(data?.summary.PENDING.count ?? 0).toLocaleString("en-PK")} icon={<Clock />} tone="warning" loading={loading} />
+        <KpiCard
+          label="Need review"
+          value={(data?.summary.REVIEW.count ?? 0).toLocaleString("en-PK")}
+          hint="Money taken but not applied"
+          icon={<CircleAlert />}
+          tone={data?.summary.REVIEW.count ? "danger" : "neutral"}
+          loading={loading}
+        />
+      </StatGrid>
+      <DataTable
+        label="Online payments"
+        columns={columns}
+        data={data?.items ?? null}
+        error={list.error}
+        onRetry={list.reload}
+        getRowId={(r) => r.id}
+        getSearchText={(r) => `${r.student.name} ${r.student.admissionNo} ${r.voucherNo} ${r.txnRef} ${r.providerRef ?? ""} ${r.consumerNumber ?? ""} ${r.receiptNo ?? ""}`}
+        searchPlaceholder="Search student, voucher or transaction"
+        defaultSort={{ id: "created", dir: "desc" }}
+        filtered={!!status}
+        toolbarActions={
+          <NativeSelect aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} placeholder="All statuses" options={CHECKOUT_OPTIONS} />
+        }
+        empty={{
+          icon: <Globe />,
+          title: "No online payments yet",
+          description: "When parents pay a voucher with JazzCash, Easypaisa or 1Bill it shows here and on the voucher.",
         }}
       />
     </div>
