@@ -24,7 +24,7 @@ import {
 } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { dayStart, localToday } from '../common/dates.js';
+import { dayStart, localDate, localToday } from '../common/dates.js';
 import {
   CurrentUser,
   Permission,
@@ -530,7 +530,7 @@ export class VerifyController {
       admissionNo: d.admissionNo,
       className: d.className,
       leavingOn: d.leavingOn ?? null,
-      cancelledOn: iso(c.cancelledAt),
+      cancelledOn: c.cancelledAt ? localDate(c.cancelledAt) : null,
     };
   }
 }
