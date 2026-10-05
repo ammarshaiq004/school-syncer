@@ -93,6 +93,9 @@ export function TeacherDashboard() {
   const d = day.data;
   const sections = d?.sections;
   const pending = sections?.filter((s) => !s.attendanceTaken) ?? [];
+  // Open the register that is actually waiting, not the empty picker: /attendance
+  // reads ?section= from the URL.
+  const takeHref = pending[0] ? `/attendance?section=${pending[0].id}` : "/attendance";
   const students = sections?.reduce((n, s) => n + s.students, 0) ?? 0;
   const todaySlots = timetable.data?.filter((s) => s.dayOfWeek === dow) ?? null;
   const weekFrom = todayIso;
@@ -169,7 +172,7 @@ export function TeacherDashboard() {
               </Link>
             )}
             {reachable.has("/attendance") && (
-              <Link href="/attendance" className={buttonClass("primary")}>
+              <Link href={takeHref} className={buttonClass("primary")}>
                 <CalendarCheck aria-hidden />
                 Take attendance
               </Link>
@@ -192,7 +195,7 @@ export function TeacherDashboard() {
           value={sections ? pending.length.toLocaleString("en-PK") : ""}
           icon={<CalendarCheck />}
           tone={pending.length ? "warning" : "success"}
-          href="/attendance"
+          href={takeHref}
           loading={loading}
           hint={sections ? `${sections.length - pending.length} of ${sections.length} taken today` : undefined}
           sparkline={
@@ -296,7 +299,7 @@ export function TeacherDashboard() {
                         {s.attendanceTaken ? (
                           <StatusPill status="COMPLETED" label="Taken" />
                         ) : (
-                          <Link href="/attendance" className={buttonClass("secondary", "sm")} aria-label={`Take attendance for ${s.name}`}>
+                          <Link href={`/attendance?section=${s.id}`} className={buttonClass("secondary", "sm")} aria-label={`Take attendance for ${s.name}`}>
                             Take
                           </Link>
                         )}

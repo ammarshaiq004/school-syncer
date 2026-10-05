@@ -57,7 +57,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { day } from "@/lib/format";
 import { useSectionOptions } from "@/lib/sections";
-import { hasRole, SETUP, useSession } from "@/lib/session";
+import { can, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 interface Paper {
@@ -95,7 +95,9 @@ type TabId = "marks" | "results" | "papers";
 export default function ExamPage() {
   const { id } = useParams<{ id: string }>();
   const user = useSession();
-  const isAdmin = hasRole(user, SETUP);
+  // Whoever has "manage" on exams runs them: administrators, and custom roles
+  // such as an exam coordinator.
+  const canManage = can(user, "exams", "manage");
   const exam = useApi<Exam>(`/exams/${id}`);
   const [tab, setTab] = useState<TabId>("marks");
   const published = exam.data?.status === "PUBLISHED";
@@ -103,7 +105,7 @@ export default function ExamPage() {
   const tabs = [
     { value: "marks", label: "Marks", icon: <ClipboardList /> },
     { value: "results", label: "Results", icon: <Award /> },
-    ...(isAdmin ? [{ value: "papers", label: "Papers", icon: <BookOpen />, count: exam.data?.papers.length }] : []),
+    ...(canManage ? [{ value: "papers", label: "Papers", icon: <BookOpen />, count: exam.data?.papers.length }] : []),
   ];
 
   return (
@@ -136,12 +138,12 @@ export default function ExamPage() {
       ) : (
         <Tabs tabs={tabs} value={tab} onValueChange={(v) => setTab(v as TabId)} aria-label="Exam sections">
           <TabPanel value="marks">
-            <MarksTab exam={exam.data} />
+            <MarksTab exam={exam.data} canManage={canManage} />
           </TabPanel>
           <TabPanel value="results">
-            <ResultsTab exam={exam.data} isAdmin={isAdmin} onChange={exam.reload} />
+            <ResultsTab exam={exam.data} canManage={canManage} onChange={exam.reload} />
           </TabPanel>
-          {isAdmin && (
+          {canManage && (
             <TabPanel value="papers">
               <PapersTab exam={exam.data} onChange={exam.reload} />
             </TabPanel>
@@ -158,16 +160,22 @@ interface Sheet {
   paper: { subject: string; maxMarks: number; passMarks: number };
   section: { name: string };
   locked: boolean;
-  students: { id: string; name: string; rollNo: number | null; marks: number | null; isAbsent: boolean }[];
+  /** False when the user may read this sheet but not change it (exam managers who do not teach the subject). */
+  canEnter: boolean;
+  students: { id: string; name: string; admissionNo: string; rollNo: number | null; marks: number | null; isAbsent: boolean }[];
 }
 type Entry = { marks: string; isAbsent: boolean };
 
 const sheetKey = (r: { sectionId: string; subjectId: string }) => `${r.sectionId}-${r.subjectId}`;
 
-function MarksTab({ exam }: { exam: Exam }) {
+function MarksTab({ exam, canManage }: { exam: Exam; canManage: boolean }) {
   const progress = useApi<ProgressRow[]>(`/exams/${exam.id}/progress`);
   const [open, setOpen] = useState<ProgressRow | null>(null);
-  const rows = progress.data?.filter((r) => r.canEnter) ?? null;
+  const [missingOnly, setMissingOnly] = useState(false);
+  // Whoever runs the exam sees every sheet so they can chase missing marks;
+  // sheets they do not teach open read-only. Teachers see their own subjects.
+  const all = canManage ? progress.data : progress.data?.filter((r) => r.canEnter);
+  const rows = all?.filter((r) => !missingOnly || r.missing > 0) ?? null;
   const sheetRef = useRef<HTMLDivElement>(null);
 
   function choose(r: ProgressRow) {
@@ -207,7 +215,7 @@ function MarksTab({ exam }: { exam: Exam }) {
       align: "right",
       cell: (r) => (
         <Button type="button" size="sm" variant={open && sheetKey(open) === sheetKey(r) ? "primary" : "secondary"} onClick={() => choose(r)}>
-          {open && sheetKey(open) === sheetKey(r) ? "Open" : "Enter marks"}
+          {open && sheetKey(open) === sheetKey(r) ? "Open" : r.canEnter ? "Enter marks" : "View"}
         </Button>
       ),
     },
@@ -217,7 +225,18 @@ function MarksTab({ exam }: { exam: Exam }) {
     <div className="flex flex-col gap-6">
       <Section
         title="Marks sheets"
-        description="Pick a sheet to enter marks. You see the subjects you teach; administrators see every sheet."
+        description={
+          canManage
+            ? "Every sheet in this exam. Sheets for subjects you do not teach open read-only."
+            : "Pick a sheet to enter marks. You see the subjects you teach."
+        }
+        action={
+          <Switch
+            checked={missingOnly}
+            onCheckedChange={setMissingOnly}
+            label="Missing only"
+          />
+        }
       >
         <DataTable
           label="Marks sheets"
@@ -229,9 +248,15 @@ function MarksTab({ exam }: { exam: Exam }) {
           getSearchText={(r) => `${r.section} ${r.subject}`}
           searchPlaceholder="Search section or subject"
           onRowClick={choose}
-          getRowLabel={(r) => `Enter marks for ${r.section} ${r.subject}`}
+          getRowLabel={(r) => `${r.canEnter ? "Enter marks for" : "View marks for"} ${r.section} ${r.subject}`}
           rowClassName={(r) => (open && sheetKey(open) === sheetKey(r) ? "[&>td]:bg-primary-tint" : undefined)}
-          empty={{ icon: <ClipboardList />, title: "No sheets for you in this exam", description: "Sheets appear once papers are added for the classes you teach." }}
+          empty={
+            missingOnly
+              ? { icon: <CircleCheck />, title: "Nothing missing", description: "Every sheet you can see has all its marks entered." }
+              : canManage
+                ? { icon: <ClipboardList />, title: "No sheets in this exam", description: "Sheets appear once papers are added for classes with sections." }
+                : { icon: <ClipboardList />, title: "No sheets for you in this exam", description: "Sheets appear once papers are added for the classes you teach." }
+          }
           dense
           pageSize={10}
         />
@@ -269,6 +294,16 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
     };
   }, [examId, row.sectionId, row.subjectId, attempt]);
 
+  // A half-entered sheet is easy to lose: warn before a reload or a closed tab.
+  // (An in-app link cannot be blocked with the app router, so the "Unsaved
+  // changes" badge and this warning are what we have.)
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
   function edit(studentId: string, patch: Partial<Entry>) {
     setEntries((all) => ({ ...all, [studentId]: { ...(all[studentId] ?? { marks: "", isAbsent: false }), ...patch } }));
     setDirty(true);
@@ -278,6 +313,10 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
     // Blank rows are skipped so a teacher can save part of a sheet.
     const filled = Object.entries(entries).filter(([, e]) => e.isAbsent || e.marks !== "");
     if (!filled.length) return setError("Enter at least one mark.");
+    // The API refuses the whole sheet over one out-of-range mark, so stop here.
+    const limit = sheet?.paper.maxMarks ?? 0;
+    const bad = filled.filter(([, e]) => !e.isAbsent && (Number(e.marks) < 0 || Number(e.marks) > limit));
+    if (bad.length) return setError(`Marks must be between 0 and ${limit}. Fix ${bad.length} mark${bad.length === 1 ? "" : "s"} first.`);
     setSaving(true);
     try {
       const res = await api<{ saved: number }>(`/exams/${examId}/marks`, {
@@ -331,18 +370,33 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
 
   const max = sheet.paper.maxMarks;
   const pass = sheet.paper.passMarks;
-  const values = sheet.students
+  const readOnly = sheet.locked || !sheet.canEnter;
+  const entered = sheet.students
     .map((s) => entries[s.id])
     .filter((e): e is Entry => !!e && !e.isAbsent && e.marks !== "" && !Number.isNaN(Number(e.marks)))
     .map((e) => Number(e.marks));
+  // An out-of-range mark is not a mark yet: it is left out of the totals and
+  // blocks saving, because the API refuses the whole sheet over one bad value.
+  const values = entered.filter((v) => v >= 0 && v <= max);
+  const overMax = entered.filter((v) => v > max).length;
+  const belowZero = entered.filter((v) => v < 0).length;
+  const invalidCount = overMax + belowZero;
+  const fixMessage =
+    invalidCount === 0
+      ? ""
+      : belowZero === 0
+        ? `Fix ${overMax} mark${overMax === 1 ? "" : "s"} over ${max}`
+        : overMax === 0
+          ? `Fix ${belowZero} mark${belowZero === 1 ? "" : "s"} below 0`
+          : `Fix ${invalidCount} marks outside 0 to ${max}`;
   const absent = sheet.students.filter((s) => entries[s.id]?.isAbsent).length;
-  const blank = sheet.students.length - values.length - absent;
+  const blank = sheet.students.length - entered.length - absent;
   const passed = values.filter((v) => v >= pass).length;
   const average = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
   const highest = values.length ? Math.max(...values) : null;
 
-  const saveButton = !sheet.locked && (
-    <Button type="button" icon={<Save />} onClick={save} loading={saving}>
+  const saveButton = !readOnly && (
+    <Button type="button" icon={<Save />} onClick={save} loading={saving} disabled={invalidCount > 0} title={fixMessage || undefined}>
       Save marks
     </Button>
   );
@@ -359,8 +413,10 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {invalidCount > 0 && <Badge tone="danger" icon={<CircleAlert />}>{fixMessage}</Badge>}
           {dirty && <Badge tone="warning">Unsaved changes</Badge>}
           {sheet.locked && <Badge tone="neutral" icon={<Lock />}>Locked</Badge>}
+          {!sheet.locked && !sheet.canEnter && <Badge tone="neutral" icon={<Lock />}>Read-only</Badge>}
           {saveButton}
         </div>
       </div>
@@ -369,6 +425,18 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
         {sheet.locked && (
           <Alert tone="warning" title="Marks are locked">
             Results are published, so marks are locked. An administrator can unpublish to correct them.
+          </Alert>
+        )}
+
+        {!sheet.locked && !sheet.canEnter && (
+          <Alert tone="info" title="You can read this sheet but not change it">
+            Only the teacher of this subject (or an administrator) enters its marks.
+          </Alert>
+        )}
+
+        {invalidCount > 0 && (
+          <Alert tone="danger" title={fixMessage}>
+            Marks must be between 0 and {max}. The sheet cannot be saved, and the totals below leave these out.
           </Alert>
         )}
 
@@ -424,7 +492,11 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
                       <th scope="row" className="sticky left-0 z-10 border-r text-left font-normal">
                         <div className="flex min-w-0 items-center gap-3">
                           <span className="w-7 shrink-0 text-right text-xs tabular-nums text-fg-muted">{s.rollNo ?? ""}</span>
-                          <span className="truncate font-medium text-fg">{s.name}</span>
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-fg">{s.name}</div>
+                            {/* Duplicate names are common, so show the admission number too. */}
+                            <div className="truncate text-xs tabular-nums text-fg-muted">{s.admissionNo}</div>
+                          </div>
                         </div>
                       </th>
                       <td className="text-right">
@@ -437,7 +509,7 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
                           data-mark-cell={i}
                           value={e.isAbsent ? "" : e.marks}
                           placeholder={e.isAbsent ? "Abs" : ""}
-                          disabled={sheet.locked || e.isAbsent}
+                          disabled={readOnly || e.isAbsent}
                           onChange={(ev) => edit(s.id, { marks: ev.target.value })}
                           onKeyDown={(ev) => onCellKey(ev, i)}
                           onFocus={(ev) => ev.currentTarget.select()}
@@ -457,7 +529,7 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
                       <td>
                         <Checkbox
                           checked={e.isAbsent}
-                          disabled={sheet.locked}
+                          disabled={readOnly}
                           onCheckedChange={(c) => edit(s.id, { isAbsent: c })}
                           aria-label={`${s.name} was absent`}
                         />
@@ -506,8 +578,9 @@ interface ResultRow {
   principalRemark: string | null;
 }
 
-function ResultsTab({ exam, isAdmin, onChange }: { exam: Exam; isAdmin: boolean; onChange: () => Promise<void> }) {
-  const sections = useSectionOptions();
+function ResultsTab({ exam, canManage, onChange }: { exam: Exam; canManage: boolean; onChange: () => Promise<void> }) {
+  // Only the campuses this user's roles cover: the API refuses the others.
+  const sections = useSectionOptions({ campusScoped: true });
   const [sectionId, setSectionId] = useState("");
   const results = useApi<{ results: ResultRow[] }>(sectionId ? `/exams/${exam.id}/results?sectionId=${sectionId}` : null);
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
@@ -595,7 +668,7 @@ function ResultsTab({ exam, isAdmin, onChange }: { exam: Exam; isAdmin: boolean;
 
   return (
     <div className="flex flex-col gap-6">
-      {isAdmin && (
+      {canManage && (
         <Card>
           {published ? (
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -637,7 +710,8 @@ function ResultsTab({ exam, isAdmin, onChange }: { exam: Exam; isAdmin: boolean;
         </Card>
       )}
 
-      {sectionId && (
+      {/* The KPIs are only shown once this section's results are in: no numbers while loading or after a failure. */}
+      {sectionId && !results.error && (
         results.data ? (
           rows.length > 0 && (
             <StatGrid>
@@ -648,7 +722,7 @@ function ResultsTab({ exam, isAdmin, onChange }: { exam: Exam; isAdmin: boolean;
             </StatGrid>
           )
         ) : (
-          !results.error && <SkeletonCards count={4} />
+          <SkeletonCards count={4} />
         )
       )}
 

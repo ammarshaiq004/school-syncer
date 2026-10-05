@@ -110,7 +110,10 @@ const TEACHING: PartialMatrix = {
   certificates: 'view',
   timetable: 'view',
   homework: 'manage',
-  exams: 'manage', // marks entry and remarks
+  // Running an exam (creating it, its papers, the grading scale, publishing)
+  // needs manage; entering marks and remarks for your own subjects only needs
+  // view, because the exams module checks that you teach them.
+  exams: 'view',
   elearning: 'manage', // courses, live classes, assignments, quizzes
   gradebook: 'manage', // marks and assignment grades for their sections
   lesson_plans: 'manage', // own plans
