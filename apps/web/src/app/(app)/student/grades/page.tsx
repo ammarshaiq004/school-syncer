@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Award, BookOpen, ClipboardCheck, FileText, ListChecks, NotebookPen, Trophy } from "lucide-react";
 import { ASSIGNMENT_STATE } from "@/components/student/format";
+import { ASSIGNMENT_AVERAGE_HINT, assignmentAverage } from "@/components/student-learning/format";
 import type { ExamResultItem, ScoredAssignment, ScoredQuiz, StudentResults } from "@/components/student/types";
 import {
   Badge,
@@ -131,9 +132,8 @@ export default function StudentGradesPage() {
 
   const latest = r?.exams[0];
   const marked = r?.assignments.filter((a) => a.points != null) ?? [];
-  const assignmentAvg = marked.length
-    ? (marked.reduce((n, a) => n + (a.points ?? 0), 0) / marked.reduce((n, a) => n + a.maxPoints, 0)) * 100
-    : null;
+  // Shared with /student/assignments so the two pages never show different averages.
+  const assignmentAvg = assignmentAverage(marked);
   const quizBest = r?.quizzes.filter((q) => q.best?.percent != null) ?? [];
   const quizAvg = quizBest.length ? quizBest.reduce((n, q) => n + (q.best!.percent ?? 0), 0) / quizBest.length : null;
 
@@ -178,7 +178,7 @@ export default function StudentGradesPage() {
               tone="success"
               loading={!r}
               value={assignmentAvg == null ? "–" : pct(assignmentAvg)}
-              hint={`${marked.length} marked`}
+              hint={`${ASSIGNMENT_AVERAGE_HINT}, across ${marked.length} marked`}
             />
             <KpiCard
               label="Quiz average"

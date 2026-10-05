@@ -23,9 +23,9 @@ import { resolveStudent } from '../../student/student-context.js';
 import { assignmentState } from '../../student/student-rules.js';
 import { isHttpsUrl } from '../courses/course-rules.js';
 import {
-  dueUrgency,
   hoursLeft,
   isLate,
+  openUrgency,
   studentOrder,
   SUBMIT_BLOCK_MESSAGE,
   submitBlock,
@@ -114,11 +114,10 @@ export class StudentAssignmentsController {
       .map(({ submissions, ...a }) => {
         const sub = submissions[0] ?? null;
         const state = assignmentState(a, sub, now);
-        const open = state === 'pending' || state === 'overdue';
         return {
           ...a,
           state,
-          urgency: open ? dueUrgency(a.dueAt, now) : null,
+          urgency: openUrgency(state, a.dueAt, now),
           hoursLeft: hoursLeft(a.dueAt, now),
           canSubmit: submitBlock(a, sub, now) === null,
           submission: visible(sub),
@@ -135,10 +134,11 @@ export class StudentAssignmentsController {
     const sub = a.submissions[0] ?? null;
     const block = submitBlock(a, sub, now);
     const { submissions: _s, ...rest } = a;
+    const state = assignmentState(a, sub, now);
     return {
       ...rest,
-      state: assignmentState(a, sub, now),
-      urgency: dueUrgency(a.dueAt, now),
+      state,
+      urgency: openUrgency(state, a.dueAt, now),
       hoursLeft: hoursLeft(a.dueAt, now),
       canSubmit: block === null,
       blockedReason: block ? SUBMIT_BLOCK_MESSAGE[block] : null,
