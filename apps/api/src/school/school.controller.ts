@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { SchoolMode } from '@prisma/client';
 import { z } from 'zod';
 import { SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
@@ -22,6 +23,8 @@ const updateSchoolSchema = z.object({
   lateFeePerDay: z.number().int().min(0).max(100_000).optional(),
   // Day of the month monthly invoices fall due; capped to the month's last day.
   feeDueDay: z.number().int().min(1).max(31).optional(),
+  // School mode tab: drives which modules the app shows (e-school vs campus-only).
+  mode: z.enum(SchoolMode).optional(),
 });
 type UpdateSchoolInput = z.infer<typeof updateSchoolSchema>;
 

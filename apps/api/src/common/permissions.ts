@@ -35,8 +35,8 @@ export const PERMISSION_GROUPS = {
 export type PermissionGroup = keyof typeof PERMISSION_GROUPS;
 
 /**
- * Every module, in display order. Later releases append keys (elearning,
- * gradebook, lesson_plans, chat); stored matrices without them fall back to
+ * Every module, in display order. Later releases append keys (gradebook,
+ * lesson_plans, chat); stored matrices without them fall back to
  * DEFAULT_PERMISSIONS, so no data migration is needed.
  */
 export const PERMISSION_MODULES = {
@@ -49,6 +49,7 @@ export const PERMISSION_MODULES = {
   timetable: { label: 'Timetable', group: 'academics' },
   homework: { label: 'Homework', group: 'academics' },
   exams: { label: 'Exams and results', group: 'academics' },
+  elearning: { label: 'E-school', group: 'academics' },
   fees: { label: 'Fees', group: 'finance' },
   accounts: { label: 'Accounts', group: 'finance' },
   reports: { label: 'Reports', group: 'finance' },
@@ -108,6 +109,7 @@ const TEACHING: PartialMatrix = {
   timetable: 'view',
   homework: 'manage',
   exams: 'manage', // marks entry and remarks
+  elearning: 'manage', // courses, live classes, assignments, quizzes
   fees: 'view', // fee heads and structures
   hr: 'manage', // own leave requests and payslips
   transport: 'view',
@@ -156,6 +158,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     attendance: 'view',
     homework: 'view',
     exams: 'view',
+    elearning: 'none', // e-school is for teaching staff
   }),
   // Parents and students are not editable; their endpoints are fenced by
   // @Roles and by ownership checks, the matrix only has to let them through.
@@ -166,6 +169,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     timetable: 'view',
     homework: 'view',
     exams: 'view',
+    elearning: 'view',
     fees: 'view',
     transport: 'view',
     library: 'view',
@@ -181,6 +185,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     timetable: 'view',
     homework: 'view',
     exams: 'view',
+    elearning: 'view',
     fees: 'view',
     library: 'view',
     announcements: 'view',

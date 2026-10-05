@@ -20,6 +20,8 @@ import {
 import { z } from 'zod';
 import { campusScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
+import { UserStatusService } from '../common/user-status.service.js';
+import { disableStudentLogins } from '../students/student-login.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -71,6 +73,7 @@ export class PromotionsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly userStatus: UserStatusService,
   ) {}
 
   /** This year, next year (if set up) and how far each section's decisions have got. */
@@ -423,6 +426,8 @@ export class PromotionsController {
       );
 
     const counts = { PROMOTE: 0, REPEAT: 0, LEAVE: 0, GRADUATE: 0 };
+    const leavers: string[] = [];
+    let offUserIds: string[] = [];
     await this.prisma.$transaction(
       async (tx) => {
         for (const section of sections) {
@@ -469,6 +474,7 @@ export class PromotionsController {
                       : StudentStatus.LEFT,
                 },
               });
+              leavers.push(e.studentId);
             }
           }
         }
@@ -517,6 +523,9 @@ export class PromotionsController {
           }
         }
 
+        // Leavers and graduates stop signing in to the student workspace.
+        offUserIds = await disableStudentLogins(tx, leavers);
+
         await tx.academicYear.updateMany({
           where: { schoolId: user.schoolId },
           data: { isCurrent: false },
@@ -528,6 +537,7 @@ export class PromotionsController {
       },
       { timeout: 120_000 },
     );
+    for (const userId of offUserIds) this.userStatus.forget(userId);
     await this.audit.record(
       user,
       'promotion.start_year',

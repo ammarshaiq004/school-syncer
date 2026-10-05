@@ -18,6 +18,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { StudentLoginCard, type StudentLogin } from "@/components/student/student-login-card";
 import { StudentLibrary } from "@/components/student-library";
 import { StudentTransport } from "@/components/student-transport";
 import { attendanceRate, StudentAttendance, StudentExams } from "@/components/students/profile-sections";
@@ -69,6 +70,8 @@ interface Profile {
   enrollments: { id: string; rollNo: number | null; status: string; academicYear: { name: string }; section: { name: string; class: { name: string } } }[];
   invoices: { id: string; period: string; total: number; paid: number; status: string }[];
   attendanceSummary: Record<string, number>;
+  /** The student's own login for the student workspace, if any. */
+  user?: StudentLogin | null;
 }
 
 type Invoice = Profile["invoices"][number];
@@ -159,8 +162,10 @@ export default function StudentProfilePage() {
   const canSetup = hasRole(user, SETUP);
   const canFees = hasRole(user, FEES);
   const certificates = user.plan?.features.includes("certificates") !== false;
-  const transport = user.plan?.features.includes("transport") !== false;
-  const library = user.plan?.features.includes("library") !== false;
+  // Online schools have no van or library.
+  const onCampus = user.school?.mode !== "ONLINE";
+  const transport = onCampus && user.plan?.features.includes("transport") !== false;
+  const library = onCampus && user.plan?.features.includes("library") !== false;
   const balance = s.invoices.reduce((sum, i) => sum + Math.max(0, i.total - i.paid), 0);
   const waPhone = primary ? primary.guardian.phone.replace(/\D/g, "").replace(/^0/, "92") : "";
 
@@ -202,7 +207,7 @@ export default function StudentProfilePage() {
           </div>
           {certificates && (s.status === "ACTIVE" || canSetup) && (
             <div className="flex flex-wrap gap-2 print:hidden">
-              {s.status === "ACTIVE" && (
+              {s.status === "ACTIVE" && user.school?.mode !== "ONLINE" && (
                 <Link className={buttonClass("secondary", "sm")} href={`/certificates/id-cards?studentIds=${s.id}`}>
                   <IdCard className="size-4" aria-hidden />
                   ID card
@@ -289,46 +294,54 @@ export default function StudentProfilePage() {
                 ]}
               />
             </Card>
-            <Card>
-              <CardHeader title="Guardians" icon={<Users />} />
-              {s.guardians.length === 0 ? (
-                <EmptyState icon={<Users />} title="No guardians added" compact />
-              ) : (
-                <ul className="-my-3 flex flex-col divide-y divide-border">
-                  {s.guardians.map((g) => (
-                    <li key={g.guardianId} className="flex items-start justify-between gap-3 py-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <Avatar name={g.guardian.name} size="sm" />
-                        <div className="min-w-0 text-sm">
-                          <div className="flex flex-wrap items-center gap-1.5 font-medium text-fg">
-                            {g.guardian.name}
-                            {g.isPrimary && <Badge tone="primary">Primary</Badge>}
-                          </div>
-                          <div className="text-[13px] text-fg-muted">
-                            {g.relation} · <a href={`tel:${g.guardian.phone}`} className="tabular-nums hover:text-brand">{g.guardian.phone}</a>
+            <div className="flex flex-col gap-6">
+              <Card>
+                <CardHeader title="Guardians" icon={<Users />} />
+                {s.guardians.length === 0 ? (
+                  <EmptyState icon={<Users />} title="No guardians added" compact />
+                ) : (
+                  <ul className="-my-3 flex flex-col divide-y divide-border">
+                    {s.guardians.map((g) => (
+                      <li key={g.guardianId} className="flex items-start justify-between gap-3 py-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <Avatar name={g.guardian.name} size="sm" />
+                          <div className="min-w-0 text-sm">
+                            <div className="flex flex-wrap items-center gap-1.5 font-medium text-fg">
+                              {g.guardian.name}
+                              {g.isPrimary && <Badge tone="primary">Primary</Badge>}
+                            </div>
+                            <div className="text-[13px] text-fg-muted">
+                              {g.relation} · <a href={`tel:${g.guardian.phone}`} className="tabular-nums hover:text-brand">{g.guardian.phone}</a>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      {canSetup &&
-                        (g.guardian.userId ? (
-                          <Badge tone="success">Has login</Badge>
-                        ) : (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            icon={<Send />}
-                            loading={inviting === g.guardianId}
-                            onClick={() => invite(g.guardianId)}
-                          >
-                            Invite to app
-                          </Button>
-                        ))}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
+                        {canSetup &&
+                          (g.guardian.userId ? (
+                            <Badge tone="success">Has login</Badge>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              icon={<Send />}
+                              loading={inviting === g.guardianId}
+                              onClick={() => invite(g.guardianId)}
+                            >
+                              Invite to app
+                            </Button>
+                          ))}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+              <StudentLoginCard
+                student={{ id: s.id, name, admissionNo: s.admissionNo, rollNo: current?.rollNo ?? null, status: s.status }}
+                login={s.user}
+                canManage={canSetup}
+                onChanged={student.reload}
+              />
+            </div>
             <Card padding="none" className="lg:col-span-3">
               <div className="px-5 pt-5">
                 <CardHeader title="Class history" icon={<GraduationCap />} />

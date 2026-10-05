@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { ArrowRight, Building, History, Library, ShieldCheck, Users, Wallet } from "lucide-react";
+import { ArrowRight, Building, History, Library, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
 import { Alert, buttonClass, Card, CardHeader, ErrorState, PageHeader, SkeletonRows, TabPanel, Tabs } from "@/components/ui";
 import { AuditLog } from "@/components/settings/audit-log";
 import { RolesManager } from "@/components/settings/roles-manager";
 import { FeeSettingsForm, SchoolProfileForm, type School } from "@/components/settings/school-settings";
+import type { SchoolMode } from "@/lib/api";
 import { can, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
+import { SchoolModeSettings } from "./school-mode";
 
-type Tab = "profile" | "fees" | "library" | "roles" | "audit";
+type Tab = "profile" | "mode" | "fees" | "library" | "roles" | "audit";
 
 export default function SettingsPage() {
   return (
@@ -26,16 +28,17 @@ function Settings() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const school = useApi<School>("/school");
-  const [saved, setSaved] = useState<School | null>(null);
+  const school = useApi<School & { mode?: SchoolMode }>("/school");
+  const [saved, setSaved] = useState<(School & { mode?: SchoolMode }) | null>(null);
   const data = saved ?? school.data;
 
   const setup = hasRole(user, SETUP);
   const canEditSettings = setup && can(user, "settings", "manage");
   const tabs = [
     { value: "profile", label: "School profile", icon: <Building /> },
+    { value: "mode", label: "School mode", icon: <Shuffle /> },
     { value: "fees", label: "Fees", icon: <Wallet /> },
-    { value: "library", label: "Library", icon: <Library /> },
+    ...((data?.mode ?? user.school?.mode) !== "ONLINE" ? [{ value: "library", label: "Library", icon: <Library /> }] : []),
     ...(setup && can(user, "users") ? [{ value: "roles", label: "Roles and permissions", icon: <ShieldCheck /> }] : []),
     ...(setup && can(user, "audit") ? [{ value: "audit", label: "Audit log", icon: <History /> }] : []),
   ];
@@ -73,22 +76,27 @@ function Settings() {
         <TabPanel value="profile">
           <div className="max-w-3xl">{schoolSection((s) => <SchoolProfileForm key={s.id} school={s} readOnly={!canEditSettings} onSaved={setSaved} />)}</div>
         </TabPanel>
+        <TabPanel value="mode">
+          {schoolSection((s) => <SchoolModeSettings key={s.id} school={s} readOnly={!canEditSettings} onSaved={setSaved} />)}
+        </TabPanel>
         <TabPanel value="fees">
           <div className="max-w-3xl">{schoolSection((s) => <FeeSettingsForm key={s.id} school={s} readOnly={!canEditSettings} onSaved={setSaved} />)}</div>
         </TabPanel>
-        <TabPanel value="library">
-          <Card className="max-w-3xl">
-            <CardHeader
-              icon={<Library />}
-              title="Library rules"
-              description="Loan period, fine per day and how many books each borrower can take are set on the Library page."
-            />
-            <Link href="/library" className={buttonClass("secondary", "md")}>
-              Open library rules
-              <ArrowRight className="size-4" aria-hidden />
-            </Link>
-          </Card>
-        </TabPanel>
+        {tabs.some((t) => t.value === "library") && (
+          <TabPanel value="library">
+            <Card className="max-w-3xl">
+              <CardHeader
+                icon={<Library />}
+                title="Library rules"
+                description="Loan period, fine per day and how many books each borrower can take are set on the Library page."
+              />
+              <Link href="/library" className={buttonClass("secondary", "md")}>
+                Open library rules
+                <ArrowRight className="size-4" aria-hidden />
+              </Link>
+            </Card>
+          </TabPanel>
+        )}
         {tabs.some((t) => t.value === "roles") && (
           <TabPanel value="roles">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

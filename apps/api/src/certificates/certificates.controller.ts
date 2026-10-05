@@ -23,6 +23,8 @@ import {
   STAFF_ROLES,
 } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
+import { UserStatusService } from '../common/user-status.service.js';
+import { disableStudentLogins } from '../students/student-login.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart, localDate, localToday } from '../common/dates.js';
 import {
@@ -73,6 +75,7 @@ export class CertificatesController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly userStatus: UserStatusService,
   ) {}
 
   @Get()
@@ -207,6 +210,7 @@ export class CertificatesController {
       details.duesOwed = owed;
     }
 
+    let offUserIds: string[] = [];
     const certificate = await this.withSerial(async (tx) => {
       const year = Number(issuedOn.slice(0, 4));
       const prefixed = await tx.certificate.findMany({
@@ -237,6 +241,7 @@ export class CertificatesController {
           where: { id: student.id },
           data: { status: StudentStatus.LEFT },
         });
+        offUserIds = await disableStudentLogins(tx, [student.id]);
         await tx.enrollment.updateMany({
           where: { studentId: student.id, status: EnrollmentStatus.ACTIVE },
           data: { status: EnrollmentStatus.LEFT },
@@ -251,6 +256,7 @@ export class CertificatesController {
       }
       return created;
     });
+    for (const userId of offUserIds) this.userStatus.forget(userId);
 
     await this.audit.record(
       user,

@@ -6,6 +6,7 @@ import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { IdCard, Printer } from "lucide-react";
 import { Alert, Button, buttonClass, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { day } from "@/lib/format";
+import { useSchoolMode } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 interface Letterhead {
@@ -55,6 +56,23 @@ const initials = (name: string) =>
 
 /** Credit-card-sized ID cards, ten to an A4 sheet. */
 export default function IdCardsPage() {
+  // Online schools have no campus, so no ID cards.
+  if (useSchoolMode() === "ONLINE") {
+    return (
+      <Card>
+        <EmptyState
+          icon={<IdCard />}
+          title="ID cards are for campus schools"
+          description="Your school is set up as an online school. Change the school mode in System settings to print ID cards."
+          action={
+            <Link href="/certificates" className={buttonClass("secondary", "sm")}>
+              Back to certificates
+            </Link>
+          }
+        />
+      </Card>
+    );
+  }
   return (
     <Suspense>
       <IdCards />

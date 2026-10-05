@@ -1,10 +1,10 @@
-// Seeds two demo schools with a term's worth of realistic data.
+// Seeds three demo schools (hybrid, physical and online) with a term's worth of realistic data.
 //
 //   pnpm prisma:seed            adds the demo schools if they aren't there
 //   pnpm prisma:seed --reset    deletes and rebuilds them (other schools are untouched)
 //
 // Every login uses the password "password123". See README "Demo data" for the list.
-import { Gender, PrismaClient, Role, SubscriptionStatus, VehicleType } from '@prisma/client';
+import { Gender, PrismaClient, Role, SchoolMode, SubscriptionStatus, VehicleType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { localToday } from '../src/common/dates.js';
 import { CUSTOMER_SCHOOLS, PLATFORM_ADMIN, seedBilling, seedCustomerSchools, seedPlans, seedPlatformAdmin } from './demo/platform.js';
@@ -30,6 +30,14 @@ export const DEMO_SCHOOLS: SchoolPlan[] = [
     phone: '042-35761234',
     email: 'info@citygrammar.pk',
     emailDomain: 'demo.pk',
+    // Classes on campus, plus courses, live classes and coursework online for Grades 5 to 8.
+    mode: SchoolMode.HYBRID,
+    eschool: {
+      levels: [5, 8],
+      liveSubjects: ['Mathematics', 'Science', 'Computer'],
+      logins: 'demo-section',
+      demoStudentEmail: 'student@demo.pk',
+    },
     campuses: [
       {
         name: 'Model Town campus',
@@ -164,6 +172,42 @@ export const DEMO_SCHOOLS: SchoolPlan[] = [
       ],
     },
   },
+  {
+    // A fully online school: live classes from the timetable, no vans or library.
+    name: 'Virtual Learning Academy',
+    slug: 'online-academy',
+    city: 'Karachi',
+    phone: '021-34381200',
+    email: 'hello@online-academy.pk',
+    emailDomain: 'online-academy.pk',
+    mode: SchoolMode.ONLINE,
+    campuses: [
+      {
+        name: 'Online campus',
+        address: 'Office 804, Emerald Tower, Clifton Block 5, Karachi',
+        phone: '021-34381200',
+        classes: grades(6, 10, ['A']),
+        feeFactor: 1,
+      },
+    ],
+    staff: [
+      { name: 'Farhan Siddiqui', email: 'owner@online-academy.pk', role: Role.OWNER, designation: 'Director', salary: 0 },
+      { name: 'Mehwish Raza', email: 'principal@online-academy.pk', role: Role.PRINCIPAL, designation: 'Head of academics', salary: 160000 },
+    ],
+    demoTeacher: { name: 'Saima Naveed', email: 'teacher@online-academy.pk', subject: 'Mathematics' },
+    demoFamily: {
+      father: 'Tariq Mehmood',
+      surname: 'Mehmood',
+      phone: '03331234567',
+      children: [{ name: 'Ayesha', gender: Gender.FEMALE, className: 'Grade 8' }],
+    },
+    studentsPerSection: [10, 15],
+    tuitionBase: 3000,
+    tuitionStep: 300,
+    annualCharges: 4000,
+    phonePrefix: '0333',
+    eschool: { levels: [6, 10], logins: 'all', demoStudentEmail: 'student@online-academy.pk' },
+  },
 ];
 
 /** How each demo school pays SchoolSyncer. */
@@ -172,6 +216,8 @@ const BILLING: Record<string, Parameters<typeof seedBilling>[2]> = {
   'demo-school': { plan: 'growth', status: SubscriptionStatus.ACTIVE, paidMonths: 6 },
   // Signed up three weeks ago; the trial ends soon.
   'bright-future': { plan: 'growth', status: SubscriptionStatus.TRIAL, trialDays: 9, paidMonths: 0 },
+  // Online since the spring.
+  'online-academy': { plan: 'growth', status: SubscriptionStatus.ACTIVE, paidMonths: 4 },
 };
 
 /** Deletes a school and everything under it, money and history included. */
@@ -210,6 +256,13 @@ async function main() {
       `Seeded ${plan.slug}: ${summary.students} students, ${summary.staff} staff, ${summary.invoices} invoices, ` +
         `${summary.attendanceRecords} attendance records, ${summary.books} library books, ${summary.loans} loans, ${summary.certificates} certificates in ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
+    const e = summary.eschool;
+    if (e) {
+      console.log(
+        `  e-school: ${e.logins} student logins, ${e.courses} courses with ${e.lessons} lessons, ${e.liveClasses} live classes, ` +
+          `${e.assignments} assignments (${e.submissions} submissions), ${e.quizzes} quizzes (${e.attempts} attempts)`,
+      );
+    }
     await seedBilling(prisma, summary.schoolId, BILLING[plan.slug]);
   }
   if (reset) for (const c of CUSTOMER_SCHOOLS) await deleteSchool(c.slug);

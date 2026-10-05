@@ -26,7 +26,14 @@ export interface SessionUser {
   permissions?: Partial<Record<PermissionModule, AccessLevel>>;
   /** Set when SchoolSyncer staff opened this session from the console for support. */
   support?: { adminId: string; adminName: string } | null;
+  /** The school, with its delivery mode (drives which modules the app shows). Missing on old API versions. */
+  school?: { id: string; name: string; slug: string; mode: SchoolMode; logoUrl: string | null };
+  /** The student record behind a STUDENT login, else null. */
+  studentId?: string | null;
 }
+
+/** How the school teaches: on campus, online, or both. */
+export type SchoolMode = "PHYSICAL" | "ONLINE" | "HYBRID";
 
 /** Access levels of the school permission layer, lowest first. */
 export type AccessLevel = "none" | "view" | "manage";
@@ -42,6 +49,7 @@ export type PermissionModule =
   | "timetable"
   | "homework"
   | "exams"
+  | "elearning"
   | "fees"
   | "accounts"
   | "reports"
@@ -69,7 +77,8 @@ export type Feature =
   | "reports"
   | "transport"
   | "library"
-  | "certificates";
+  | "certificates"
+  | "elearning";
 
 /** The school's SchoolSyncer plan, as /auth/me reports it. */
 export interface SchoolPlan {

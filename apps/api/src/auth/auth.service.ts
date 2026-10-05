@@ -40,21 +40,34 @@ export class AuthService {
       where: { slug: input.schoolSlug },
     });
     const login = input.login.toLowerCase();
-    const user = school
-      ? await this.prisma.user.findFirst({
+    // A student's username (admission number) can equal someone else's phone
+    // or email, so every match is tried: email first, then phone, then username.
+    const matches = school
+      ? await this.prisma.user.findMany({
           where: {
             schoolId: school.id,
             isActive: true,
-            OR: [{ email: login }, { phone: input.login }],
+            // Email and username are stored lowercased; phone numbers as typed.
+            OR: [{ email: login }, { phone: input.login }, { username: login }],
           },
           include: { roles: true },
+          take: 3,
         })
-      : null;
-
-    const valid =
-      user?.passwordHash &&
-      (await bcrypt.compare(input.password, user.passwordHash));
-    if (!user || !valid) {
+      : [];
+    const rank = (u: (typeof matches)[number]) =>
+      u.email === login ? 0 : u.phone === input.login ? 1 : 2;
+    matches.sort((a, b) => rank(a) - rank(b));
+    let user: (typeof matches)[number] | null = null;
+    for (const candidate of matches) {
+      if (
+        candidate.passwordHash &&
+        (await bcrypt.compare(input.password, candidate.passwordHash))
+      ) {
+        user = candidate;
+        break;
+      }
+    }
+    if (!user) {
       this.limiter.recordFailure(limitKey);
       throw new UnauthorizedException('Wrong school, login or password');
     }

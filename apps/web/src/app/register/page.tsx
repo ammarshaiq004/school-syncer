@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { CircleCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, CircleCheck } from "lucide-react";
 import { AuthShell } from "@/components/auth-shell";
 import { Alert, Button, TextField } from "@/components/ui";
-import { api, setToken } from "@/lib/api";
+import { SchoolModePicker, schoolModeLabel, SCHOOL_MODES } from "@/components/school-mode-picker";
+import { api, setToken, type SchoolMode } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [schoolCode, setSchoolCode] = useState("");
+  const [mode, setMode] = useState<SchoolMode>("PHYSICAL");
+  const [step, setStep] = useState<"mode" | "details">("mode");
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -29,6 +32,7 @@ export default function RegisterPage() {
           email: form.get("email"),
           phone: form.get("phone") || undefined,
           password: form.get("password"),
+          mode,
         },
       });
       setToken(res.accessToken);
@@ -53,6 +57,14 @@ export default function RegisterPage() {
             You have 30 days of the Growth plan free, with every module. Pick a plan under Plan and billing whenever you are
             ready.
           </p>
+          <p className="flex items-start gap-2 text-sm text-fg-secondary">
+            <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+            {mode === "ONLINE"
+              ? "Set up as an online school with an Online campus. Add classes, then build courses and schedule live classes."
+              : mode === "HYBRID"
+                ? "Set up as a hybrid school: campus modules plus courses, live classes, assignments and quizzes."
+                : "Set up as a physical school. You can switch on online learning later under System settings."}
+          </p>
           <Button type="button" className="w-full" onClick={() => router.push("/dashboard")}>
             Go to dashboard
           </Button>
@@ -61,21 +73,59 @@ export default function RegisterPage() {
     );
   }
 
+  const footer = (
+    <>
+      Already registered?{" "}
+      <Link href="/login" className="font-medium text-brand hover:underline">
+        Sign in
+      </Link>
+    </>
+  );
+
+  if (step === "mode") {
+    return (
+      <AuthShell
+        width="md"
+        eyebrow="Step 1 of 2"
+        title="Register your school"
+        description="First, tell us how your school teaches. This decides which modules you see, and you can change it later."
+        footer={footer}
+      >
+        <form
+          className="flex flex-col gap-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setStep("details");
+          }}
+        >
+          <SchoolModePicker value={mode} onChange={setMode} layout="stack" hideLegend legend="How your school teaches" />
+          <Button type="submit" className="w-full" iconRight={<ArrowRight />}>
+            Continue
+          </Button>
+        </form>
+      </AuthShell>
+    );
+  }
+
+  const ModeIcon = SCHOOL_MODES.find((m) => m.value === mode)!.icon;
   return (
     <AuthShell
       width="md"
+      eyebrow="Step 2 of 2"
       title="Register your school"
       description="Free for 30 days with every module. No card needed."
-      footer={
-        <>
-          Already registered?{" "}
-          <Link href="/login" className="font-medium text-brand hover:underline">
-            Sign in
-          </Link>
-        </>
-      }
+      footer={footer}
     >
       <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-2">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2 sm:col-span-2">
+          <span className="flex min-w-0 items-center gap-2 text-sm text-fg">
+            <ModeIcon className="size-4 shrink-0 text-brand" aria-hidden />
+            <span className="truncate">{schoolModeLabel(mode)}</span>
+          </span>
+          <Button type="button" size="sm" variant="ghost" icon={<ArrowLeft />} onClick={() => setStep("mode")} aria-label="Change how your school teaches">
+            Change
+          </Button>
+        </div>
         <TextField label="School name" name="schoolName" placeholder="Al-Noor Grammar School" required wrapperClassName="sm:col-span-2" />
         <TextField label="City" name="city" placeholder="Lahore" />
         <TextField label="Your name" name="ownerName" placeholder="Farah Siddiqui" required />

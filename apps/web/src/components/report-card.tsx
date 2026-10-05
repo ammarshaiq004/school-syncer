@@ -74,9 +74,12 @@ function ReportCardSkeleton() {
   );
 }
 
-/** A one-page printable report card, shared by the staff and parent screens. */
-export function ReportCardView({ examId, studentId }: { examId: string; studentId: string }) {
-  const card = useApi<ReportCard>(`/exams/${examId}/report-cards/${studentId}`);
+/**
+ * A one-page printable report card, shared by the staff, parent and student screens.
+ * `path` overrides the API route (the student workspace reads /student/results/:examId).
+ */
+export function ReportCardView({ examId, studentId, path }: { examId: string; studentId?: string; path?: string }) {
+  const card = useApi<ReportCard>(path ?? `/exams/${examId}/report-cards/${studentId}`);
   if (card.error) return <ErrorState title="Could not load this report card" message={card.error} onRetry={card.reload} />;
   const c = card.data;
   if (!c) return <ReportCardSkeleton />;
@@ -121,35 +124,37 @@ export function ReportCardView({ examId, studentId }: { examId: string; studentI
           ))}
         </dl>
 
-        <table className="mb-6 w-full border-collapse text-left">
-          <thead>
-            <tr>
-              <th scope="col" className={head}>Subject</th>
-              <th scope="col" className={cn(head, "text-right")}>Total</th>
-              <th scope="col" className={cn(head, "text-right")}>Pass</th>
-              <th scope="col" className={cn(head, "text-right")}>Obtained</th>
-              <th scope="col" className={head}>Result</th>
-            </tr>
-          </thead>
-          <tbody>
-            {c.subjects.map((s) => (
-              <tr key={s.subject} className={s.passed ? undefined : "bg-rose-50"}>
-                <th scope="row" className={cn(cell, "font-medium")}>{s.subject}</th>
-                <td className={cn(cell, num)}>{s.max}</td>
-                <td className={cn(cell, num, "text-slate-600")}>{s.pass}</td>
-                <td className={cn(cell, num, "font-semibold")}>{s.absent ? "Absent" : s.marks}</td>
-                <td className={cell}>{s.passed ? "Pass" : <span className="font-semibold text-rose-700">Fail</span>}</td>
+        <div className="mb-6 overflow-x-auto print:overflow-visible">
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr>
+                <th scope="col" className={head}>Subject</th>
+                <th scope="col" className={cn(head, "text-right")}>Total</th>
+                <th scope="col" className={cn(head, "text-right")}>Pass</th>
+                <th scope="col" className={cn(head, "text-right")}>Obtained</th>
+                <th scope="col" className={head}>Result</th>
               </tr>
-            ))}
-            <tr className="bg-slate-50 font-semibold">
-              <th scope="row" className={cell}>Total</th>
-              <td className={cn(cell, num)}>{c.maxTotal}</td>
-              <td className={cell} />
-              <td className={cn(cell, num)}>{c.obtained}</td>
-              <td className={cell}>{c.passed ? "Pass" : <span className="text-rose-700">Fail</span>}</td>
-            </tr>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {c.subjects.map((s) => (
+                <tr key={s.subject} className={s.passed ? undefined : "bg-rose-50"}>
+                  <th scope="row" className={cn(cell, "font-medium")}>{s.subject}</th>
+                  <td className={cn(cell, num)}>{s.max}</td>
+                  <td className={cn(cell, num, "text-slate-600")}>{s.pass}</td>
+                  <td className={cn(cell, num, "font-semibold")}>{s.absent ? "Absent" : s.marks}</td>
+                  <td className={cell}>{s.passed ? "Pass" : <span className="font-semibold text-rose-700">Fail</span>}</td>
+                </tr>
+              ))}
+              <tr className="bg-slate-50 font-semibold">
+                <th scope="row" className={cell}>Total</th>
+                <td className={cn(cell, num)}>{c.maxTotal}</td>
+                <td className={cell} />
+                <td className={cn(cell, num)}>{c.obtained}</td>
+                <td className={cell}>{c.passed ? "Pass" : <span className="text-rose-700">Fail</span>}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <div className="mb-6 grid grid-cols-2 gap-3 text-center sm:grid-cols-4 print:grid-cols-4">
           <div className="rounded-lg border border-slate-300 p-3">

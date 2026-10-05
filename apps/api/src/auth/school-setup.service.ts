@@ -3,7 +3,7 @@ import {
   ConflictException,
   Injectable,
 } from '@nestjs/common';
-import { Role, SubscriptionStatus } from '@prisma/client';
+import { Role, SchoolMode, SubscriptionStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { TRIAL_DAYS, TRIAL_PLAN } from '../platform/plans.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -18,6 +18,8 @@ export interface NewSchool {
   email: string;
   phone?: string;
   password: string;
+  /** Defaults to PHYSICAL. */
+  mode?: SchoolMode;
   /** Defaults to the trial plan. */
   planCode?: string;
   /** Defaults to TRIAL. */
@@ -51,10 +53,14 @@ export class SchoolSetupService {
           city: input.city,
           email: input.email,
           phone: input.phone,
+          mode: input.mode ?? SchoolMode.PHYSICAL,
         },
       });
       await tx.campus.create({
-        data: { schoolId: school.id, name: 'Main campus' },
+        data: {
+          schoolId: school.id,
+          name: input.mode === SchoolMode.ONLINE ? 'Online campus' : 'Main campus',
+        },
       });
       await tx.subscription.create({
         data: {

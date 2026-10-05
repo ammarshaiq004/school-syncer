@@ -1,9 +1,10 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param } from '@nestjs/common';
 import { InvoiceStatus, Role } from '@prisma/client';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Permission, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { dayStart, daysBefore, localToday } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { learningSummary } from '../student/learning-summary.js';
 
 @Controller('parent')
 @Permission('students')
@@ -125,5 +126,50 @@ export class ParentController {
         balance: i.total - i.paid,
       })),
     }));
+  }
+
+  /**
+   * One child's e-school picture: course progress, upcoming live classes and
+   * live attendance, assignments with status and points, and quiz scores.
+   */
+  @Get('children/:studentId/learning')
+  @Permission('elearning')
+  @RequiresFeature('elearning')
+  async learning(@CurrentUser() user: AuthUser, @Param('studentId') studentId: string) {
+    // Only a guardian linked to this child (in this school) gets past here.
+    const link = await this.prisma.studentGuardian.findFirst({
+      where: { studentId, guardian: { userId: user.sub }, student: { schoolId: user.schoolId } },
+      select: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            enrollments: {
+              where: { status: 'ACTIVE' },
+              orderBy: [{ academicYear: { isCurrent: 'desc' } }, { createdAt: 'desc' }],
+              take: 1,
+              select: { sectionId: true, section: { select: { name: true, class: { select: { name: true } } } } },
+            },
+          },
+        },
+      },
+    });
+    if (!link) throw new NotFoundException('Child not found');
+    const { student } = link;
+    const enrollment = student.enrollments[0];
+    const summary = await learningSummary(this.prisma, {
+      id: student.id,
+      schoolId: user.schoolId,
+      sectionId: enrollment?.sectionId ?? null,
+    });
+    return {
+      student: {
+        id: student.id,
+        name: [student.firstName, student.lastName].filter(Boolean).join(' '),
+        class: enrollment ? `${enrollment.section.class.name} ${enrollment.section.name}` : null,
+      },
+      ...summary,
+    };
   }
 }

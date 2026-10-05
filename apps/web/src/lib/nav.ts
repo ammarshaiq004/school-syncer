@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Contact,
   CreditCard,
+  FileCheck,
   GraduationCap,
   HeartHandshake,
   History,
@@ -17,19 +18,23 @@ import {
   Layers,
   LayoutDashboard,
   Library,
+  ListChecks,
   Megaphone,
   MessagesSquare,
+  MonitorPlay,
   NotebookPen,
   Presentation,
   Settings,
   ShieldCheck,
+  Sun,
   TrendingUp,
   UserPlus,
   Users,
+  Video,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import type { Feature, PermissionModule, Role, SessionUser } from "./api";
+import type { Feature, PermissionModule, Role, SchoolMode, SessionUser } from "./api";
 import { can, FEES, hasRole, SETUP, STAFF, TEACHING } from "./session";
 
 /**
@@ -39,8 +44,12 @@ import { can, FEES, hasRole, SETUP, STAFF, TEACHING } from "./session";
  */
 
 export type ViewId = "admin" | "teacher" | "student" | "parent";
-/** School delivery mode (added by PR 3); items with `modes` only show for those modes. */
-export type SchoolMode = "PHYSICAL" | "ONLINE" | "HYBRID";
+/** School delivery mode; items with `modes` only show for those modes. */
+export type { SchoolMode };
+/** Modules that only make sense on a campus (hidden for online-only schools). */
+const ON_CAMPUS: SchoolMode[] = ["PHYSICAL", "HYBRID"];
+/** E-school modules (online and hybrid schools). */
+const E_SCHOOL: SchoolMode[] = ["ONLINE", "HYBRID"];
 
 export interface NavItem {
   href: string;
@@ -60,6 +69,8 @@ export interface NavItem {
   keywords?: string;
   /** Override the label in a particular view (e.g. "Marks" in the teacher view). */
   viewLabels?: Partial<Record<ViewId, string>>;
+  /** Override the label for a school mode (e.g. no "ID cards" for online schools). */
+  modeLabels?: Partial<Record<SchoolMode, string>>;
 }
 
 export interface NavGroup {
@@ -114,7 +125,18 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/homework", label: "Homework", icon: NotebookPen, module: "homework", roles: TEACHING, feature: "homework", views: ["admin", "teacher"], keywords: "assignments diary" },
       { href: "/exams", label: "Exams and results", icon: ClipboardCheck, module: "exams", roles: TEACHING, feature: "exams", views: ["admin", "teacher"], keywords: "marks report cards grades", viewLabels: { teacher: "Exams and marks" } },
       { href: "/promotions", label: "Promotions", icon: TrendingUp, module: "promotions", roles: SETUP, views: ["admin"], keywords: "year end next year" },
-      { href: "/certificates", label: "Certificates and ID cards", icon: Award, module: "certificates", roles: STAFF, feature: "certificates", views: ["admin", "teacher"], keywords: "leaving character id card" },
+      { href: "/certificates", label: "Certificates and ID cards", icon: Award, module: "certificates", roles: STAFF, feature: "certificates", views: ["admin", "teacher"], keywords: "leaving character id card", modeLabels: { ONLINE: "Certificates" } },
+    ],
+  },
+  {
+    id: "eschool",
+    label: "E-school",
+    items: [
+      { href: "/elearning", label: "E-school overview", icon: MonitorPlay, module: "elearning", roles: STAFF, feature: "elearning", modes: E_SCHOOL, views: ["admin", "teacher"], keywords: "online learning elearning today grading" },
+      { href: "/elearning/courses", label: "Courses", icon: BookOpen, module: "elearning", roles: STAFF, feature: "elearning", modes: E_SCHOOL, views: ["admin", "teacher"], keywords: "units lessons videos course builder" },
+      { href: "/elearning/live", label: "Live classes", icon: Video, module: "elearning", roles: STAFF, feature: "elearning", modes: E_SCHOOL, views: ["admin", "teacher"], keywords: "online class jitsi zoom meet schedule" },
+      { href: "/elearning/assignments", label: "Assignments", icon: FileCheck, module: "elearning", roles: STAFF, feature: "elearning", modes: E_SCHOOL, views: ["admin", "teacher"], keywords: "submissions grading marking coursework" },
+      { href: "/elearning/quizzes", label: "Quizzes", icon: ListChecks, module: "elearning", roles: STAFF, feature: "elearning", modes: E_SCHOOL, views: ["admin", "teacher"], keywords: "online test mcq auto marking results" },
     ],
   },
   {
@@ -131,8 +153,8 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "operations",
     label: "Operations",
     items: [
-      { href: "/transport", label: "Transport", icon: Bus, module: "transport", roles: STAFF, feature: "transport", views: ["admin", "teacher"], keywords: "routes vans buses" },
-      { href: "/library", label: "Library", icon: Library, module: "library", roles: STAFF, feature: "library", views: ["admin", "teacher"], keywords: "books loans" },
+      { href: "/transport", label: "Transport", icon: Bus, module: "transport", roles: STAFF, feature: "transport", modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "routes vans buses" },
+      { href: "/library", label: "Library", icon: Library, module: "library", roles: STAFF, feature: "library", modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "books loans" },
     ],
   },
   {
@@ -155,10 +177,20 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    // PR 3 adds the student pages here.
+    // Student workspace.
     id: "learning",
     label: "Learning",
-    items: [],
+    items: [
+      { href: "/student", label: "Today's schedule", icon: Sun, module: "dashboard", roles: ["STUDENT"], views: ["student"], keywords: "today home timetable periods due" },
+      { href: "/student/courses", label: "Courses", icon: BookOpen, module: "elearning", roles: ["STUDENT"], feature: "elearning", modes: E_SCHOOL, views: ["student"], keywords: "lessons videos units" },
+      { href: "/student/live", label: "Live classes", icon: Video, module: "elearning", roles: ["STUDENT"], feature: "elearning", modes: E_SCHOOL, views: ["student"], keywords: "online class join meeting" },
+      { href: "/student/assignments", label: "Assignments", icon: NotebookPen, module: "elearning", roles: ["STUDENT"], feature: "elearning", modes: E_SCHOOL, views: ["student"], keywords: "homework submit work" },
+      { href: "/student/quizzes", label: "Quizzes", icon: ListChecks, module: "elearning", roles: ["STUDENT"], feature: "elearning", modes: E_SCHOOL, views: ["student"], keywords: "test mcq" },
+      { href: "/student/grades", label: "Grades and transcripts", icon: ClipboardCheck, module: "exams", roles: ["STUDENT"], views: ["student"], keywords: "results report card marks scores" },
+      { href: "/student/library", label: "Library", icon: Library, module: "library", roles: ["STUDENT"], feature: "library", modes: ON_CAMPUS, views: ["student"], keywords: "books loans" },
+      { href: "/student/noticeboard", label: "Noticeboard", icon: Megaphone, module: "announcements", roles: ["STUDENT"], views: ["student"], keywords: "notices announcements news" },
+      { href: "/student/attendance", label: "Attendance", icon: CalendarCheck, module: "attendance", roles: ["STUDENT"], views: ["student"], keywords: "present absent days" },
+    ],
   },
   {
     id: "family",
@@ -218,7 +250,7 @@ function visible(item: NavItem, { user, view, mode }: NavContext) {
 export function navForView(ctx: NavContext): NavGroup[] {
   return NAV_GROUPS.map((g) => ({
     ...g,
-    items: g.items.filter((i) => visible(i, ctx)).map((i) => ({ ...i, label: i.viewLabels?.[ctx.view] ?? i.label })),
+    items: g.items.filter((i) => visible(i, ctx)).map((i) => ({ ...i, label: i.viewLabels?.[ctx.view] ?? (ctx.mode ? i.modeLabels?.[ctx.mode] : undefined) ?? i.label })),
   })).filter((g) => g.items.length > 0);
 }
 
@@ -231,7 +263,7 @@ export function allNavItems(user: SessionUser, mode?: SchoolMode | null): (NavIt
       for (const i of g.items) {
         if (seen.has(i.href) || !visible(i, { user, view, mode })) continue;
         seen.add(i.href);
-        out.push({ ...i, group: g.label });
+        out.push({ ...i, label: (mode ? i.modeLabels?.[mode] : undefined) ?? i.label, group: g.label });
       }
     }
   }

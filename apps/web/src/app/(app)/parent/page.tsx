@@ -34,7 +34,8 @@ import {
 import { cn } from "@/lib/cn";
 import { day, rupees } from "@/lib/format";
 import { usePersistedState } from "@/lib/persisted";
-import { useSession } from "@/lib/session";
+import { ChildLearning } from "@/components/student-learning/parent-learning";
+import { useSchoolMode, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 interface Child {
@@ -159,8 +160,12 @@ function ChildOverview({ child: c }: { child: Child }) {
   const overdueBooks = booksOut.filter((b) => b.overdue).length;
   // Hide the van and library parts when the school's plan has no such module (unless there is data anyway).
   const features = useSession().plan?.features;
-  const showTransport = !!c.transport || features?.includes("transport") !== false;
-  const showLibrary = (c.libraryBooks?.length ?? 0) > 0 || features?.includes("library") !== false;
+  const mode = useSchoolMode();
+  const showLearning = mode !== "PHYSICAL" && mode !== null && features?.includes("elearning") !== false;
+  // Online schools have no van or library, so those parts are hidden (unless there is data anyway).
+  const online = mode === "ONLINE";
+  const showTransport = !!c.transport || (!online && features?.includes("transport") !== false);
+  const showLibrary = (c.libraryBooks?.length ?? 0) > 0 || (!online && features?.includes("library") !== false);
   const kpiCols = (3 + Number(showTransport) + Number(showLibrary)) as 3 | 4 | 5;
 
   return (
@@ -411,6 +416,8 @@ function ChildOverview({ child: c }: { child: Child }) {
         </Card>
         )}
       </div>
+
+      {showLearning && <ChildLearning studentId={c.id} name={c.name} />}
     </div>
   );
 }

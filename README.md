@@ -75,14 +75,15 @@ pnpm dev               # API on :4000, web on :3000
 
 ## Demo data
 
-`pnpm db:seed` builds two schools with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Every login's password is `password123`.
+`pnpm db:seed` builds three schools (one hybrid, one physical, one online) with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Every login's password is `password123`.
 
-**City Grammar School** (school code `demo-school`, Lahore): two campuses (Model Town, with Playgroup to Grade 8, and Johar Town, with Playgroup to Grade 5), about 490 students in 300 families with siblings, 47 staff, and from the start of the academic year:
+**City Grammar School** (school code `demo-school`, Lahore, mode Hybrid): two campuses (Model Town, with Playgroup to Grade 8, and Johar Town, with Playgroup to Grade 5), about 490 students in 300 families with siblings, 47 staff, and from the start of the academic year:
 
 - daily attendance with a few chronic absentees, and today's registers partly taken;
 - monthly fee vouchers with sibling, staff-child and merit concessions, payments by cash, bank, JazzCash, Easypaisa and 1Bill, some late or part payments, and a few defaulting families;
 - a published first-term exam with positions and remarks, and a monthly test still being marked;
-- timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, four van routes with about 55 riders, a library of about 70 titles with books out, a few overdue and some small fines owed, a handful of children who left during the year with their leaving certificates, character and enrolment certificates, an admissions pipeline, announcements and a message log.
+- timetables for every section with no teacher clashes, two weeks of homework, finalised and paid payroll for past months, staff attendance and leave, running costs and other income, four van routes with about 55 riders, a library of about 70 titles with books out, a few overdue and some small fines owed, a handful of children who left during the year with their leaving certificates, character and enrolment certificates, an admissions pipeline, announcements and a message log;
+- e-school for Grades 5 to 8: published courses for Mathematics, Science, English, Computer and Social Studies (units with Khan Academy and Crash Course videos, reading notes and links, a draft lesson, and student progress), live classes for Maths, Science and Computer periods two weeks back and a week ahead (past ones ended with attendance and some recordings, a few cancelled, plus an evening doubt-clearing session today), assignments that are graded, being marked, due soon and due later (with late, returned and missing work), and three quizzes per section (one closed and marked, one open now with typed answers waiting for review, one opening soon). Ahmed's whole section (Grade 5 A) has student logins.
 
 | Login | Role |
 | --- | --- |
@@ -95,10 +96,21 @@ pnpm dev               # API on :4000, web on :3000
 | `exams@demo.pk` | Teacher with the custom role "Exam coordinator" (manages exams, views students, no attendance or fees) |
 | `former.staff@demo.pk` | Former teacher whose login is deactivated (sign-in is refused) |
 | `03001234567` | Parent (Imran Khan) with three children |
+| `student@demo.pk` | Student Ahmed Khan, Grade 5 A. Students can also sign in with their admission number as username (Ahmed's is shown on his profile, currently `2019-0001`); his classmates have logins too |
 
-**Bright Future School** (school code `bright-future`, Faisalabad): a smaller single-campus school, to check that schools never see each other's data. Owner login `owner@brightfuture.pk`.
+**Bright Future School** (school code `bright-future`, Faisalabad, mode Physical): a smaller single-campus school with no e-school data, to check that schools never see each other's data. Owner login `owner@brightfuture.pk`.
 
-**SchoolSyncer console** at `/platform/login`: sign in as `admin@schoolsyncer.pk` (owner: everything, including plans, platform staff and module overrides) or `support@schoolsyncer.pk` (support staff: no owner-only actions). Both audit logs have a few weeks of history, and Al-Huda Academy has Library switched on on top of its Starter plan. City Grammar is a paying Growth customer with six months of bills, Bright Future is nine days from the end of its free trial, and five small customer schools (owner login `owner@<school code>.pk`) cover the other states: Al-Huda Academy (active, Starter), Beaconlight School (two bills overdue, so read-only), Green Valley School (suspended, can't sign in), Sunrise Montessori (trial ended, read-only) and Iqra Public School (trial just started).
+**Virtual Learning Academy** (school code `online-academy`, Karachi, mode Online): one "Online campus" with Grades 6 to 10 (one section each, about 70 students), a timetable taught entirely as live classes, courses, assignments and quizzes for every section, fees, exams, attendance and payroll, and no transport or library. Every student has a login (username = admission number). A paying Growth customer.
+
+| Login | Role |
+| --- | --- |
+| `owner@online-academy.pk` | Owner |
+| `principal@online-academy.pk` | Head of academics (principal) |
+| `teacher@online-academy.pk` | Saima Naveed, Mathematics teacher for every grade |
+| `student@online-academy.pk` | Student Ayesha Mehmood, Grade 8 A (or her admission number, currently `2018-0001`) |
+| `03331234567` | Parent (Tariq Mehmood), Ayesha's father |
+
+**SchoolSyncer console** at `/platform/login`: sign in as `admin@schoolsyncer.pk` (owner: everything, including plans, platform staff and module overrides) or `support@schoolsyncer.pk` (support staff: no owner-only actions). Both audit logs have a few weeks of history, and Al-Huda Academy has Library switched on on top of its Starter plan. City Grammar is a paying Growth customer with six months of bills, Virtual Learning Academy with four, Bright Future is nine days from the end of its free trial, and five small customer schools (owner login `owner@<school code>.pk`) cover the other states: Al-Huda Academy (active, Starter), Beaconlight School (two bills overdue, so read-only), Green Valley School (suspended, can't sign in), Sunrise Montessori (trial ended, read-only) and Iqra Public School (trial just started).
 
 `docs/sample-data/` has spreadsheets for trying the student import against the demo school: `new-admissions.xlsx` (40 clean rows) and `new-admissions-with-mistakes.xlsx` (rows with the usual problems).
 

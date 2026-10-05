@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext } from "react";
-import type { AccessLevel, PermissionModule, Role, SessionUser } from "./api";
+import type { AccessLevel, PermissionModule, Role, SchoolMode, SessionUser } from "./api";
 
 export const SessionContext = createContext<SessionUser | null>(null);
 
@@ -37,3 +37,8 @@ export const SETUP: Role[] = ["OWNER", "PRINCIPAL", "ADMIN"];
 export const FEES: Role[] = ["OWNER", "PRINCIPAL", "ADMIN", "ACCOUNTANT"];
 export const TEACHING: Role[] = [...SETUP, "TEACHER", "CLASS_TEACHER"];
 export const STAFF: Role[] = [...FEES, "TEACHER", "CLASS_TEACHER", "STAFF"];
+
+/** The school's delivery mode (PHYSICAL, ONLINE or HYBRID), or null on an older API. */
+export function useSchoolMode(): SchoolMode | null {
+  return useSession().school?.mode ?? null;
+}

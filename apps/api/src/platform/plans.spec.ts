@@ -73,6 +73,10 @@ describe('DEFAULT_PLANS', () => {
       for (const f of plan.features) expect(FEATURES).toHaveProperty(f);
     }
   });
+
+  it('includes e-school on every plan, so an online school can run on any of them', () => {
+    for (const plan of DEFAULT_PLANS) expect(plan.features).toContain('elearning');
+  });
 });
 
 describe('nextInvoiceNumber', () => {

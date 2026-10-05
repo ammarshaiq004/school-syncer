@@ -15,10 +15,17 @@ import { TopBar } from "@/components/shell/topbar";
 import { SupportBanner } from "@/components/platform/support-banner";
 import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
 import { day } from "@/lib/format";
-import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, type ViewId } from "@/lib/nav";
+import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, viewFromPath, type ViewId } from "@/lib/nav";
 import { usePersistedState } from "@/lib/persisted";
 import { FEES, hasRole, SessionContext, STAFF } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
+
+/** True when a parent or student account is on a page outside their own portal. */
+function outsidePortal(user: SessionUser, pathname: string) {
+  if (hasRole(user, STAFF)) return false;
+  const area = viewFromPath(pathname);
+  return !(area === "student" && hasRole(user, ["STUDENT"])) && !(area === "parent" && hasRole(user, ["PARENT"]));
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -34,8 +41,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .then((me) => {
         setUser(me);
         setSignedInAt(Date.now());
-        // Parents only have their own portal.
-        if (!hasRole(me, STAFF) && !pathname.startsWith("/parent")) router.replace("/parent");
+        // Parents and students only have their own portals (an account with both can use either).
+        if (outsidePortal(me, pathname)) {
+          router.replace(hasRole(me, ["STUDENT"]) && !hasRole(me, ["PARENT"]) ? "/student" : "/parent");
+        }
       })
       .catch(() => {
         // An expired or rejected support session ends in this tab only.
@@ -48,7 +57,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const available = useMemo(() => (user ? availableViews(user) : []), [user]);
   const view: ViewId = resolveView(pathname, savedView, available);
-  const groups = useMemo(() => (user ? navForView({ user, view }) : []), [user, view]);
+  const mode = user?.school?.mode ?? null;
+  const groups = useMemo(() => (user ? navForView({ user, view, mode }) : []), [user, view, mode]);
 
   function signOut() {
     setToken(null);
@@ -64,7 +74,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const commands = useMemo<PaletteCommand[]>(() => {
     if (!user) return [];
-    const pages: PaletteCommand[] = allNavItems(user).map((i) => ({
+    const pages: PaletteCommand[] = allNavItems(user, mode).map((i) => ({
       id: `page-${i.href}`,
       label: i.label,
       group: i.group,
@@ -94,9 +104,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return [...pages, ...views, ...actions];
     // switchView/signOut are stable enough for a palette list; rebuild when the user or view changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, available, view]);
+  }, [user, available, view, mode]);
 
-  if (!user) {
+  // Also hold the page while a parent or student is being sent to their portal, so staff pages never load (and call staff APIs).
+  if (!user || outsidePortal(user, pathname)) {
     return (
       <div className="grid min-h-dvh place-items-center bg-bg">
         <div className="flex flex-col items-center gap-4">

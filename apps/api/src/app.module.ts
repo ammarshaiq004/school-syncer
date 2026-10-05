@@ -24,8 +24,10 @@ import { FeesController } from './fees/fees.controller.js';
 import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
 import { PaymentsService } from './fees/payments.service.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { ElearningModule } from './elearning/elearning.module.js';
 import { ParentController } from './parent/parent.controller.js';
 import { StudentsController } from './students/students.controller.js';
+import { StudentController } from './student/student.controller.js';
 import { AcademicYearsController } from './academic-years/academic-years.controller.js';
 import { AuditController } from './audit/audit.controller.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -63,6 +65,7 @@ import { UsersController } from './users/users.controller.js';
     AuthModule,
     PlatformModule,
     NotificationsModule,
+    ElearningModule,
   ],
   controllers: [
     HealthController,
@@ -94,6 +97,7 @@ import { UsersController } from './users/users.controller.js';
     AnnouncementsController,
     DashboardController,
     ParentController,
+    StudentController,
     SubscriptionController,
     PlatformAuthController,
     PlatformController,

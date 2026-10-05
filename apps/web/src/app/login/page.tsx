@@ -28,9 +28,11 @@ export default function LoginPage() {
         },
       });
       setToken(res.accessToken);
-      // Parent-only accounts go straight to their portal.
-      const staff = res.user?.roles.some((r) => (STAFF as string[]).includes(r.role)) ?? true;
-      router.push(staff ? "/dashboard" : "/parent");
+      // Parents and students go straight to their portal.
+      const roles = res.user?.roles.map((r) => r.role) ?? [];
+      const staff = !res.user || roles.some((r) => (STAFF as string[]).includes(r));
+      const studentOnly = roles.includes("STUDENT") && !roles.includes("PARENT");
+      router.push(staff ? "/dashboard" : studentOnly ? "/student" : "/parent");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -41,7 +43,7 @@ export default function LoginPage() {
   return (
     <AuthShell
       title="Sign in to your school"
-      description="Staff and parents use the same page. Ask your school office for the school code."
+      description="Staff, parents and students use the same page. Ask your school office for the school code."
       footer={
         <>
           New school?{" "}
@@ -53,7 +55,14 @@ export default function LoginPage() {
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <TextField label="School code" name="schoolSlug" placeholder="demo-school" autoComplete="organization" required />
-        <TextField label="Email or phone" name="login" placeholder="you@school.pk or 03001234567" autoComplete="username" required />
+        <TextField
+          label="Email, phone or username"
+          name="login"
+          placeholder="you@school.pk or 03001234567"
+          hint="Students use the username from their login slip (usually the admission number)."
+          autoComplete="username"
+          required
+        />
         <TextField label="Password" name="password" type="password" autoComplete="current-password" required />
         {error && <Alert tone="danger">{error}</Alert>}
         <Button type="submit" loading={busy} className="mt-1 w-full">

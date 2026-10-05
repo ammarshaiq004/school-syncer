@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { BookOpen, CalendarRange, Layers, Plus, School, Users } from "lucide-react";
 import { Select } from "@/components/select";
+import { SectionLogins } from "@/components/student/section-logins";
 import {
   Alert,
   Badge,
@@ -129,7 +130,7 @@ export default function ClassesPage() {
             <h2 className="text-base font-semibold text-fg">All classes</h2>
             <p className="mt-0.5 text-[13px] text-fg-muted">
               {classes.data ? `${classes.data.length} classes, ${sectionCount} sections. ` : ""}
-              Click a section to set its subjects and teachers.
+              Click a section to set its subjects and teachers or create student logins.
             </p>
           </div>
         </div>
@@ -318,11 +319,16 @@ export default function ClassesPage() {
       <Drawer
         open={editing !== null}
         onOpenChange={(o) => !o && setEditing(null)}
-        title={editing ? `${editing.label}: subjects and teachers` : "Subjects and teachers"}
+        title={editing ? `${editing.label}: subjects, teachers and logins` : "Subjects and teachers"}
         description="Teachers can enter marks for the subjects they are given here."
         size="lg"
       >
-        {editing && <SectionSubjects key={editing.id} section={editing} onClose={() => setEditing(null)} />}
+        {editing && (
+          <div className="flex flex-col gap-6">
+            <SectionSubjects key={editing.id} section={editing} onClose={() => setEditing(null)} />
+            <SectionLogins key={`logins-${editing.id}`} section={editing} />
+          </div>
+        )}
       </Drawer>
     </div>
   );

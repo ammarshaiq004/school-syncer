@@ -33,6 +33,17 @@ describe('permission catalog', () => {
     expect(DEFAULT_PERMISSIONS[Role.ADMIN].users).toBe('manage');
   });
 
+  it('gives teaching roles e-school manage, parents/students view, accountants and staff none', () => {
+    for (const role of [Role.OWNER, Role.PRINCIPAL, Role.ADMIN, Role.TEACHER, Role.CLASS_TEACHER]) {
+      expect(DEFAULT_PERMISSIONS[role].elearning).toBe('manage');
+    }
+    for (const role of [Role.STUDENT, Role.PARENT]) {
+      expect(DEFAULT_PERMISSIONS[role].elearning).toBe('view');
+    }
+    expect(DEFAULT_PERMISSIONS[Role.ACCOUNTANT].elearning).toBe('none');
+    expect(DEFAULT_PERMISSIONS[Role.STAFF].elearning).toBe('none');
+  });
+
   it('orders levels none < view < manage', () => {
     expect(satisfies('manage', 'view')).toBe(true);
     expect(satisfies('view', 'manage')).toBe(false);

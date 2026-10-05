@@ -23,6 +23,7 @@ import {
   Prisma,
   PrismaClient,
   Role,
+  SchoolMode,
   VehicleType,
 } from '@prisma/client';
 import { DEFAULT_BANDS, positions, studentResult } from '../../src/exams/result-calculator.js';
@@ -31,6 +32,7 @@ import { calculatePayslip, workingDays } from '../../src/hr/payroll-calculator.j
 import { daysBefore } from '../../src/common/dates.js';
 import { ridesDuring } from '../../src/transport/transport-rules.js';
 import { seedCertificates } from './certificates.js';
+import { seedEschool, type EschoolPlan, type EschoolSummary } from './eschool.js';
 import { seedLibrary } from './library.js';
 import {
   BOY_NAMES,
@@ -95,6 +97,10 @@ export interface SchoolPlan {
   phonePrefix: string;
   /** School vans: about this share of families at the route's campus ride one. */
   transport?: { share: number; routes: RoutePlan[] };
+  /** PHYSICAL when left out. An ONLINE school has no rooms, canteen, guards or library. */
+  mode?: SchoolMode;
+  /** Courses, live classes, coursework and student logins (online and hybrid schools). */
+  eschool?: EschoolPlan;
 }
 
 export interface RoutePlan {
@@ -115,6 +121,7 @@ export interface SeedSummary {
   staff: number;
   invoices: number;
   attendanceRecords: number;
+  eschool: EschoolSummary | null;
 }
 
 const DAY = 86_400_000;
@@ -174,8 +181,10 @@ export async function seedSchool(
       email: plan.email,
       lateFeePerDay: 20,
       feeDueDay: 10,
+      mode: plan.mode ?? SchoolMode.PHYSICAL,
     },
   });
+  const online = plan.mode === SchoolMode.ONLINE;
   const schoolId = school.id;
   const year = await prisma.academicYear.create({
     data: {
@@ -346,7 +355,10 @@ export async function seedSchool(
   staff.push(...teachers);
 
   // Support staff, on payroll without much to do in the portal.
-  for (const [title, salary] of [['Office assistant', 28000], ['Security guard', 32000], ['Driver', 35000], ['Cleaner', 25000]] as const) {
+  const support = online
+    ? ([['Office assistant', 28000], ['IT support officer', 55000]] as const)
+    : ([['Office assistant', 28000], ['Security guard', 32000], ['Driver', 35000], ['Cleaner', 25000]] as const);
+  for (const [title, salary] of support) {
     const name = personName(title === 'Cleaner' && rng.chance(0.5));
     const user = await createUser(name, null, [{ role: Role.STAFF, campusId: campuses[0].id }]);
     staff.push({ id: user.id, name, designation: title, department: 'Support', salary, campusId: campuses[0].id, joinedOn: joined() });
@@ -449,7 +461,7 @@ export async function seedSchool(
         periodId: good.p,
         subjectId: subjectId.get(subject)!,
         teacherId: withTeacher ? t.id : null,
-        room: `Room ${s.level + 3}${s.name}`,
+        room: online ? null : `Room ${s.level + 3}${s.name}`,
       });
     }
   }
@@ -574,7 +586,10 @@ export async function seedSchool(
       pending.push({ familyIndex: fi, section: k.section, first: k.first });
     }
   }
-  const students = await prisma.student.createManyAndReturn({ data: studentRows, select: { id: true, firstName: true, lastName: true } });
+  const students = await prisma.student.createManyAndReturn({
+    data: studentRows,
+    select: { id: true, firstName: true, lastName: true, admissionNo: true },
+  });
 
   // Roll numbers in alphabetical order within each section, as registers are kept.
   const bySection = new Map<string, number[]>();
@@ -1156,7 +1171,14 @@ export async function seedSchool(
     const summer = ['05', '06', '07', '08', '09'].includes(period.slice(5, 7));
     for (const campus of campuses) {
       const size = sections.filter((s) => s.campusId === campus.id).length;
-      entry(cat.electricity, EntryKind.EXPENSE, size * (summer ? rng.int(9000, 13000) : rng.int(4000, 6000)), `${period}-0${rng.int(5, 9)}`, 'LESCO', EntryMethod.BANK, campus.id);
+      const power = plan.city === 'Karachi' ? 'K-Electric' : plan.city === 'Faisalabad' ? 'FESCO' : 'LESCO';
+      entry(cat.electricity, EntryKind.EXPENSE, size * (summer ? rng.int(9000, 13000) : rng.int(4000, 6000)), `${period}-0${rng.int(5, 9)}`, power, EntryMethod.BANK, campus.id);
+      if (online) {
+        // An online school's running costs are the office, video and the internet.
+        entry(cat.internet, EntryKind.EXPENSE, 18500, `${period}-12`, 'Nayatel business fibre', EntryMethod.BANK, campus.id);
+        entry(cat.repairs, EntryKind.EXPENSE, rng.int(4000, 15000), `${period}-${rng.int(11, 26)}`, 'Laptop and headset repairs', EntryMethod.CASH, campus.id);
+        continue;
+      }
       if (!summer) entry(cat.gas, EntryKind.EXPENSE, size * rng.int(600, 1200), `${period}-1${rng.int(0, 4)}`, 'SNGPL', EntryMethod.BANK, campus.id);
       entry(cat.internet, EntryKind.EXPENSE, 6500, `${period}-12`, 'PTCL Flash Fiber', EntryMethod.BANK, campus.id);
       entry(cat.cleaning, EntryKind.EXPENSE, rng.int(3000, 6000), `${period}-0${rng.int(2, 8)}`, 'Al-Fatah Store', EntryMethod.CASH, campus.id);
@@ -1165,12 +1187,12 @@ export async function seedSchool(
       if (campus !== campuses[0]) entry(cat.rent, EntryKind.EXPENSE, 180000, `${period}-01`, 'Building owner', EntryMethod.CHEQUE, campus.id);
     }
     entry(cat.stationery, EntryKind.EXPENSE, rng.int(8000, 20000), `${period}-${rng.int(10, 20)}`, 'Urdu Bazar stationers');
-    entry(cat.fuel, EntryKind.EXPENSE, rng.int(25000, 40000), `${period}-${rng.int(15, 25)}`, 'PSO petrol pump');
-    if (period.endsWith('-04') || period.endsWith('-08')) {
+    if (!online) entry(cat.fuel, EntryKind.EXPENSE, rng.int(25000, 40000), `${period}-${rng.int(15, 25)}`, 'PSO petrol pump');
+    if (!online && (period.endsWith('-04') || period.endsWith('-08'))) {
       entry(cat.uniform, EntryKind.INCOME, kids.length * rng.int(300, 600), `${period}-0${rng.int(2, 6)}`, 'Uniform counter');
       entry(cat.forms, EntryKind.INCOME, rng.int(40, 90) * 1000, `${period}-1${rng.int(0, 5)}`, 'Front office');
     }
-    if (period.endsWith('-08')) entry(cat.events, EntryKind.EXPENSE, 65000, `${period}-13`, 'Independence Day function');
+    if (!online && period.endsWith('-08')) entry(cat.events, EntryKind.EXPENSE, 65000, `${period}-13`, 'Independence Day function');
   }
   await prisma.accountEntry.createMany({ data: entries });
 
@@ -1222,8 +1244,15 @@ export async function seedSchool(
     ['Fee submission reminder', 'Kindly clear the fee by the 10th to avoid a late fee of Rs 20 per day.', Audience.SCHOOL, 1],
     ['Dengue awareness', 'Please make sure children wear full sleeves and use mosquito repellent.', Audience.SCHOOL, 15],
   ];
+  const onlineNotices: [string, string, Audience, number][] = [
+    ['Parent-teacher meeting online', 'Parent-teacher meetings will be held on video call on Saturday from 10 am to 1 pm. Class teachers will share the link.', Audience.SCHOOL, 3],
+    ['First term examinations', 'First term exams will be taken online with cameras on. The date sheet is on the noticeboard.', Audience.SCHOOL, 26],
+    ['Check your headset and internet', 'Please test your microphone and camera before the first live class each morning.', Audience.SCHOOL, 15],
+    ['Fee submission reminder', 'Kindly clear the fee by the 10th to avoid a late fee of Rs 20 per day.', Audience.SCHOOL, 1],
+    ['Recordings of live classes', 'Teachers add recordings to past live classes when available, so you can revise anything you missed.', Audience.SCHOOL, 8],
+  ];
   await prisma.announcement.createMany({
-    data: notices.map(([title, body, audience, ago]) => ({
+    data: (online ? onlineNotices : notices).map(([title, body, audience, ago]) => ({
       schoolId,
       title,
       body,
@@ -1249,8 +1278,8 @@ export async function seedSchool(
   }
   await prisma.notificationLog.createMany({ data: logs });
 
-  // ----- Library -----
-  const library = await seedLibrary(
+  // ----- Library (not for online schools) -----
+  const library = online ? { copies: 0, loans: 0 } : await seedLibrary(
     prisma,
     rng,
     schoolId,
@@ -1273,8 +1302,27 @@ export async function seedSchool(
     phone,
   });
 
+  // ----- E-school: logins, courses, live classes, coursework -----
+  const eschool = plan.eschool
+    ? await seedEschool(prisma, plan.eschool, {
+        schoolId,
+        slug: plan.slug,
+        academicYearId: year.id,
+        today,
+        now: new Date(),
+        passwordHash,
+        sections: sections.map((s) => ({ id: s.id, className: s.className, name: s.name, level: s.level })),
+        subjectId,
+        teacherOf: (sectionId, subject) => teacherOf.get(`${sectionId}|${subject}`)?.id,
+        kids: kids.map((k, i) => ({ id: k.id, name: k.name, sectionId: k.sectionId, ability: k.ability, admissionNo: students[i].admissionNo })),
+        demoStudentId: plan.demoFamily ? kids[0].id : undefined,
+        isSchoolDay,
+      })
+    : null;
+
   return {
     schoolId,
+    eschool,
     certificates: certificates.certificates,
     books: library.copies,
     loans: library.loans,

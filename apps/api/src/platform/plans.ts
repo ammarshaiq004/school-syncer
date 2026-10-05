@@ -17,6 +17,7 @@ export const FEATURES = {
   transport: 'Transport',
   library: 'Library',
   certificates: 'Certificates and ID cards',
+  elearning: 'E-school: courses, live classes, assignments and quizzes',
 } as const;
 
 export type Feature = keyof typeof FEATURES;
@@ -40,6 +41,7 @@ export const DEFAULT_PLANS = [
       'homework',
       'reports',
       'certificates',
+      'elearning',
     ] as Feature[],
     sortOrder: 1,
   },
