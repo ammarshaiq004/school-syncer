@@ -20,7 +20,7 @@ import {
 } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
@@ -48,6 +48,7 @@ const updateStudentSchema = createStudentSchema
 type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
 
 @Controller('students')
+@Permission('students')
 @Roles(...STAFF_ROLES)
 export class StudentsController {
   constructor(

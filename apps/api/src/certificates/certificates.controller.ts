@@ -27,6 +27,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { dayStart, localToday } from '../common/dates.js';
 import {
   CurrentUser,
+  Permission,
   Public,
   RequiresFeature,
   Roles,
@@ -65,6 +66,7 @@ const cancelSchema = z.object({ reason: z.string().trim().min(3).max(200) });
 
 /** Certificates (leaving, character, enrolment) and ID cards. */
 @Controller('certificates')
+@Permission('certificates')
 @RequiresFeature('certificates')
 @Roles(...STAFF_ROLES)
 export class CertificatesController {

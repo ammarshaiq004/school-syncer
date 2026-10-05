@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -25,6 +25,7 @@ const campusSchema = z.object({
 type CampusInput = z.infer<typeof campusSchema>;
 
 @Controller('campuses')
+@Permission('campuses')
 export class CampusesController {
   constructor(
     private readonly prisma: PrismaService,

@@ -8,9 +8,11 @@ import {
   CalendarClock,
   ChartColumn,
   ClipboardCheck,
+  Contact,
   CreditCard,
   GraduationCap,
   HeartHandshake,
+  History,
   Landmark,
   Layers,
   LayoutDashboard,
@@ -19,6 +21,7 @@ import {
   MessagesSquare,
   NotebookPen,
   Presentation,
+  Settings,
   ShieldCheck,
   TrendingUp,
   UserPlus,
@@ -26,8 +29,8 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import type { Feature, Role, SessionUser } from "./api";
-import { FEES, hasRole, SETUP, STAFF, TEACHING } from "./session";
+import type { Feature, PermissionModule, Role, SessionUser } from "./api";
+import { can, FEES, hasRole, SETUP, STAFF, TEACHING } from "./session";
 
 /**
  * Sidebar and command-palette navigation, per role view.
@@ -47,6 +50,8 @@ export interface NavItem {
   roles: Role[];
   /** Hidden when the school's plan lacks this feature. */
   feature?: Feature;
+  /** Permission module behind the page; hidden when the user's access to it is "none". */
+  module?: PermissionModule;
   /** Only for these school modes (ignored when the mode is unknown). */
   modes?: SchoolMode[];
   /** Views whose sidebar shows this item. */
@@ -88,61 +93,66 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "overview",
     label: "Overview",
-    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: STAFF, views: ["admin", "teacher"], keywords: "home summary" }],
+    items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "dashboard", roles: STAFF, views: ["admin", "teacher"], keywords: "home summary" }],
   },
   {
     id: "people",
     label: "People",
     items: [
-      { href: "/students", label: "Students", icon: GraduationCap, roles: STAFF, views: ["admin", "teacher"], keywords: "pupils directory profile" },
-      { href: "/admissions", label: "Admissions", icon: UserPlus, roles: SETUP, feature: "admissions", views: ["admin"], keywords: "enquiries applications" },
-      { href: "/users", label: "Users and roles", icon: ShieldCheck, roles: SETUP, views: ["admin"], keywords: "staff logins permissions invite" },
-      { href: "/hr", label: "HR and payroll", icon: BriefcaseBusiness, roles: STAFF, feature: "hr", views: ["admin", "teacher"], keywords: "staff salary payslips leave my leave", viewLabels: { teacher: "My leave and payslips" } },
+      { href: "/students", label: "Students", icon: GraduationCap, module: "students", roles: STAFF, views: ["admin", "teacher"], keywords: "pupils directory profile" },
+      { href: "/admissions", label: "Admissions", icon: UserPlus, module: "admissions", roles: SETUP, feature: "admissions", views: ["admin"], keywords: "enquiries applications" },
+      { href: "/hr", label: "HR and payroll", icon: BriefcaseBusiness, module: "hr", roles: STAFF, feature: "hr", views: ["admin", "teacher"], keywords: "staff salary payslips leave my leave", viewLabels: { teacher: "My leave and payslips" } },
     ],
   },
   {
     id: "academics",
     label: "Academics",
     items: [
-      { href: "/classes", label: "Classes and sections", icon: Layers, roles: SETUP, views: ["admin"], keywords: "grades subjects" },
-      { href: "/attendance", label: "Attendance", icon: CalendarCheck, roles: TEACHING, views: ["admin", "teacher"], keywords: "present absent register" },
-      { href: "/timetable", label: "Timetable", icon: CalendarClock, roles: STAFF, feature: "timetable", views: ["admin", "teacher"], keywords: "periods schedule" },
-      { href: "/homework", label: "Homework", icon: NotebookPen, roles: TEACHING, feature: "homework", views: ["admin", "teacher"], keywords: "assignments diary" },
-      { href: "/exams", label: "Exams and results", icon: ClipboardCheck, roles: TEACHING, feature: "exams", views: ["admin", "teacher"], keywords: "marks report cards grades", viewLabels: { teacher: "Exams and marks" } },
-      { href: "/promotions", label: "Promotions", icon: TrendingUp, roles: SETUP, views: ["admin"], keywords: "year end next year" },
-      { href: "/certificates", label: "Certificates and ID cards", icon: Award, roles: STAFF, feature: "certificates", views: ["admin", "teacher"], keywords: "leaving character id card" },
+      { href: "/classes", label: "Classes and sections", icon: Layers, module: "classes", roles: SETUP, views: ["admin"], keywords: "grades subjects" },
+      { href: "/attendance", label: "Attendance", icon: CalendarCheck, module: "attendance", roles: TEACHING, views: ["admin", "teacher"], keywords: "present absent register" },
+      { href: "/timetable", label: "Timetable", icon: CalendarClock, module: "timetable", roles: STAFF, feature: "timetable", views: ["admin", "teacher"], keywords: "periods schedule" },
+      { href: "/homework", label: "Homework", icon: NotebookPen, module: "homework", roles: TEACHING, feature: "homework", views: ["admin", "teacher"], keywords: "assignments diary" },
+      { href: "/exams", label: "Exams and results", icon: ClipboardCheck, module: "exams", roles: TEACHING, feature: "exams", views: ["admin", "teacher"], keywords: "marks report cards grades", viewLabels: { teacher: "Exams and marks" } },
+      { href: "/promotions", label: "Promotions", icon: TrendingUp, module: "promotions", roles: SETUP, views: ["admin"], keywords: "year end next year" },
+      { href: "/certificates", label: "Certificates and ID cards", icon: Award, module: "certificates", roles: STAFF, feature: "certificates", views: ["admin", "teacher"], keywords: "leaving character id card" },
     ],
   },
   {
     id: "finance",
     label: "Finance",
     items: [
-      { href: "/fees", label: "Fees", icon: Wallet, roles: FEES, feature: "fees", views: ["admin"], keywords: "invoices vouchers defaulters" },
-      { href: "/accounts", label: "Accounts", icon: Landmark, roles: FEES, feature: "accounts", views: ["admin"], keywords: "cashbook expenses income" },
-      { href: "/reports", label: "Reports", icon: ChartColumn, roles: FEES, feature: "reports", views: ["admin"], keywords: "analytics collection" },
-      { href: "/billing", label: "Plan and billing", icon: CreditCard, roles: FEES, views: ["admin"], keywords: "subscription plan" },
+      { href: "/fees", label: "Fees", icon: Wallet, module: "fees", roles: FEES, feature: "fees", views: ["admin"], keywords: "invoices vouchers defaulters" },
+      { href: "/accounts", label: "Accounts", icon: Landmark, module: "accounts", roles: FEES, feature: "accounts", views: ["admin"], keywords: "cashbook expenses income" },
+      { href: "/reports", label: "Reports", icon: ChartColumn, module: "reports", roles: FEES, feature: "reports", views: ["admin"], keywords: "analytics collection" },
+      { href: "/billing", label: "Plan and billing", icon: CreditCard, module: "billing", roles: FEES, views: ["admin"], keywords: "subscription plan" },
     ],
   },
   {
     id: "operations",
     label: "Operations",
     items: [
-      { href: "/transport", label: "Transport", icon: Bus, roles: STAFF, feature: "transport", views: ["admin", "teacher"], keywords: "routes vans buses" },
-      { href: "/library", label: "Library", icon: Library, roles: STAFF, feature: "library", views: ["admin", "teacher"], keywords: "books loans" },
+      { href: "/transport", label: "Transport", icon: Bus, module: "transport", roles: STAFF, feature: "transport", views: ["admin", "teacher"], keywords: "routes vans buses" },
+      { href: "/library", label: "Library", icon: Library, module: "library", roles: STAFF, feature: "library", views: ["admin", "teacher"], keywords: "books loans" },
     ],
   },
   {
     id: "communication",
     label: "Communication",
     items: [
-      { href: "/announcements", label: "Announcements", icon: Megaphone, roles: STAFF, views: ["admin", "teacher"], keywords: "notices news" },
-      { href: "/messages", label: "Message log", icon: MessagesSquare, roles: SETUP, views: ["admin"], keywords: "whatsapp sms notifications" },
+      { href: "/announcements", label: "Announcements", icon: Megaphone, module: "announcements", roles: STAFF, views: ["admin", "teacher"], keywords: "notices news" },
+      { href: "/messages", label: "Message log", icon: MessagesSquare, module: "messages", roles: SETUP, views: ["admin"], keywords: "whatsapp sms notifications" },
     ],
   },
   {
     id: "setup",
     label: "Setup",
-    items: [{ href: "/campuses", label: "Campuses", icon: Building, roles: SETUP, views: ["admin"], keywords: "branches" }],
+    items: [
+      { href: "/staff", label: "Staff directory", icon: Contact, module: "users", roles: SETUP, views: ["admin"], keywords: "users teachers logins invite deactivate reset password" },
+      { href: "/settings/roles", label: "Roles and permissions", icon: ShieldCheck, module: "users", roles: SETUP, views: ["admin"], keywords: "access custom roles matrix" },
+      { href: "/campuses", label: "Campuses", icon: Building, module: "campuses", roles: SETUP, views: ["admin"], keywords: "branches" },
+      { href: "/settings", label: "System settings", icon: Settings, module: "settings", roles: SETUP, views: ["admin"], keywords: "school profile logo fee due day late fee" },
+      { href: "/settings/audit", label: "Audit log", icon: History, module: "audit", roles: SETUP, views: ["admin"], keywords: "activity history changes who changed" },
+    ],
   },
   {
     // PR 3 adds the student pages here.
@@ -198,6 +208,7 @@ function visible(item: NavItem, { user, view, mode }: NavContext) {
   return (
     item.views.includes(view) &&
     hasRole(user, item.roles) &&
+    (!item.module || can(user, item.module)) &&
     (!item.feature || !features || features.includes(item.feature)) &&
     (!item.modes || !mode || item.modes.includes(mode))
   );
@@ -236,4 +247,22 @@ export function activeHref(pathname: string, hrefs: string[]): string | undefine
     }
   }
   return best;
+}
+
+/**
+ * The nav item that owns a path (most specific href, in any view), when the user's role or custom
+ * permissions give it no access. Pages hidden from the nav still open by URL, so the shell uses this
+ * to show a "no access" state instead of a page full of 403s.
+ */
+export function blockedNavItem(user: SessionUser, pathname: string): NavItem | undefined {
+  const items = NAV_GROUPS.flatMap((g) => g.items);
+  const href = activeHref(
+    pathname,
+    items.map((i) => i.href),
+  );
+  if (!href) return undefined;
+  const owners = items.filter((i) => i.href === href);
+  // Any item for this href that the user may see makes the page reachable.
+  if (owners.some((i) => !i.module || can(user, i.module))) return undefined;
+  return owners[0];
 }

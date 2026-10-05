@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { AllowWhenReadOnly, CurrentUser, Roles } from '../common/decorators.js';
+import { AllowWhenReadOnly, CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { FEATURES, monthlyAmount } from './plans.js';
@@ -21,6 +21,7 @@ const choosePlanSchema = z.object({ planCode: z.string().min(1) });
 
 /** The school's own view of its SchoolSyncer plan and bills. */
 @Controller('subscription')
+@Permission('billing')
 @Roles(...SETUP_ROLES, Role.ACCOUNTANT)
 export class SubscriptionController {
   constructor(

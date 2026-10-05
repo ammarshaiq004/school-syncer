@@ -148,3 +148,19 @@ export function nextInvoiceNumber(period: string, last: string | null): string {
   const seq = last?.startsWith(prefix) ? Number(last.slice(prefix.length)) : 0;
   return `${prefix}${String(seq + 1).padStart(4, '0')}`;
 }
+
+/**
+ * Modules a school actually gets: its plan's, plus any the console switched on
+ * for it, minus any switched off. Unknown keys are dropped; plan order is kept.
+ */
+export function effectiveFeatures(
+  planFeatures: readonly string[],
+  added: readonly string[] = [],
+  removed: readonly string[] = [],
+): Feature[] {
+  const off = new Set(removed);
+  const on = new Set([...planFeatures, ...added]);
+  return (Object.keys(FEATURES) as Feature[]).filter(
+    (f) => on.has(f) && !off.has(f),
+  );
+}

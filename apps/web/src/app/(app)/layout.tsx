@@ -3,17 +3,19 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Moon, X } from "lucide-react";
+import { Lock, LogOut, Moon, X } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandLockup, BrandMark } from "@/components/brand";
-import { Alert } from "@/components/kit/feedback";
+import { Alert, EmptyState } from "@/components/kit/feedback";
+import { buttonClass } from "@/components/kit/button";
 import { CommandPalette, type PaletteCommand } from "@/components/kit/command-palette";
 import { Spinner } from "@/components/kit/feedback";
 import { Sidebar, SidebarNav } from "@/components/shell/sidebar";
 import { TopBar } from "@/components/shell/topbar";
-import { api, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
+import { SupportBanner } from "@/components/platform/support-banner";
+import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
 import { day } from "@/lib/format";
-import { allNavItems, availableViews, navForView, resolveView, VIEWS, viewDef, type ViewId } from "@/lib/nav";
+import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, type ViewId } from "@/lib/nav";
 import { usePersistedState } from "@/lib/persisted";
 import { FEES, hasRole, SessionContext, STAFF } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
@@ -35,7 +37,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         // Parents only have their own portal.
         if (!hasRole(me, STAFF) && !pathname.startsWith("/parent")) router.replace("/parent");
       })
-      .catch(() => router.replace("/login"));
+      .catch(() => {
+        // An expired or rejected support session ends in this tab only.
+        if (getSupportToken()) {
+          endSupportSession();
+          router.replace("/support/ended");
+        } else router.replace("/login");
+      });
   }, [router, pathname]);
 
   const available = useMemo(() => (user ? availableViews(user) : []), [user]);
@@ -101,6 +109,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const home = viewDef(view).home;
   const isStaff = hasRole(user, STAFF);
+  const blocked = blockedNavItem(user, pathname);
 
   return (
     <SessionContext.Provider value={user}>
@@ -148,8 +157,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           />
           {user.plan && isStaff && <PlanBanner plan={user.plan} canBill={hasRole(user, FEES)} now={signedInAt} />}
           <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 focus:outline-none md:px-6 md:py-6 print:max-w-none print:p-0">
-            {children}
+            {blocked ? (
+              <EmptyState
+                icon={<Lock />}
+                title={`You don't have access to ${blocked.label}`}
+                description="Your role does not include this part of the school. Ask the school owner or principal if you need it."
+                action={
+                  <Link href={home} className={buttonClass("secondary")}>
+                    Back to the dashboard
+                  </Link>
+                }
+              />
+            ) : (
+              children
+            )}
           </main>
+          {user.support && <SupportBanner adminName={user.support.adminName} />}
         </div>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />

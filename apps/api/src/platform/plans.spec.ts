@@ -1,6 +1,7 @@
 import { SubscriptionStatus } from '@prisma/client';
 import {
   accessFor,
+  effectiveFeatures,
   DEFAULT_PLANS,
   FEATURES,
   monthlyAmount,
@@ -80,5 +81,21 @@ describe('nextInvoiceNumber', () => {
     expect(nextInvoiceNumber('2026-10', 'SS-202610-0041')).toBe(
       'SS-202610-0042',
     );
+  });
+});
+
+describe('effectiveFeatures', () => {
+  it('adds and removes modules on top of the plan', () => {
+    expect(
+      effectiveFeatures(['fees', 'exams'], ['transport'], ['exams']),
+    ).toEqual(['fees', 'transport']);
+  });
+  it('lets a removal win over an addition and drops unknown keys', () => {
+    expect(effectiveFeatures(['fees', 'nope'], ['hr', 'bogus'], ['hr'])).toEqual([
+      'fees',
+    ]);
+  });
+  it('keeps the plan as is without overrides', () => {
+    expect(effectiveFeatures(['library', 'fees'])).toEqual(['fees', 'library']);
   });
 });

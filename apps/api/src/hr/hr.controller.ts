@@ -24,7 +24,7 @@ import { FEE_ROLES, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../common/admin
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart } from '../common/dates.js';
-import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { daysBetween } from './payroll-calculator.js';
@@ -79,6 +79,7 @@ const staffWhere = (schoolId: string): Prisma.UserWhereInput => ({
 });
 
 @Controller('hr')
+@Permission('hr')
 @RequiresFeature('hr')
 export class HrController {
   constructor(
@@ -218,6 +219,8 @@ export class HrController {
   /** Any staff member applies for their own leave. */
   @Post('leave')
   @Roles(...STAFF_ROLES)
+  // Self-service: HR view is enough to apply for your own leave.
+  @Permission('hr', 'view')
   async applyLeave(
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(leaveSchema)) body: z.infer<typeof leaveSchema>,

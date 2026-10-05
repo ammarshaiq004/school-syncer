@@ -3,16 +3,35 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Building, CreditCard, History, LogIn, Receipt, ShieldCheck, Store, UserRound, Users, Wallet } from "lucide-react";
+import {
+  ArrowRight,
+  Ban,
+  Building,
+  ChevronDown,
+  CircleX,
+  CreditCard,
+  History,
+  LifeBuoy,
+  Receipt,
+  RotateCcw,
+  ShieldCheck,
+  SlidersHorizontal,
+  Store,
+  UserRound,
+  Users,
+  Wallet,
+} from "lucide-react";
 import {
   Alert,
   Avatar,
   Button,
   Card,
   CardHeader,
-  ConfirmDialog,
   DataTable,
   DescriptionList,
+  DropdownItem,
+  DropdownMenu,
+  DropdownSeparator,
   EmptyState,
   ErrorState,
   KpiCard,
@@ -30,7 +49,13 @@ import {
   type Column,
   type Tone,
 } from "@/components/ui";
-import { platformApi, setToken } from "@/lib/api";
+import { auditIcon, auditLabel, auditReason } from "@/components/platform/audit-actions";
+import { LifecycleDialog, type LifecycleAction } from "@/components/platform/lifecycle-dialog";
+import { ReasonDialog } from "@/components/platform/reason-dialog";
+import { SchoolFeatures, type FeatureState } from "@/components/platform/school-features";
+import { SchoolPeople } from "@/components/platform/school-people";
+import { isOwner, useConsoleAdmin, when } from "@/components/platform/session";
+import { platformApi } from "@/lib/api";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
 import { monthName, StatusBadge, STATUS_OPTIONS } from "../../status";
@@ -46,42 +71,38 @@ interface Detail {
   campuses: { id: string; name: string }[];
   owners: { id: string; name: string; email: string | null; phone: string | null; lastLoginAt: string | null }[];
   usage: { students: number; staff: number; parents: number; lastLoginAt: string | null };
-  subscription: {
-    plan: { code: string; name: string };
+  subscription:
+    | (FeatureState & {
+        plan: { code: string; name: string };
+        status: string;
+        trialEndsAt: string | null;
+        notes: string | null;
+        monthly: number;
+        access: string;
+        reason: string | null;
+      })
+    | null;
+  invoices: {
+    id: string;
+    number: string;
+    period: string;
+    students: number;
+    amount: number;
     status: string;
-    trialEndsAt: string | null;
-    notes: string | null;
-    monthly: number;
-    access: string;
-    reason: string | null;
-  } | null;
-  invoices: { id: string; number: string; period: string; students: number; amount: number; status: string; dueDate: string; paidAt: string | null; method: string | null }[];
+    dueDate: string;
+    paidAt: string | null;
+    method: string | null;
+  }[];
   history: { id: string; action: string; createdAt: string; details: unknown; admin: { name: string } | null }[];
 }
 
 type Invoice = Detail["invoices"][number];
-
-const ACTIONS: Record<string, string> = {
-  "subscription.update": "Changed the subscription",
-  "school.support_login": "Signed in as the owner for support",
-  "invoice.pay": "Recorded a payment",
-  "invoice.void": "Voided a bill",
-};
-
-const ACTION_ICONS: Record<string, typeof History> = {
-  "subscription.update": CreditCard,
-  "school.support_login": LogIn,
-  "invoice.pay": Wallet,
-  "invoice.void": Receipt,
-};
 
 const ACCESS: Record<string, { tone: Tone; label: string }> = {
   full: { tone: "success", label: "Full access" },
   read_only: { tone: "warning", label: "Read-only" },
   blocked: { tone: "danger", label: "Blocked" },
 };
-
-const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 
 const invoiceColumns: Column<Invoice>[] = [
   { id: "number", header: "Bill", sortValue: (i) => i.number, cell: (i) => <span className="font-mono text-xs">{i.number}</span> },
@@ -110,23 +131,31 @@ export default function SchoolDetailPage() {
   const { id } = useParams<{ id: string }>();
   const school = usePlatformApi<Detail>(`/schools/${id}`);
   const plans = usePlatformApi<{ plans: { code: string; name: string }[] }>("/plans");
+  const admin = useConsoleAdmin();
+  const owner = isOwner(admin);
   const toast = useToast();
-  const [confirmLogin, setConfirmLogin] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [lifecycle, setLifecycle] = useState<LifecycleAction | null>(null);
   const sub = school.data?.subscription;
 
-  async function supportLogin() {
-    setSigningIn(true);
+  /**
+   * Opens the school app in a new tab with a one-hour owner session. The tab is
+   * opened before the request so pop-up blockers allow it; the token travels in
+   * the URL hash, which never reaches a server, and lives only in that tab.
+   */
+  async function startSupport(reason: string) {
+    const tab = window.open("about:blank", "_blank");
     try {
-      const res = await platformApi<{ accessToken: string }>(`/schools/${id}/support-login`, { method: "POST" });
-      setToken(res.accessToken);
-      window.open("/dashboard", "_blank");
-      setConfirmLogin(false);
-      await school.reload();
+      const res = await platformApi<{ accessToken: string; expiresAt: string }>(`/schools/${id}/support-login`, { method: "POST", body: { reason } });
+      const hash = new URLSearchParams({ token: res.accessToken, school: school.data?.name ?? "", expires: res.expiresAt }).toString();
+      const url = `${window.location.origin}/support#${hash}`;
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+      toast.success("Support session started", "It ends after an hour or when you end it in the school tab.");
+      void school.reload();
     } catch (e) {
-      toast.error("Could not sign in as the owner", (e as Error).message);
-    } finally {
-      setSigningIn(false);
+      tab?.close();
+      throw e;
     }
   }
 
@@ -165,9 +194,44 @@ export default function SchoolDetailPage() {
           </>
         }
         actions={
-          <Button variant="secondary" icon={<LogIn />} onClick={() => setConfirmLogin(true)}>
-            Sign in as owner
-          </Button>
+          <>
+            {sub && (
+              <DropdownMenu
+                trigger={
+                  <Button type="button" variant="secondary" iconRight={<ChevronDown />}>
+                    Account status
+                  </Button>
+                }
+              >
+                {sub.status === "SUSPENDED" || sub.status === "CANCELLED" ? (
+                  <DropdownItem icon={<RotateCcw />} onSelect={() => setLifecycle("reactivate")} description="Give the school full access again">
+                    Reactivate
+                  </DropdownItem>
+                ) : (
+                  <DropdownItem icon={<Ban />} onSelect={() => setLifecycle("suspend")} description="Stop access until reactivated">
+                    Suspend
+                  </DropdownItem>
+                )}
+                {sub.status !== "CANCELLED" && (
+                  <>
+                    <DropdownSeparator />
+                    <DropdownItem
+                      icon={<CircleX />}
+                      danger
+                      disabled={!owner}
+                      disabledReason="Only a SchoolSyncer owner can close a school"
+                      onSelect={() => setLifecycle("cancel")}
+                    >
+                      Close school
+                    </DropdownItem>
+                  </>
+                )}
+              </DropdownMenu>
+            )}
+            <Button type="button" icon={<LifeBuoy />} onClick={() => setSupportOpen(true)}>
+              Support session
+            </Button>
+          </>
         }
       />
 
@@ -189,6 +253,8 @@ export default function SchoolDetailPage() {
         aria-label="School sections"
         tabs={[
           { value: "overview", label: "Overview", icon: <Building /> },
+          { value: "people", label: "People", icon: <Users /> },
+          { value: "features", label: "Plan & features", icon: <SlidersHorizontal />, disabled: !sub },
           { value: "subscription", label: "Subscription", icon: <CreditCard /> },
           { value: "invoices", label: "Invoices", icon: <Receipt />, count: s.invoices.length },
           { value: "audit", label: "Audit", icon: <History />, count: s.history.length },
@@ -236,6 +302,23 @@ export default function SchoolDetailPage() {
           </div>
         </TabPanel>
 
+        <TabPanel value="people" className="pt-5">
+          <SchoolPeople schoolId={s.id} schoolName={s.name} campuses={s.campuses} />
+        </TabPanel>
+
+        <TabPanel value="features" className="pt-5">
+          {sub && (
+            <SchoolFeatures
+              key={`${sub.plan.code}:${sub.features.join()}`}
+              schoolId={s.id}
+              planName={sub.plan.name}
+              state={sub}
+              canEdit={owner}
+              onSaved={school.reload}
+            />
+          )}
+        </TabPanel>
+
         <TabPanel value="subscription" className="pt-5">
           <Card className="max-w-2xl">
             <CardHeader title="Subscription" description="Plan, status and trial date for this school." />
@@ -273,13 +356,23 @@ export default function SchoolDetailPage() {
 
         <TabPanel value="audit" className="pt-5">
           <Card>
-            <CardHeader title="History" description="Changes made from the console, newest first." />
+            <CardHeader
+              title="History"
+              description="Changes made from the console, newest first."
+              action={
+                <Link href={`/platform/audit?schoolId=${s.id}`} className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
+                  Full audit log
+                  <ArrowRight className="size-3.5" aria-hidden />
+                </Link>
+              }
+            />
             {s.history.length === 0 ? (
               <EmptyState icon={<History />} title="Nothing yet" description="Console changes to this school are recorded here." compact />
             ) : (
               <ol className="relative flex flex-col gap-5 border-s border-border ps-6">
                 {s.history.map((h) => {
-                  const Icon = ACTION_ICONS[h.action] ?? History;
+                  const Icon = auditIcon(h.action);
+                  const reason = auditReason(h.details);
                   return (
                     <li key={h.id} className="relative">
                       <span
@@ -290,13 +383,14 @@ export default function SchoolDetailPage() {
                       </span>
                       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-sm">
                         <span className="text-fg">
-                          {ACTIONS[h.action] ?? h.action}
+                          {auditLabel(h.action)}
                           {h.admin && <span className="text-fg-muted"> by {h.admin.name}</span>}
                         </span>
                         <time dateTime={h.createdAt} className="text-[13px] tabular-nums text-fg-muted">
                           {when(h.createdAt)}
                         </time>
                       </div>
+                      {reason && <p className="mt-1 text-[13px] text-fg-secondary">Reason: {reason}</p>}
                     </li>
                   );
                 })}
@@ -306,15 +400,18 @@ export default function SchoolDetailPage() {
         </TabPanel>
       </Tabs>
 
-      <ConfirmDialog
-        open={confirmLogin}
-        onOpenChange={setConfirmLogin}
-        title={`Sign in to ${s.name} as its owner?`}
-        description="You get the owner's access for an hour in a new tab. This is recorded in the school's audit log."
-        confirmLabel="Sign in as owner"
-        loading={signingIn}
-        onConfirm={supportLogin}
+      <ReasonDialog
+        open={supportOpen}
+        onOpenChange={setSupportOpen}
+        title={`Start a support session at ${s.name}?`}
+        description="Opens the school app in a new tab, signed in as the owner for one hour. The school's own audit log records it with your reason."
+        confirmLabel="Start session"
+        reasonLabel="Why do you need access?"
+        placeholder="Owner asked for help setting up the October fee vouchers (ticket 4821)"
+        onSubmit={startSupport}
       />
+
+      <LifecycleDialog action={lifecycle} schoolId={s.id} schoolName={s.name} onOpenChange={(o) => !o && setLifecycle(null)} onDone={school.reload} />
     </div>
   );
 }

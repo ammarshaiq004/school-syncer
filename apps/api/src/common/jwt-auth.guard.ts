@@ -8,12 +8,14 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { AuthUser, PlatformUser } from './auth-user.js';
 import { IS_PLATFORM, IS_PUBLIC } from './decorators.js';
+import { UserStatusService } from './user-status.service.js';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
+    private readonly users: UserStatusService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -42,7 +44,23 @@ export class JwtAuthGuard implements CanActivate {
     ]);
     const isPlatformToken = payload.platform === true;
     if (Boolean(platformRoute) !== isPlatformToken) throw new UnauthorizedException();
-    if (!isPlatformToken && typeof payload.schoolId !== 'string') throw new UnauthorizedException();
+    if (!isPlatformToken) {
+      if (typeof payload.schoolId !== 'string' || typeof payload.sub !== 'string') {
+        throw new UnauthorizedException();
+      }
+      // A deactivated (or deleted) user's token stops working within 30 s.
+      const status = await this.users.status(payload.sub, payload.schoolId);
+      if (!status?.active) {
+        throw new UnauthorizedException('This account has been deactivated');
+      }
+      // A support session ends when the staff member who opened it is deactivated.
+      if (payload.support && !(await this.users.adminActive(payload.support.adminId))) {
+        throw new UnauthorizedException('This support session has ended');
+      }
+      // Grants come from the database, not the token, so a role change or
+      // demotion applies within the cache TTL instead of when the token expires.
+      payload.roles = status.roles;
+    }
     request.user = payload;
     return true;
   }

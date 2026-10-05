@@ -2,7 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { InvoiceStatus, Role } from '@prisma/client';
 import { ATTENDANCE_ROLES, campusScope, FEE_ROLES, hasAnyRole, STAFF_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { dayStart, daysBefore, localToday, startOfLocalDay } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -20,6 +20,7 @@ function lastPeriods(period: string, count: number): string[] {
 }
 
 @Controller('dashboard')
+@Permission('dashboard')
 export class DashboardController {
   constructor(private readonly prisma: PrismaService) {}
 

@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { campusScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -65,6 +65,7 @@ type Plan = {
  * back, leaves or graduates, then start the new year in one go.
  */
 @Controller('promotions')
+@Permission('promotions')
 @Roles(...SETUP_ROLES)
 export class PromotionsController {
   constructor(

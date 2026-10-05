@@ -1,7 +1,7 @@
 "use client";
 
-import { createContext, useContext } from "react";
-import type { Role, SessionUser } from "./api";
+import { createContext, useCallback, useContext } from "react";
+import type { AccessLevel, PermissionModule, Role, SessionUser } from "./api";
 
 export const SessionContext = createContext<SessionUser | null>(null);
 
@@ -13,6 +13,25 @@ export function useSession(): SessionUser {
 
 export const hasRole = (user: SessionUser, roles: Role[]) =>
   user.roles.some((r) => roles.includes(r.role));
+
+const LEVEL_RANK: Record<AccessLevel, number> = { none: 0, view: 1, manage: 2 };
+
+/**
+ * True when the user's roles give at least `level` on `module` (default view).
+ * Owners always can. When the API sent no permissions (older session), the role checks alone decide.
+ */
+export function can(user: SessionUser, module: PermissionModule, level: Exclude<AccessLevel, "none"> = "view"): boolean {
+  if (user.roles.some((r) => r.role === "OWNER")) return true;
+  const perms = user.permissions;
+  if (!perms) return true;
+  return LEVEL_RANK[perms[module] ?? "none"] >= LEVEL_RANK[level];
+}
+
+/** `can(module, level)` bound to the signed-in user, for hiding buttons. */
+export function useCan() {
+  const user = useSession();
+  return useCallback((module: PermissionModule, level: Exclude<AccessLevel, "none"> = "view") => can(user, module, level), [user]);
+}
 
 export const SETUP: Role[] = ["OWNER", "PRINCIPAL", "ADMIN"];
 export const FEES: Role[] = ["OWNER", "PRINCIPAL", "ADMIN", "ACCOUNTANT"];

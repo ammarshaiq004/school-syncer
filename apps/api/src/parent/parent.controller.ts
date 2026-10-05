@@ -1,11 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
 import { InvoiceStatus, Role } from '@prisma/client';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { dayStart, daysBefore, localToday } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Controller('parent')
+@Permission('students')
 @Roles(Role.PARENT)
 export class ParentController {
   constructor(private readonly prisma: PrismaService) {}

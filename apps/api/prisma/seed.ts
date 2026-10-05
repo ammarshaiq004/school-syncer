@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import { localToday } from '../src/common/dates.js';
 import { CUSTOMER_SCHOOLS, PLATFORM_ADMIN, seedBilling, seedCustomerSchools, seedPlans, seedPlatformAdmin } from './demo/platform.js';
 import { seedSchool, type SchoolPlan } from './demo/school.js';
+import { SUPPORT_ADMIN, seedPlatformActivity, seedSchoolAccess, seedSupportAdmin } from './demo/access.js';
 
 const prisma = new PrismaClient();
 
@@ -178,6 +179,8 @@ async function deleteSchool(slug: string) {
   const school = await prisma.school.findUnique({ where: { slug } });
   if (!school) return;
   const schoolId = school.id;
+  // Custom roles can't be deleted while held (onDelete Restrict), so free them first.
+  await prisma.roleAssignment.deleteMany({ where: { customRoleId: { not: null }, user: { schoolId } } });
   // These are protected from cascading deletes in normal use, so go first.
   await prisma.payment.deleteMany({ where: { schoolId } });
   await prisma.exam.deleteMany({ where: { schoolId } });
@@ -194,6 +197,7 @@ async function main() {
   const passwordHash = await bcrypt.hash('password123', 12);
   await seedPlans(prisma);
   await seedPlatformAdmin(prisma, passwordHash);
+  await seedSupportAdmin(prisma, passwordHash);
   for (const plan of DEMO_SCHOOLS) {
     if (reset) await deleteSchool(plan.slug);
     else if (await prisma.school.findUnique({ where: { slug: plan.slug } })) {
@@ -210,7 +214,12 @@ async function main() {
   }
   if (reset) for (const c of CUSTOMER_SCHOOLS) await deleteSchool(c.slug);
   await seedCustomerSchools(prisma, passwordHash);
-  console.log(`Seeded ${CUSTOMER_SCHOOLS.length} customer schools and the console login ${PLATFORM_ADMIN.email}`);
+  // Roles, a switched-off login, a module override and audit history; safe to rerun.
+  await seedSchoolAccess(prisma, 'demo-school', passwordHash);
+  await seedPlatformActivity(prisma, PLATFORM_ADMIN.email);
+  console.log(
+    `Seeded ${CUSTOMER_SCHOOLS.length} customer schools and the console logins ${PLATFORM_ADMIN.email} (owner) and ${SUPPORT_ADMIN.email} (support)`,
+  );
 }
 
 await main().finally(() => prisma.$disconnect());

@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Building } from "lucide-react";
-import { Avatar, DataTable, NativeSelect, PageHeader, type Column } from "@/components/ui";
+import { Building, Plus } from "lucide-react";
+import { Avatar, Button, DataTable, NativeSelect, PageHeader, type Column } from "@/components/ui";
+import { CreateSchoolDialog } from "@/components/platform/create-school-dialog";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
 import { StatusBadge, STATUS_OPTIONS } from "../status";
@@ -91,10 +92,19 @@ export default function SchoolsPage() {
   const [status, setStatus] = useState(() => new URLSearchParams(window.location.search).get("status") ?? "");
   const query = new URLSearchParams({ ...(search && { search }), ...(status && { status }) }).toString();
   const schools = usePlatformApi<SchoolRow[]>(`/schools${query ? `?${query}` : ""}`);
+  const [creating, setCreating] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Schools" description="Every school on SchoolSyncer, with its plan, usage and balance." />
+      <PageHeader
+        title="Schools"
+        description="Every school on SchoolSyncer, with its plan, usage and balance."
+        actions={
+          <Button icon={<Plus />} onClick={() => setCreating(true)}>
+            Add school
+          </Button>
+        }
+      />
       <DataTable
         label="Schools"
         columns={columns}
@@ -121,6 +131,7 @@ export default function SchoolsPage() {
         onRowClick={(s) => router.push(`/platform/schools/${s.id}`)}
         getRowLabel={(s) => `Open ${s.name}`}
       />
+      <CreateSchoolDialog open={creating} onOpenChange={setCreating} onCreated={schools.reload} />
     </div>
   );
 }

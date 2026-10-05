@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -42,6 +42,7 @@ const sectionSubjectsSchema = z.object({
 type SectionSubjectsInput = z.infer<typeof sectionSubjectsSchema>;
 
 @Controller('classes')
+@Permission('classes')
 export class ClassesController {
   constructor(
     private readonly prisma: PrismaService,

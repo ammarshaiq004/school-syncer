@@ -1,7 +1,12 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { PlatformInvoiceStatus, StudentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { accessFor, isFeature, type Access, type Feature } from './plans.js';
+import {
+  accessFor,
+  effectiveFeatures,
+  type Access,
+  type Feature,
+} from './plans.js';
 
 export interface SchoolPlan {
   planCode: string;
@@ -50,7 +55,11 @@ export class SubscriptionService {
           planName: sub.plan.name,
           status: sub.status,
           trialEndsAt: sub.trialEndsAt,
-          features: sub.plan.features.filter(isFeature),
+          features: effectiveFeatures(
+            sub.plan.features,
+            sub.featuresAdded,
+            sub.featuresRemoved,
+          ),
           maxStudents: sub.plan.maxStudents,
           maxCampuses: sub.plan.maxCampuses,
           ...accessFor({

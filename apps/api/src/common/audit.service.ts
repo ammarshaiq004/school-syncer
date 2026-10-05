@@ -24,6 +24,10 @@ export class AuditService {
         entityId,
         before: (change.before ?? undefined) as Prisma.InputJsonValue,
         after: (change.after ?? undefined) as Prisma.InputJsonValue,
+        // A support session acts as the owner; record which SchoolSyncer staff member it really was.
+        support: user.support
+          ? { adminId: user.support.adminId, adminName: user.support.adminName }
+          : undefined,
       },
     });
   }

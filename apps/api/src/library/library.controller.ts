@@ -27,7 +27,7 @@ import {
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart, localToday } from '../common/dates.js';
-import { CurrentUser, RequiresFeature, Roles } from '../common/decorators.js';
+import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { dueDate, lateFine, nextAccessionNumbers } from './library-rules.js';
@@ -102,6 +102,7 @@ type LoanRow = Prisma.BookLoanGetPayload<{ include: typeof loanInclude }>;
 
 /** The school library: the catalogue, the issue desk, overdue books and fines. */
 @Controller('library')
+@Permission('library')
 @RequiresFeature('library')
 @Roles(...STAFF_ROLES)
 export class LibraryController {

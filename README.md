@@ -92,11 +92,13 @@ pnpm dev               # API on :4000, web on :3000
 | `admin@demo.pk` | Admin officer, Model Town only |
 | `accountant@demo.pk` | Accountant |
 | `teacher@demo.pk` | Mathematics teacher and a class teacher |
+| `exams@demo.pk` | Teacher with the custom role "Exam coordinator" (manages exams, views students, no attendance or fees) |
+| `former.staff@demo.pk` | Former teacher whose login is deactivated (sign-in is refused) |
 | `03001234567` | Parent (Imran Khan) with three children |
 
 **Bright Future School** (school code `bright-future`, Faisalabad): a smaller single-campus school, to check that schools never see each other's data. Owner login `owner@brightfuture.pk`.
 
-**SchoolSyncer console** at `/platform/login`: sign in as `admin@schoolsyncer.pk`. City Grammar is a paying Growth customer with six months of bills, Bright Future is nine days from the end of its free trial, and five small customer schools (owner login `owner@<school code>.pk`) cover the other states: Al-Huda Academy (active, Starter), Beaconlight School (two bills overdue, so read-only), Green Valley School (suspended, can't sign in), Sunrise Montessori (trial ended, read-only) and Iqra Public School (trial just started).
+**SchoolSyncer console** at `/platform/login`: sign in as `admin@schoolsyncer.pk` (owner: everything, including plans, platform staff and module overrides) or `support@schoolsyncer.pk` (support staff: no owner-only actions). Both audit logs have a few weeks of history, and Al-Huda Academy has Library switched on on top of its Starter plan. City Grammar is a paying Growth customer with six months of bills, Bright Future is nine days from the end of its free trial, and five small customer schools (owner login `owner@<school code>.pk`) cover the other states: Al-Huda Academy (active, Starter), Beaconlight School (two bills overdue, so read-only), Green Valley School (suspended, can't sign in), Sunrise Montessori (trial ended, read-only) and Iqra Public School (trial just started).
 
 `docs/sample-data/` has spreadsheets for trying the student import against the demo school: `new-admissions.xlsx` (40 clean rows) and `new-admissions-with-mistakes.xlsx` (rows with the usual problems).
 

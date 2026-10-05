@@ -66,6 +66,9 @@ model School {
   libraryLoanDays   Int               @default(14)
   libraryFinePerDay Int               @default(5)
   libraryMaxLoans   Int               @default(2)
+
+  customRoles     CustomRole[]
+  rolePermissions BuiltinRolePermission[]
 }
 
 model Campus {
@@ -232,16 +235,68 @@ model User {
 }
 
 // A role held by a user, either school-wide (campusId null) or at one campus.
+// With customRoleId set, `role` is the custom role's baseRole: @Roles guards
+// see the base role, the permission layer uses the custom role's matrix.
 model RoleAssignment {
-  id       String  @id @default(cuid())
-  userId   String
-  role     Role
-  campusId String?
+  id           String  @id @default(cuid())
+  userId       String
+  role         Role
+  campusId     String?
+  customRoleId String?
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  campus Campus? @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campus     Campus?     @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  // Restrict: a custom role cannot be deleted while anyone holds it (DELETE /roles/:id answers 409).
+  customRole CustomRole? @relation(fields: [customRoleId], references: [id], onDelete: Restrict)
 
-  @@unique([userId, role, campusId])
+  // The same base role may be held plainly and through a custom role. The
+  // index is NULLS NOT DISTINCT (set in migration SQL, Postgres 15+), so a
+  // school-wide or plain grant cannot be stored twice either.
+  @@unique([userId, role, campusId, customRoleId])
+  @@index([customRoleId])
+}
+
+// ----- Roles and permissions (module layer under the @Roles ceiling) -----
+//
+// Design: both custom roles and edits to built-in roles store a sparse Json map
+// `{ [module]: "none" | "view" | "manage" }` (see src/common/permissions.ts)
+// rather than one row per (role, module). The matrix is always read whole and
+// cached per school, so one row per role is one cheap read; and modules added
+// by later releases simply fall back to the defaults when absent from the map,
+// with no data migration. Levels are validated by zod on write.
+
+// A school-defined role, e.g. "Exam coordinator". baseRole is a built-in role
+// other than OWNER, PARENT or STUDENT and is what @Roles guards check.
+model CustomRole {
+  id          String   @id @default(cuid())
+  schoolId    String
+  name        String
+  description String?
+  baseRole    Role
+  // Sparse module -> level map; missing modules use the base role's level.
+  permissions Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school      School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  assignments RoleAssignment[]
+
+  @@unique([schoolId, name])
+}
+
+// A school's edits to a built-in role's default matrix (never OWNER, which
+// always has manage everywhere). One row per edited role; absent = defaults.
+model BuiltinRolePermission {
+  id          String   @id @default(cuid())
+  schoolId    String
+  role        Role
+  // Sparse module -> level map overriding DEFAULT_PERMISSIONS[role].
+  permissions Json     @default("{}")
+  updatedAt   DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, role])
 }
 
 model AuditLog {
@@ -253,11 +308,16 @@ model AuditLog {
   entityId  String?
   before    Json?
   after     Json?
+  // Set when the change was made in a support session: { adminId, adminName }
+  // of the SchoolSyncer staff member acting as userId.
+  support   Json?
   createdAt DateTime @default(now())
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, createdAt])
+  @@index([schoolId, entity, createdAt])
+  @@index([schoolId, userId, createdAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -1012,14 +1072,18 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id          String             @id @default(cuid())
-  schoolId    String             @unique
-  planId      String
-  status      SubscriptionStatus @default(TRIAL)
-  trialEndsAt DateTime?
-  notes       String? // SchoolSyncer staff notes, never shown to the school
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id              String             @id @default(cuid())
+  schoolId        String             @unique
+  planId          String
+  status          SubscriptionStatus @default(TRIAL)
+  trialEndsAt     DateTime?
+  notes           String? // SchoolSyncer staff notes, never shown to the school
+  // Per-school feature overrides (keys from src/platform/plans.ts FEATURES).
+  // Effective features = plan.features + featuresAdded - featuresRemoved.
+  featuresAdded   String[]           @default([])
+  featuresRemoved String[]           @default([])
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
@@ -1053,15 +1117,25 @@ model PlatformInvoice {
   @@index([status])
 }
 
+// OWNER can edit plans, platform staff, feature overrides and close schools;
+// SUPPORT can do everything else in the console.
+enum PlatformRole {
+  OWNER
+  SUPPORT
+}
+
 // SchoolSyncer's own staff, who run the platform. Not tied to any school.
 model PlatformAdmin {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
+  id                 String       @id @default(cuid())
+  name               String
+  email              String       @unique
+  passwordHash       String
+  role               PlatformRole @default(SUPPORT)
+  // Set when an owner creates the account or resets its password.
+  mustChangePassword Boolean      @default(false)
+  isActive           Boolean      @default(true)
+  lastLoginAt        DateTime?
+  createdAt          DateTime     @default(now())
 
   auditLogs PlatformAuditLog[]
 }
@@ -1077,6 +1151,9 @@ model PlatformAuditLog {
   admin PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, createdAt])
+  @@index([adminId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
 }
 
 // ----- Transport -----
