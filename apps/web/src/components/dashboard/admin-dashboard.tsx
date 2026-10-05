@@ -563,7 +563,7 @@ export function AdminDashboard() {
 
           {/* Admissions pipeline */}
           {reachable.has("/admissions") && (
-            <Card className="lg:col-span-2">
+            <Card className="lg:col-span-3">
               <CardHeader title="Admissions pipeline" description="Applications at each stage" icon={<UserPlus />} action={<ViewAll href="/admissions" />} />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                 {STAGES.map((stage) => (
@@ -585,7 +585,7 @@ export function AdminDashboard() {
           )}
 
           {/* Students by class */}
-          <Card>
+          <Card className="lg:col-span-2">
             <CardHeader title="Students by class" description="Active enrolments this year" icon={<Users />} action={<ViewAll href="/students" />} />
             <SectionState
               data={s ? (byClass ?? []) : null}
