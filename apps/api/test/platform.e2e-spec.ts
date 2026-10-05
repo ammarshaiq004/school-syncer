@@ -41,6 +41,7 @@ describe('Platform and plans (e2e)', () => {
       data: {
         email: adminEmail,
         name: 'Ops',
+        role: 'OWNER',
         passwordHash: await bcrypt.hash('password123', 4),
       },
     });

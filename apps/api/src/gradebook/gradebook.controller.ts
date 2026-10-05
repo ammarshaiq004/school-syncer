@@ -232,8 +232,13 @@ export class GradebookController {
     const examsOn = plan.features.includes('exams') && perms.exams !== 'none';
     const elearningOn =
       plan.features.includes('elearning') && perms.elearning !== 'none';
+    // Subject teachers enter marks with view access (as on the marks sheet);
+    // anyone else needs exams manage and an admin role.
     const canEditExams =
-      writable && perms.exams === 'manage' && (admin || teachesSubject);
+      writable &&
+      (teachesSubject
+        ? perms.exams !== 'none'
+        : admin && perms.exams === 'manage');
     const canGradeAssignments = writable && perms.elearning === 'manage';
 
     const [enrolled, papers, assignments, quizzes, bandRows] =

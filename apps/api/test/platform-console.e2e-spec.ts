@@ -95,6 +95,11 @@ describe('Platform console (e2e)', () => {
         .set(support)
         .send({ name: 'Nope', email: `nope+${run}@schoolsyncer.test` })
         .expect(403);
+      await request(server)
+        .post('/api/platform/invoices/none/void')
+        .set(support)
+        .send({ reason: 'Billed twice by mistake' })
+        .expect(403);
       await request(server).get('/api/platform/staff').set(schoolA.owner).expect(401);
       const list = await request(server).get('/api/platform/staff').set(owner).expect(200);
       expect(list.body.map((s: { email: string }) => s.email)).toContain(supportEmail);
