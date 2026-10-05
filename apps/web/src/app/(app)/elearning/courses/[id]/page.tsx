@@ -30,6 +30,7 @@ import {
 import { ColorPicker } from "@/components/elearning/courses-create-dialog";
 import { LESSON_KIND_ICON, LessonDialog, type LessonDialogTarget } from "@/components/elearning/courses-lesson-dialog";
 import { CourseProgressPanel } from "@/components/elearning/courses-progress";
+import { formatBytes } from "@/components/elearning/file-upload";
 import { courseColor, LESSON_KIND_LABEL, moveId, sectionName, type CourseDetail, type CourseUnit, type Lesson } from "@/components/elearning/courses-types";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
@@ -292,14 +293,14 @@ function LessonRow({
         <p className="text-[13px] text-fg-muted">
           {LESSON_KIND_LABEL[l.kind]}
           {l.durationMin ? ` · ${l.durationMin} min` : ""}
-          {l.kind === "VIDEO" && !l.embedUrl ? " · opens in a new tab" : ""}
+          {l.file ? ` · ${l.file.filename} (${formatBytes(l.file.size)})` : l.kind === "VIDEO" && !l.embedUrl ? " · opens in a new tab" : ""}
         </p>
       </div>
       <div className="flex items-center gap-1">
-        {l.url && (
-          <Tooltip content="Open link">
+        {(l.file || l.url) && (
+          <Tooltip content={l.file ? "Open file" : "Open link"}>
             <a
-              href={l.url}
+              href={l.file?.url ?? l.url!}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Open ${l.title} in a new tab`}

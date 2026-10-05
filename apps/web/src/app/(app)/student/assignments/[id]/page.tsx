@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ClipboardList, ExternalLink, Link2, MessageSquareText, Paperclip, Pencil, Send } from "lucide-react";
+import { ACCEPT, FileChip, FileUploadField, type FileInfo } from "@/components/elearning/file-upload";
 import { ASSIGNMENT_STATE } from "@/components/student/format";
 import { dateTime, handedInText, scoreTone, timeLeft } from "@/components/student-learning/format";
 import { RichText } from "@/components/student-learning/rich-text";
@@ -28,7 +29,7 @@ import {
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 
-/** One assignment: instructions, hand in or resubmit text and a link, and the grade with feedback. */
+/** One assignment: instructions, hand in or resubmit text, a link or a file, and the grade with feedback. */
 export default function StudentAssignmentPage() {
   const { id } = useParams<{ id: string }>();
   const { data: a, error, errorStatus, reload } = useApi<StudentAssignmentDetail>(`/student/assignments/${id}`);
@@ -85,6 +86,7 @@ export default function StudentAssignmentPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 {a.instructions ? <RichText text={a.instructions} /> : <p className="text-sm text-fg-muted">No written instructions. Check the attachment or ask your teacher.</p>}
+                {a.attachment && <FileChip file={a.attachment} />}
                 {a.attachmentUrl && (
                   <a
                     href={a.attachmentUrl}
@@ -212,6 +214,7 @@ function SubmissionView({ sub }: { sub: StudentSubmission }) {
   return (
     <div className="flex flex-col gap-3">
       {sub.body && <p className="whitespace-pre-line rounded-lg bg-surface-2 p-4 text-sm text-fg">{sub.body}</p>}
+      {sub.file && <FileChip file={sub.file} />}
       {sub.linkUrl && (
         <a href={sub.linkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-fit max-w-full items-center gap-2 text-sm font-medium text-brand hover:underline">
           <Link2 className="size-4 shrink-0" aria-hidden />
@@ -240,6 +243,7 @@ function SubmissionForm({
   const toast = useToast();
   const [body, setBody] = useState(a.submission?.body ?? "");
   const [link, setLink] = useState(a.submission?.linkUrl ?? "");
+  const [file, setFile] = useState<FileInfo | null>(a.submission?.file ?? null);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const linkError = link.trim() && !/^https:\/\/\S+$/i.test(link.trim()) ? "Paste a full link starting with https://" : "";
@@ -248,8 +252,8 @@ function SubmissionForm({
   async function submit(e: FormEvent) {
     e.preventDefault();
     setErr("");
-    if (!body.trim() && !link.trim()) {
-      setErr("Write your answer or paste a link to your work.");
+    if (!body.trim() && !link.trim() && !file) {
+      setErr("Write your answer, upload a file or paste a link to your work.");
       return;
     }
     if (linkError) return;
@@ -257,7 +261,11 @@ function SubmissionForm({
     try {
       await api(`/student/assignments/${a.id}/submission`, {
         method: "PUT",
-        body: { ...(body.trim() ? { body: body.trim() } : {}), ...(link.trim() ? { linkUrl: link.trim() } : {}) },
+        body: {
+          ...(body.trim() ? { body: body.trim() } : {}),
+          ...(link.trim() ? { linkUrl: link.trim() } : {}),
+          fileId: file?.id ?? null,
+        },
       });
       toast.success(a.submission ? "Work resubmitted" : "Work handed in", a.title);
       onSaved();
@@ -281,6 +289,14 @@ function SubmissionForm({
         value={body}
         onChange={(e) => setBody(e.target.value)}
         maxLength={20000}
+      />
+      <FileUploadField
+        label="Upload your work (optional)"
+        endpoint="/student/files"
+        accept={ACCEPT.submission}
+        value={file}
+        onChange={setFile}
+        hint="A photo of your notebook, a PDF or Word file, slides, audio or a short video."
       />
       <TextField
         label="Link to your work (optional)"

@@ -11,7 +11,7 @@ import {
   Put,
   Query,
 } from '@nestjs/common';
-import { Prisma, SubmissionStatus } from '@prisma/client';
+import { FilePurpose, Prisma, SubmissionStatus, type StoredFile } from '@prisma/client';
 import { z } from 'zod';
 import {
   ATTENDANCE_ROLES,
@@ -30,6 +30,7 @@ import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { assignmentState } from '../../student/student-rules.js';
 import { isHttpsUrl } from '../courses/course-rules.js';
+import { FilesService } from '../files/files.service.js';
 import { gradeProblem } from './assignment-rules.js';
 import { fullName, TeachingScopeService } from './teaching-scope.service.js';
 
@@ -42,6 +43,8 @@ const fields = {
   title: z.string().trim().min(2).max(160),
   instructions: z.string().trim().max(20000).nullable().optional(),
   attachmentUrl: httpsUrl.nullable().optional(),
+  /** An uploaded worksheet (POST /elearning/files?purpose=ASSIGNMENT); null removes it. */
+  attachmentId: z.string().min(1).nullable().optional(),
   dueAt: z.coerce.date(),
   maxPoints: z.number().int().min(1).max(1000).optional(),
   allowLate: z.boolean().optional(),
@@ -77,6 +80,7 @@ const summary = {
   subject: { select: { id: true, name: true, code: true } },
   course: { select: { id: true, title: true } },
   createdBy: { select: { id: true, name: true } },
+  attachment: true,
 } satisfies Prisma.AssignmentInclude;
 
 /**
@@ -92,6 +96,7 @@ export class ElearningAssignmentsController {
     private readonly prisma: PrismaService,
     private readonly scope: TeachingScopeService,
     private readonly audit: AuditService,
+    private readonly files: FilesService,
   ) {}
 
   @Get('assignments')
@@ -120,8 +125,9 @@ export class ElearningAssignmentsController {
     });
     const counts = await this.scope.studentCounts(rows.map((r) => r.sectionId));
     const canManage = hasAnyRole(user, ATTENDANCE_ROLES);
-    return rows.map(({ submissions, ...a }) => ({
+    return rows.map(({ submissions, attachment, ...a }) => ({
       ...a,
+      attachment: attachment ? FilesService.view(attachment) : null,
       ...this.stats(submissions, counts.get(a.sectionId) ?? 0),
       canManage,
     }));
@@ -139,6 +145,7 @@ export class ElearningAssignmentsController {
       body.subjectId,
       body.courseId,
     );
+    if (body.attachmentId) await this.files.claim(user, body.attachmentId, FilePurpose.ASSIGNMENT);
     const assignment = await this.prisma.assignment.create({
       data: {
         schoolId: user.schoolId,
@@ -148,6 +155,7 @@ export class ElearningAssignmentsController {
         title: body.title,
         instructions: body.instructions || null,
         attachmentUrl: body.attachmentUrl || null,
+        attachmentId: body.attachmentId || null,
         dueAt: body.dueAt,
         maxPoints: body.maxPoints ?? 100,
         allowLate: body.allowLate ?? true,
@@ -162,7 +170,7 @@ export class ElearningAssignmentsController {
       assignment.id,
       { after: assignment },
     );
-    return assignment;
+    return this.present(assignment);
   }
 
   @Get('assignments/:id')
@@ -177,7 +185,7 @@ export class ElearningAssignmentsController {
       this.scope.studentCounts([a.sectionId]),
     ]);
     return {
-      ...a,
+      ...(await this.present(a)),
       ...this.stats(submissions, counts.get(a.sectionId) ?? 0),
       canManage: hasAnyRole(user, ATTENDANCE_ROLES),
     };
@@ -198,6 +206,10 @@ export class ElearningAssignmentsController {
         before.subjectId,
         body.courseId,
       );
+    const attachmentChanged = body.attachmentId !== undefined && body.attachmentId !== before.attachmentId;
+    if (attachmentChanged && body.attachmentId) {
+      await this.files.claim(user, body.attachmentId, FilePurpose.ASSIGNMENT);
+    }
     if (body.maxPoints !== undefined) {
       const top = await this.prisma.submission.aggregate({
         where: { assignmentId: before.id },
@@ -221,6 +233,7 @@ export class ElearningAssignmentsController {
           body.attachmentUrl === undefined
             ? undefined
             : body.attachmentUrl || null,
+        attachmentId: attachmentChanged ? body.attachmentId || null : undefined,
         dueAt: body.dueAt,
         maxPoints: body.maxPoints,
         allowLate: body.allowLate,
@@ -249,7 +262,8 @@ export class ElearningAssignmentsController {
       assignment.id,
       { before, after: assignment },
     );
-    return assignment;
+    if (attachmentChanged) await this.files.release([before.attachmentId]);
+    return this.present(assignment);
   }
 
   /** Deletes the assignment and every submission. */
@@ -257,7 +271,12 @@ export class ElearningAssignmentsController {
   @Roles(...ATTENDANCE_ROLES)
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const a = await this.inScope(user, id);
+    const work = await this.prisma.submission.findMany({
+      where: { assignmentId: a.id, fileId: { not: null } },
+      select: { fileId: true },
+    });
     await this.prisma.assignment.delete({ where: { id: a.id } });
+    await this.files.release([a.attachmentId, ...work.map((w) => w.fileId)]);
     await this.audit.record(user, 'assignment.delete', 'Assignment', a.id, {
       before: a,
     });
@@ -273,10 +292,13 @@ export class ElearningAssignmentsController {
       this.scope.sectionStudents(a.sectionId),
       this.prisma.submission.findMany({
         where: { assignmentId: a.id },
-        include: { gradedBy: { select: { id: true, name: true } } },
+        include: { gradedBy: { select: { id: true, name: true } }, file: true },
       }),
     ]);
-    const byStudent = new Map(subs.map((s) => [s.studentId, s]));
+    const links = await this.files.links(subs.map((s) => s.file));
+    const byStudent = new Map(
+      subs.map(({ file, ...s }) => [s.studentId, { ...s, file: file ? (links.get(file.id) ?? null) : null }]),
+    );
     const now = new Date();
     const students = enrolled.map(({ rollNo, student }) => {
       const submission = byStudent.get(student.id) ?? null;
@@ -326,7 +348,7 @@ export class ElearningAssignmentsController {
     const tally = (state: string) =>
       students.filter((s) => s.state === state).length;
     return {
-      assignment: a,
+      assignment: await this.present(a),
       students,
       summary: {
         students: enrolled.length,
@@ -459,6 +481,11 @@ export class ElearningAssignmentsController {
       },
     );
     return { ...submission, created: !before };
+  }
+
+  /** The assignment with a fresh link to its uploaded attachment. */
+  private async present<T extends { attachment: StoredFile | null }>(a: T) {
+    return { ...a, attachment: a.attachment ? await this.files.link(a.attachment) : null };
   }
 
   private stats(

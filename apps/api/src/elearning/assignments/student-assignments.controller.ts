@@ -8,7 +8,7 @@ import {
   Param,
   Put,
 } from '@nestjs/common';
-import { Prisma, Role, SubmissionStatus } from '@prisma/client';
+import { FilePurpose, Prisma, Role, SubmissionStatus, type StoredFile } from '@prisma/client';
 import { z } from 'zod';
 import type { AuthUser } from '../../common/auth-user.js';
 import {
@@ -22,6 +22,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveStudent } from '../../student/student-context.js';
 import { assignmentState } from '../../student/student-rules.js';
 import { isHttpsUrl } from '../courses/course-rules.js';
+import { FilesService } from '../files/files.service.js';
 import {
   hoursLeft,
   isLate,
@@ -41,12 +42,16 @@ const submitSchema = z.object({
     .nullable()
     .optional()
     .or(z.literal('')),
+  /** Uploaded work (POST /student/files); null removes it. */
+  fileId: z.string().min(1).nullable().optional(),
 });
 
 const submissionSelect = {
   id: true,
   body: true,
   linkUrl: true,
+  fileId: true,
+  file: true,
   submittedAt: true,
   isLate: true,
   status: true,
@@ -81,7 +86,10 @@ function visible<T extends Sub>(s: T | null | undefined) {
 @Permission('elearning', 'view')
 @RequiresFeature('elearning')
 export class StudentAssignmentsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly files: FilesService,
+  ) {}
 
   @Get('assignments')
   async list(@CurrentUser() user: AuthUser) {
@@ -104,6 +112,7 @@ export class StudentAssignmentsController {
         maxPoints: true,
         allowLate: true,
         attachmentUrl: true,
+        attachment: true,
         subject: { select: { id: true, name: true } },
         course: { select: { id: true, title: true } },
         submissions: { where: { studentId: me.id }, select: submissionSelect },
@@ -111,11 +120,13 @@ export class StudentAssignmentsController {
     });
     const now = new Date();
     return rows
-      .map(({ submissions, ...a }) => {
-        const sub = submissions[0] ?? null;
+      .map(({ submissions, attachment, ...a }) => {
+        const found = submissions[0] ?? null;
+        const sub = found ? { ...found, file: found.file ? FilesService.view(found.file) : null } : null;
         const state = assignmentState(a, sub, now);
         return {
           ...a,
+          attachment: attachment ? FilesService.view(attachment) : null,
           state,
           urgency: openUrgency(state, a.dueAt, now),
           hoursLeft: hoursLeft(a.dueAt, now),
@@ -133,16 +144,17 @@ export class StudentAssignmentsController {
     const now = new Date();
     const sub = a.submissions[0] ?? null;
     const block = submitBlock(a, sub, now);
-    const { submissions: _s, ...rest } = a;
+    const { submissions: _s, attachment, ...rest } = a;
     const state = assignmentState(a, sub, now);
     return {
       ...rest,
+      attachment: attachment ? await this.files.link(attachment) : null,
       state,
       urgency: openUrgency(state, a.dueAt, now),
       hoursLeft: hoursLeft(a.dueAt, now),
       canSubmit: block === null,
       blockedReason: block ? SUBMIT_BLOCK_MESSAGE[block] : null,
-      submission: visible(sub),
+      submission: await this.withFileLink(visible(sub)),
     };
   }
 
@@ -162,17 +174,22 @@ export class StudentAssignmentsController {
     const a = await this.find(user, me, id);
     const text = body.body?.trim() || null;
     const link = body.linkUrl || null;
-    if (!text && !link)
+    const existing = a.submissions[0] ?? null;
+    // Omitted keeps the file already handed in; null removes it.
+    const fileId = body.fileId === undefined ? (existing?.fileId ?? null) : body.fileId;
+    if (!text && !link && !fileId)
       throw new BadRequestException(
-        'Write your answer or add a link to your work',
+        'Write your answer, add a link or upload a file of your work',
       );
     const now = new Date();
-    const existing = a.submissions[0] ?? null;
     const block = submitBlock(a, existing, now);
     if (block) throw new ConflictException(SUBMIT_BLOCK_MESSAGE[block]);
+    const fileChanged = fileId !== (existing?.fileId ?? null);
+    if (fileChanged && fileId) await this.files.claim(user, fileId, FilePurpose.SUBMISSION);
     const data = {
       body: text,
       linkUrl: link,
+      fileId,
       submittedAt: now,
       isLate: isLate(a.dueAt, now),
       status: SubmissionStatus.SUBMITTED,
@@ -216,7 +233,13 @@ export class StudentAssignmentsController {
       where: { id: savedId },
       select: submissionSelect,
     });
-    return { ...visible(saved), state: assignmentState(a, saved, now) };
+    if (fileChanged) await this.files.release([existing?.fileId]);
+    return { ...(await this.withFileLink(visible(saved))), state: assignmentState(a, saved, now) };
+  }
+
+  private async withFileLink<T extends { file: StoredFile | null }>(s: T | null) {
+    if (!s) return null;
+    return { ...s, file: s.file ? await this.files.link(s.file) : null };
   }
 
   private async find(
@@ -236,6 +259,7 @@ export class StudentAssignmentsController {
         title: true,
         instructions: true,
         attachmentUrl: true,
+        attachment: true,
         dueAt: true,
         maxPoints: true,
         allowLate: true,

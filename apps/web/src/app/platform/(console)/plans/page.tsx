@@ -32,6 +32,8 @@ interface Plan {
   minimumMonthly: number;
   maxStudents: number | null;
   maxCampuses: number | null;
+  /** E-school upload storage in MB; null = unlimited. */
+  maxStorageMb: number | null;
   features: string[];
   isPublic: boolean;
   schools: number;
@@ -58,6 +60,7 @@ function PlanEditor({ plan, features, onSaved, canEdit }: { plan: Plan; features
           minimumMonthly: draft.minimumMonthly,
           maxStudents: draft.maxStudents,
           maxCampuses: draft.maxCampuses,
+          maxStorageMb: draft.maxStorageMb,
           features: draft.features,
           isPublic: draft.isPublic,
         },
@@ -120,6 +123,20 @@ function PlanEditor({ plan, features, onSaved, canEdit }: { plan: Plan; features
             placeholder="Unlimited"
             value={draft.maxCampuses ?? ""}
             onChange={(e) => setDraft({ ...draft, maxCampuses: numberOrNull(e.target.value) })}
+          />
+          <TextField
+            label="File storage (GB)"
+            type="number"
+            min={0.1}
+            step={0.1}
+            placeholder="Unlimited"
+            hint="Lesson videos, worksheets and student work"
+            wrapperClassName="col-span-2"
+            value={draft.maxStorageMb == null ? "" : Math.round((draft.maxStorageMb / 1024) * 10) / 10}
+            onChange={(e) => {
+              const gb = numberOrNull(e.target.value);
+              setDraft({ ...draft, maxStorageMb: gb == null ? null : Math.max(1, Math.round(gb * 1024)) });
+            }}
           />
         </div>
         <p className="rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-fg-secondary">

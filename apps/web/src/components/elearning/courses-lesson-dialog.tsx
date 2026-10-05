@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { FileText, Link2, CirclePlay, ScrollText, type LucideIcon } from "lucide-react";
 import { Alert, Button, Dialog, SegmentedControl, SelectField, Switch, TextareaField, TextField, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
+import { ACCEPT, FileUploadField, type FileLink } from "./file-upload";
 import { LESSON_KIND_LABEL, type CourseUnit, type Lesson, type LessonKind } from "./courses-types";
 
 export const LESSON_KIND_ICON: Record<LessonKind, LucideIcon> = {
@@ -12,6 +13,8 @@ export const LESSON_KIND_ICON: Record<LessonKind, LucideIcon> = {
   LINK: Link2,
   DOCUMENT: FileText,
 };
+
+type Source = "upload" | "link";
 
 const URL_HINT: Record<Exclude<LessonKind, "TEXT">, string> = {
   VIDEO: "YouTube and Vimeo links play inside the lesson. Other video links open in a new tab.",
@@ -27,7 +30,7 @@ export interface LessonDialogTarget {
   lesson?: Lesson;
 }
 
-/** Add or edit a lesson. Reading lessons need text; the other kinds need an https link. */
+/** Add or edit a lesson. Reading lessons need text; video and document lessons an uploaded file or an https link; link lessons a link. */
 export function LessonDialog({
   target,
   units,
@@ -58,6 +61,10 @@ function LessonForm({ target, units, onClose, onSaved }: { target: LessonDialogT
   const [kind, setKind] = useState<LessonKind>(lesson?.kind ?? "VIDEO");
   const [published, setPublished] = useState(lesson?.isPublished ?? false);
   const [unitId, setUnitId] = useState(target.unitId);
+  const [file, setFile] = useState<FileLink | null>(lesson?.file ?? null);
+  const [source, setSource] = useState<Source>(lesson?.url && !lesson.file ? "link" : "upload");
+  const takesFile = kind === "VIDEO" || kind === "DOCUMENT";
+  const uploading = takesFile && source === "upload";
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -69,11 +76,14 @@ function LessonForm({ target, units, onClose, onSaved }: { target: LessonDialogT
     const body = String(f.get("body") ?? "").trim();
     const duration = String(f.get("durationMin") ?? "").trim();
     if (kind === "TEXT" && !body) return setError("Write the lesson text before saving.");
-    if (kind !== "TEXT" && !url.startsWith("https://")) return setError("Paste a link that starts with https://");
+    if (uploading && !file) return setError(kind === "VIDEO" ? "Upload the video before saving." : "Upload the file before saving.");
+    if (kind !== "TEXT" && !uploading && !url.startsWith("https://")) return setError("Paste a link that starts with https://");
+    if (uploading && kind === "VIDEO" && file?.kind !== "video") return setError("A video lesson needs a video file. Upload an .mp4, .webm or .mov file.");
     const payload = {
       title,
       kind,
-      url: kind === "TEXT" ? (url || null) : url,
+      url: uploading ? null : kind === "TEXT" ? (url || null) : url,
+      fileId: uploading ? file!.id : null,
       body: body || null,
       durationMin: duration ? Number(duration) : null,
       isPublished: published,
@@ -87,7 +97,13 @@ function LessonForm({ target, units, onClose, onSaved }: { target: LessonDialogT
       } else {
         await api(`/elearning/units/${target.unitId}/lessons`, {
           method: "POST",
-          body: { ...payload, url: payload.url ?? undefined, body: payload.body ?? undefined, durationMin: payload.durationMin ?? undefined },
+          body: {
+            ...payload,
+            url: payload.url ?? undefined,
+            fileId: payload.fileId ?? undefined,
+            body: payload.body ?? undefined,
+            durationMin: payload.durationMin ?? undefined,
+          },
         });
         toast.success("Lesson added", title);
       }
@@ -116,7 +132,33 @@ function LessonForm({ target, units, onClose, onSaved }: { target: LessonDialogT
           })}
         />
       </div>
-      {kind !== "TEXT" && (
+      {takesFile && (
+        <SegmentedControl<Source>
+          aria-label="Lesson source"
+          value={source}
+          onChange={setSource}
+          options={[
+            { value: "upload", label: kind === "VIDEO" ? "Upload a video" : "Upload a file" },
+            { value: "link", label: "Paste a link" },
+          ]}
+        />
+      )}
+      {uploading && (
+        <FileUploadField
+          key={kind}
+          label={kind === "VIDEO" ? "Video file" : "Document"}
+          endpoint="/elearning/files?purpose=LESSON"
+          accept={kind === "VIDEO" ? ACCEPT.lessonVideo : ACCEPT.lessonDocument}
+          value={file}
+          onChange={setFile}
+          hint={
+            kind === "VIDEO"
+              ? "MP4, WebM or MOV, up to 500 MB. Students watch it inside the lesson."
+              : "PDF, Word, PowerPoint, Excel, images or audio, up to 25 MB."
+          }
+        />
+      )}
+      {kind !== "TEXT" && !uploading && (
         <TextField
           name="url"
           type="url"

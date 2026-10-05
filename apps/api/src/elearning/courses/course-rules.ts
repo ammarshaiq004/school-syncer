@@ -26,21 +26,28 @@ export function isHttpsUrl(value: string): boolean {
   }
 }
 
-/** What a lesson of each kind needs before it can be saved. */
+/**
+ * What a lesson of each kind needs before it can be saved. Video and document
+ * lessons take a link or an uploaded file (`fileId`); the file wins when both
+ * are set.
+ */
 export function lessonContentProblem(lesson: {
   kind: LessonKind;
   body?: string | null;
   url?: string | null;
+  fileId?: string | null;
 }): string | null {
   const body = lesson.body?.trim();
   const url = lesson.url?.trim();
   if (url && !isHttpsUrl(url)) return 'Links must start with https://';
+  const takesFile = lesson.kind === 'VIDEO' || lesson.kind === 'DOCUMENT';
+  if (lesson.fileId && !takesFile) return 'Only video and document lessons can have an uploaded file';
   if (lesson.kind === 'TEXT') return body ? null : 'A text lesson needs some content';
-  if (!url) {
+  if (!url && !(takesFile && lesson.fileId)) {
     return lesson.kind === 'VIDEO'
-      ? 'A video lesson needs a video link'
+      ? 'A video lesson needs a video link or an uploaded video'
       : lesson.kind === 'DOCUMENT'
-        ? 'A document lesson needs a link to the document'
+        ? 'A document lesson needs a link or an uploaded file'
         : 'A link lesson needs a link';
   }
   return null;

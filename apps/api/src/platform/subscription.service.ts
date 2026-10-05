@@ -16,6 +16,8 @@ export interface SchoolPlan {
   features: Feature[];
   maxStudents: number | null;
   maxCampuses: number | null;
+  /** E-school upload storage in MB; null = unlimited. */
+  maxStorageMb: number | null;
   access: Access;
   reason: string | null;
 }
@@ -62,6 +64,7 @@ export class SubscriptionService {
           ),
           maxStudents: sub.plan.maxStudents,
           maxCampuses: sub.plan.maxCampuses,
+          maxStorageMb: sub.plan.maxStorageMb,
           ...accessFor({
             status: sub.status,
             trialEndsAt: sub.trialEndsAt,
@@ -76,6 +79,7 @@ export class SubscriptionService {
           features: [],
           maxStudents: 0,
           maxCampuses: 0,
+          maxStorageMb: 0,
           access: 'blocked',
           reason:
             'This school has no SchoolSyncer plan. Please contact SchoolSyncer.',

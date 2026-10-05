@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, CircleCheck, Clock, ExternalLink } from "lucide-react";
+import { FileViewer } from "@/components/elearning/file-upload";
 import { LESSON_KIND, shortDate } from "@/components/student-learning/format";
 import { RichText } from "@/components/student-learning/rich-text";
 import type { LessonCompleteResult, StudentCourseDetail, StudentLesson } from "@/components/student-learning/types";
@@ -75,7 +76,9 @@ export default function StudentLessonPage() {
   }
 
   const kind = l ? LESSON_KIND[l.kind] : null;
-  const embed = l?.embedUrl && SAFE_EMBED.test(l.embedUrl) ? l.embedUrl : null;
+  const file = l?.file ?? null;
+  const embed = !file && l?.embedUrl && SAFE_EMBED.test(l.embedUrl) ? l.embedUrl : null;
+  const media = !!file || !!embed;
   const pct = done?.percent ?? course.data?.percent;
 
   return (
@@ -109,13 +112,14 @@ export default function StudentLessonPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="flex min-w-0 flex-col gap-4 lg:col-span-2">
-          <Card padding={embed ? "none" : "lg"} className={cn(embed && "overflow-hidden")}>
+          <Card padding={media ? "none" : "lg"} className={cn(media && "overflow-hidden")}>
             {!l ? (
               <div className="flex flex-col gap-3">
                 <Skeleton className="aspect-video w-full rounded-lg" />
               </div>
             ) : (
               <>
+                {file && <FileViewer file={file} title={l.title} />}
                 {embed && (
                   <div className="aspect-video w-full bg-surface-3">
                     <iframe
@@ -130,8 +134,8 @@ export default function StudentLessonPage() {
                     />
                   </div>
                 )}
-                <div className={cn("flex flex-col gap-4", embed && "p-5")}>
-                  {l.url && !embed && (
+                <div className={cn("flex flex-col gap-4", media && "p-5", media && !l.body && !(l.url && !file) && "hidden")}>
+                  {l.url && !embed && !file && (
                     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface-2 p-4 sm:flex-row sm:items-center">
                       <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary-tint text-brand" aria-hidden>
                         {kind && <kind.icon className="size-5" />}
@@ -156,7 +160,7 @@ export default function StudentLessonPage() {
                   )}
                   {l.body ? (
                     <RichText text={l.body} />
-                  ) : !l.url ? (
+                  ) : !l.url && !file ? (
                     <p className="text-sm text-fg-muted">This lesson has no content yet.</p>
                   ) : null}
                 </div>

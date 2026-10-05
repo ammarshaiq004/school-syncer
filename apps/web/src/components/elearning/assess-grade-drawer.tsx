@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { ArrowRight, ExternalLink, FileText, RotateCcw } from "lucide-react";
 import { Alert, Avatar, Badge, Button, DescriptionList, Drawer, EmptyState, StatusPill, TextareaField, TextField, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
+import { FileChip, FileViewer } from "./file-upload";
 import { WORK_STATE, whenText, type Assignment, type Submission, type SubmissionRow } from "./assess-types";
 
 /**
@@ -135,6 +136,15 @@ function GradePanel({
         ) : (
           <p className="text-sm text-fg-muted">No written answer.</p>
         )}
+        {sub.file &&
+          (sub.file.kind === "image" ? (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <FileViewer file={sub.file} title={`Work handed in: ${sub.file.filename}`} />
+              <FileChip file={sub.file} className="rounded-none border-0 border-t" />
+            </div>
+          ) : (
+            <FileChip file={sub.file} />
+          ))}
         {sub.linkUrl && (
           <a
             href={sub.linkUrl}

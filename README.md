@@ -199,6 +199,10 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, POST | `/certificates`, `/certificates/students/:id/draft`, `/certificates/:id`, `/certificates/:id/cancel` | staff can read; issuing and cancelling need owner, principal or admin |
 | GET | `/certificates/id-cards/students?sectionId=`, `/certificates/id-cards/staff` | staff; staff cards need owner, principal or admin |
 | GET | `/verify/:code` | public: checks a certificate's code |
+| POST | `/elearning/files?purpose=LESSON\|ASSIGNMENT` (multipart `file`), GET `/elearning/files/usage` | teachers and admins |
+| POST | `/student/files` (multipart `file`) | students, for their own work |
+| GET, DELETE | `/files/:id` (a fresh link; delete only while unattached), GET `/files/rules` | whoever may see the lesson, assignment or submission the file belongs to |
+| GET | `/files/:id/content?exp=&sig=` | signed link (local storage only) |
 | GET, POST, PUT | `/promotions`, `/promotions/next-year`, `/promotions/sections/:sectionId`, `/promotions/start-year` | owner, principal or admin; setting up and starting a year need a school-wide role |
 | GET, POST | `/subscription`, POST `/subscription/plan` | owner, principal, admin or accountant; choosing a plan needs the owner |
 | POST, GET | `/platform/auth/login`, `/platform/auth/me` | SchoolSyncer staff (separate login) |
@@ -216,3 +220,14 @@ By default messages are only written to the API log and the in-app message log (
 3. Set `NOTIFY_DRIVER=whatsapp`, `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
 
 Payment gateways post to `/api/payments/webhook/<jazzcash|easypaisa|onebill|card>` with `{ voucherNo, amount, reference }` and an `X-Signature` header holding the HMAC-SHA256 of the raw body, using `PAYMENT_WEBHOOK_SECRET_<PROVIDER>`. Each gateway's own callback format still needs a small adapter once its merchant account is approved.
+
+## File uploads (e-school)
+
+Teachers can upload lesson videos (MP4, WebM, MOV up to 500 MB) and documents (PDF, Office, images, audio up to 25 MB) instead of pasting links, attach a worksheet to an assignment, and students can upload their work (photos, documents, zip, short videos up to 100 MB). Every upload is checked by extension and by its first bytes, so a renamed file is refused, and counts against the plan's storage (Starter 5 GB, Growth 25 GB, Enterprise 100 GB; editable per plan in the console). Files are opened through short-lived signed links (3 hours) that only people who can see the lesson, assignment or submission get. Replaced or removed files are deleted from storage, and uploads never attached to anything are cleaned up after a day.
+
+Storage is chosen with environment variables on the API:
+
+- `STORAGE_DRIVER=local` (default): files go to `STORAGE_LOCAL_DIR` (default `apps/api/uploads`). In Docker, mount that folder as a volume so files survive a container rebuild. `API_PUBLIC_URL` (default `http://localhost:4000`) is the address browsers use to reach the API, used in the signed links.
+- `STORAGE_DRIVER=s3`: any S3-compatible bucket (AWS S3, Cloudflare R2, Wasabi, DigitalOcean Spaces, MinIO). Set `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and for non-AWS services `S3_ENDPOINT` (plus `S3_FORCE_PATH_STYLE=true` for MinIO). Keep the bucket private; downloads use presigned URLs.
+
+Behind a reverse proxy such as nginx, raise the request size limit (`client_max_body_size 500m;`) so large videos can be uploaded.
