@@ -14,3 +14,6 @@ export const roomLabel = (room: string) => (/^room\b/i.test(room.trim()) ? room.
 
 export const fullName = (s: { firstName: string; lastName?: string | null }) =>
   [s.firstName, s.lastName].filter(Boolean).join(" ");
+
+/** "1 student", "3 students". */
+export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;

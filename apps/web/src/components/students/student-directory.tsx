@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, Phone, Plus } from "lucide-react";
-import { Avatar, Button, DataTable, PageHeader, ProgressBar, StatusPill, useToast, type Column } from "@/components/ui";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, FileSpreadsheet, Phone, Plus } from "lucide-react";
+import { Avatar, Button, buttonClass, DataTable, PageHeader, ProgressBar, StatusPill, useToast, type Column } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { downloadCsv } from "@/lib/csv";
@@ -333,6 +333,12 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
       <Button variant="secondary" icon={<Download />} onClick={exportCsv} loading={exporting} disabled={!shown?.total}>
         Export CSV
       </Button>
+      {perms.setup && (
+        <Link href="/students/import" className={buttonClass("secondary")}>
+          <FileSpreadsheet aria-hidden />
+          Import from Excel
+        </Link>
+      )}
       {addButton}
     </>
   );
