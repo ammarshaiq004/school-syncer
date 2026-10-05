@@ -81,7 +81,8 @@ function PlanEditor({ plan, features, onSaved, canEdit }: { plan: Plan; features
           {plan.schools} {plan.schools === 1 ? "school" : "schools"}
         </Badge>
       </div>
-      <div className="mt-3 flex flex-col gap-4">
+      {/* Read-only for support: a disabled fieldset disables every field inside. */}
+      <fieldset disabled={!canEdit} className="mt-3 flex min-w-0 flex-col gap-4">
         <TextField label="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="font-semibold" />
         <TextareaField
           label="Description"
@@ -129,20 +130,22 @@ function PlanEditor({ plan, features, onSaved, canEdit }: { plan: Plan; features
           <legend className="mb-2 text-[13px] font-medium text-fg-secondary">Modules</legend>
           <div className="flex flex-col gap-2">
             {Object.entries(features).map(([key, label]) => (
-              <Checkbox key={key} label={label} checked={draft.features.includes(key)} onCheckedChange={() => toggle(key)} />
+              <Checkbox key={key} label={label} checked={draft.features.includes(key)} onCheckedChange={() => toggle(key)} disabled={!canEdit} />
             ))}
           </div>
         </fieldset>
-        <Switch label="Schools can choose it themselves" checked={draft.isPublic} onCheckedChange={(v) => setDraft({ ...draft, isPublic: v })} />
+        <Switch label="Schools can choose it themselves" checked={draft.isPublic} onCheckedChange={(v) => setDraft({ ...draft, isPublic: v })} disabled={!canEdit} />
         {error && <Alert tone="danger">{error}</Alert>}
-      </div>
-      <div className="mt-auto">
-        <CardFooter className="justify-end">
-          <Button type="button" icon={<Save />} loading={saving} onClick={save} disabled={!canEdit}>
-            Save {draft.name}
-          </Button>
-        </CardFooter>
-      </div>
+      </fieldset>
+      {canEdit && (
+        <div className="mt-auto">
+          <CardFooter className="justify-end">
+            <Button type="button" icon={<Save />} loading={saving} onClick={save}>
+              Save {draft.name}
+            </Button>
+          </CardFooter>
+        </div>
+      )}
     </Card>
   );
 }
