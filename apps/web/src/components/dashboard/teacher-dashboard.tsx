@@ -18,6 +18,7 @@ import {
 } from "@/components/ui";
 import type { Feature } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { roomLabel } from "@/lib/format";
 import { allNavItems } from "@/lib/nav";
 import { useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
@@ -259,7 +260,7 @@ export function TeacherDashboard() {
                           <span className="block truncate text-sm font-medium text-fg">{s.subject}</span>
                           <span className="block truncate text-xs text-fg-muted">
                             {s.section} · {s.period}
-                            {s.room ? ` · Room ${s.room}` : ""}
+                            {s.room ? ` · ${roomLabel(s.room)}` : ""}
                           </span>
                         </span>
                         {current && <StatusPill status="LIVE" label="Now" tone="primary" />}

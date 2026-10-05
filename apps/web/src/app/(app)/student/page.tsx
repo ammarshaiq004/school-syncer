@@ -8,6 +8,7 @@ import { NoticeList } from "@/components/student/notice-list";
 import type { StudentToday, TodayPeriod } from "@/components/student/types";
 import { Badge, Card, CardHeader, EmptyState, ErrorState, Skeleton, SkeletonRows, StatusPill } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { roomLabel } from "@/lib/format";
 import { useSchoolMode, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
@@ -246,7 +247,7 @@ function PeriodRow({ period: p, nowMinutes }: { period: TodayPeriod; nowMinutes:
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-fg">{p.subject ?? p.name}</span>
-        <span className="block truncate text-[13px] text-fg-muted">{[p.name, p.teacher, p.room && `Room ${p.room}`].filter(Boolean).join(". ")}</span>
+        <span className="block truncate text-[13px] text-fg-muted">{[p.name, p.teacher, p.room && roomLabel(p.room)].filter(Boolean).join(". ")}</span>
       </span>
       {current && <Badge tone="primary">Now</Badge>}
     </li>
