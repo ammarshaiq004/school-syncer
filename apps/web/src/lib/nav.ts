@@ -196,6 +196,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Learning",
     items: [
       { href: "/student", label: "Today's schedule", icon: Sun, module: "dashboard", roles: ["STUDENT"], views: ["student"], keywords: "today home timetable periods due" },
+      { href: "/student/timetable", label: "Timetable", icon: CalendarClock, module: "timetable", roles: ["STUDENT"], feature: "timetable", views: ["student"], keywords: "week periods schedule tomorrow classes" },
       { href: "/student/courses", label: "Courses", icon: BookOpen, module: "elearning", roles: ["STUDENT"], feature: "elearning", modes: E_SCHOOL, views: ["student"], keywords: "lessons videos units" },
       { href: "/student/live", label: "Live classes", icon: Video, module: "elearning", roles: ["STUDENT"], feature: "elearning", modes: E_SCHOOL, views: ["student"], keywords: "online class join meeting" },
       { href: "/student/assignments", label: "Assignments", icon: NotebookPen, module: "elearning", roles: ["STUDENT"], feature: "elearning", modes: E_SCHOOL, views: ["student"], keywords: "homework submit work" },

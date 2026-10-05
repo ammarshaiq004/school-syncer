@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CalendarClock, CircleCheck, CirclePlay, History, Video } from "lucide-react";
 import { SCHOOL_TZ } from "@/components/elearning/live-types";
 import { clockTime, LiveClassCard, LiveNowBadge, shortDay, useNow, type LiveCardData } from "@/components/student/live-widgets";
@@ -16,6 +17,8 @@ import {
   PageHeader,
   SkeletonRows,
   StatGrid,
+  TabPanel,
+  Tabs,
   type Column,
 } from "@/components/ui";
 import { useApi } from "@/lib/use-api";
@@ -50,6 +53,7 @@ function dayLabel(iso: string) {
 export default function StudentLivePage() {
   const { data, error, reload } = useApi<StudentLiveData>("/student/live");
   const now = useNow(60_000);
+  const [tab, setTab] = useState("upcoming");
 
   const groups: { key: string; label: string; items: StudentLiveItem[] }[] = [];
   for (const l of data?.upcoming ?? []) {
@@ -152,43 +156,52 @@ export default function StudentLivePage() {
             </Card>
           )}
 
-          <Card>
-            <CardHeader icon={<CalendarClock />} title="Upcoming" description="Times are shown in Pakistan time." />
-            {!data ? (
-              <SkeletonRows rows={3} columns={2} />
-            ) : groups.length === 0 ? (
-              <EmptyState icon={<CalendarClock />} title="No upcoming live classes" description="When your teachers schedule a class, it shows here with a countdown." compact />
-            ) : (
-              <div className="flex flex-col gap-5">
-                {groups.map((g) => (
-                  <section key={g.key} aria-label={g.label} className="flex flex-col gap-2.5">
-                    <h3 className="text-[13px] font-semibold text-fg-secondary">{g.label}</h3>
-                    {g.items.map((l) => (
-                      <LiveClassCard key={l.id} live={toCard(l)} onJoined={reload} />
+          {/* Two tabs so recordings are one tap away instead of a whole week's scroll below the upcoming cards. */}
+          <Tabs
+            tabs={[
+              { value: "upcoming", label: "Upcoming", icon: <CalendarClock />, count: data?.upcoming.length },
+              { value: "past", label: "Past and recordings", icon: <History />, count: data ? recent.length : undefined },
+            ]}
+            value={tab}
+            onValueChange={setTab}
+            aria-label="Live classes"
+          >
+            <TabPanel value="upcoming">
+              <Card>
+                <CardHeader icon={<CalendarClock />} title="Upcoming" description="Times are shown in Pakistan time." />
+                {!data ? (
+                  <SkeletonRows rows={3} columns={2} />
+                ) : groups.length === 0 ? (
+                  <EmptyState icon={<CalendarClock />} title="No upcoming live classes" description="When your teachers schedule a class, it shows here with a countdown." compact />
+                ) : (
+                  <div className="flex flex-col gap-5">
+                    {groups.map((g) => (
+                      <section key={g.key} aria-label={g.label} className="flex flex-col gap-2.5">
+                        <h3 className="text-[13px] font-semibold text-fg-secondary">{g.label}</h3>
+                        {g.items.map((l) => (
+                          <LiveClassCard key={l.id} live={toCard(l)} onJoined={reload} />
+                        ))}
+                      </section>
                     ))}
-                  </section>
-                ))}
-              </div>
-            )}
-          </Card>
+                  </div>
+                )}
+              </Card>
+            </TabPanel>
 
-          <section className="flex flex-col gap-3" aria-labelledby="past-live">
-            <h2 id="past-live" className="flex items-center gap-2 text-lg font-semibold text-fg">
-              <History className="size-5 text-brand" aria-hidden />
-              Past classes
-            </h2>
-            <DataTable
-              label="Past live classes"
-              columns={columns}
-              data={data?.recent ?? null}
-              getRowId={(r) => r.id}
-              defaultSort={{ id: "when", dir: "desc" }}
-              getSearchText={(r) => `${r.title} ${r.subject?.name ?? ""} ${r.teacher?.name ?? ""}`}
-              searchPlaceholder="Search class or subject"
-              pageSize={10}
-              empty={{ title: "No past classes yet", description: "Classes from the last 30 days appear here with their recordings." }}
-            />
-          </section>
+            <TabPanel value="past">
+              <DataTable
+                label="Past live classes"
+                columns={columns}
+                data={data?.recent ?? null}
+                getRowId={(r) => r.id}
+                defaultSort={{ id: "when", dir: "desc" }}
+                getSearchText={(r) => `${r.title} ${r.subject?.name ?? ""} ${r.teacher?.name ?? ""}`}
+                searchPlaceholder="Search class or subject"
+                pageSize={10}
+                empty={{ title: "No past classes yet", description: "Classes from the last 30 days appear here with their recordings." }}
+              />
+            </TabPanel>
+          </Tabs>
         </>
       )}
     </div>
