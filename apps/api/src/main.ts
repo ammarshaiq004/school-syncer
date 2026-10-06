@@ -20,6 +20,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const proxy = trustProxy(process.env.TRUST_PROXY);
   if (proxy !== undefined) app.set('trust proxy', proxy);
+  // Gateway statements arrive as JSON grids, larger than Express's 100kb default.
+  app.useBodyParser('json', { limit: '2mb' });
   app.setGlobalPrefix('api');
   // Comma-separated, e.g. the web portal and the app's web preview.
   const origins = (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((o) => o.trim());

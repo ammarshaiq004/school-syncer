@@ -7,6 +7,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { AllowWhenReadOnly, CurrentUser, Permission, Public, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { easypaisaConfirm } from './gateways/easypaisa.js';
+import { jazzcashIpnAck } from './gateways/jazzcash.js';
 import type { CheckoutAction } from './gateways/gateway-types.js';
 import { onebillAuthorised, onebillInquiryResponse, ONEBILL, type OnebillPaymentRequest } from './gateways/onebill.js';
 import { ONLINE_PROVIDERS, OnlinePaymentsService } from './online-payments.service.js';
@@ -117,6 +118,18 @@ export class PaymentGatewayController {
   async jazzcash(@Body() body: Record<string, unknown>, @Res() res: Response) {
     const checkout = await this.online.jazzcashReturn(body ?? {});
     this.landing(res, checkout?.invoiceId, checkout?.id);
+  }
+
+  /**
+   * JazzCash's instant payment notification: the same signed fields as the
+   * return post, sent server to server, so a payment still lands when the
+   * parent closes the browser before coming back.
+   */
+  @Post('ipn/jazzcash')
+  @HttpCode(200)
+  async jazzcashIpn(@Body() body: Record<string, unknown>) {
+    const checkout = await this.online.jazzcashReturn(body ?? {});
+    return jazzcashIpnAck(this.online.config, Boolean(checkout));
   }
 
   /** Easypaisa's first redirect: hand the auth_token back to Confirm.jsf. */

@@ -1,7 +1,15 @@
 import { createDecipheriv, createHmac } from 'node:crypto';
 import { easypaisaCheckout, easypaisaConfirm, easypaisaHashedRequest, easypaisaInquiryRequest, easypaisaResult } from './easypaisa.js';
 import { enabledProviders, gatewayConfig, pkTimestamp } from './gateway-config.js';
-import { jazzcashCheckout, jazzcashHash, jazzcashMockReturn, jazzcashVerify } from './jazzcash.js';
+import {
+  jazzcashCheckout,
+  jazzcashHash,
+  jazzcashInquiryRequest,
+  jazzcashInquiryResult,
+  jazzcashIpnAck,
+  jazzcashMockReturn,
+  jazzcashVerify,
+} from './jazzcash.js';
 import { onebillAmount, onebillAuthorised, onebillConsumerNumber, onebillInquiryResponse, onebillRupees } from './onebill.js';
 
 const sandbox = gatewayConfig({
@@ -98,6 +106,39 @@ describe('JazzCash', () => {
     ret.pp_ResponseCode = '124';
     ret.pp_SecureHash = jazzcashHash(ret, 'salt123');
     expect(jazzcashVerify(sandbox, ret)?.outcome).toBe('PENDING');
+  });
+});
+
+describe('JazzCash status inquiry and IPN', () => {
+  it('signs the inquiry', () => {
+    const req = jazzcashInquiryRequest(sandbox, 'T123');
+    expect(req.url).toBe('https://sandbox.jazzcash.com.pk/ApplicationAPI/API/PaymentInquiry/Inquire');
+    expect(req.body).toMatchObject({ pp_TxnRefNo: 'T123', pp_MerchantID: 'MC12345', pp_Password: 'pass' });
+    expect(req.body.pp_SecureHash).toBe(jazzcashHash({ pp_TxnRefNo: 'T123', pp_MerchantID: 'MC12345', pp_Password: 'pass' }, 'salt123'));
+  });
+
+  const answer = (fields: Record<string, string>) => ({ ...fields, pp_SecureHash: jazzcashHash(fields, 'salt123') });
+
+  it('reads the payment result from a signed answer', () => {
+    expect(
+      jazzcashInquiryResult(sandbox, 'T123', answer({ pp_ResponseCode: '000', pp_PaymentResponseCode: '121', pp_RetreivalReferenceNo: '991' })),
+    ).toMatchObject({ outcome: 'PAID', providerRef: '991', responseCode: '121' });
+    expect(jazzcashInquiryResult(sandbox, 'T123', answer({ pp_ResponseCode: '000', pp_PaymentResponseCode: '199' }))?.outcome).toBe('FAILED');
+    expect(jazzcashInquiryResult(sandbox, 'T123', answer({ pp_ResponseCode: '000', pp_PaymentResponseCode: '124' }))?.outcome).toBe('PENDING');
+    expect(jazzcashInquiryResult(sandbox, 'T123', answer({ pp_ResponseCode: '110', pp_ResponseMessage: 'Not found' }))?.outcome).toBe('PENDING');
+  });
+
+  it('ignores an unsigned or tampered answer', () => {
+    const ok = answer({ pp_ResponseCode: '000', pp_PaymentResponseCode: '199' });
+    expect(jazzcashInquiryResult(sandbox, 'T123', { ...ok, pp_PaymentResponseCode: '121' })).toBeNull();
+    expect(jazzcashInquiryResult(sandbox, 'T123', { pp_ResponseCode: '000', pp_PaymentResponseCode: '121' })).toBeNull();
+  });
+
+  it('acknowledges an IPN with a signed answer', () => {
+    const ack = jazzcashIpnAck(sandbox, true);
+    expect(ack).toMatchObject({ pp_ResponseCode: '000' });
+    expect(ack.pp_SecureHash).toBe(jazzcashHash(ack, 'salt123'));
+    expect(jazzcashIpnAck(sandbox, false).pp_ResponseCode).toBe('001');
   });
 });
 

@@ -7,7 +7,7 @@ import { lateFine } from './fee-calculator.js';
 import { enabledProviders, gatewayConfig, type GatewayConfig } from './gateways/gateway-config.js';
 import type { CheckoutAction, GatewayResult } from './gateways/gateway-types.js';
 import { easypaisaCheckout, easypaisaInquire, easypaisaResult } from './gateways/easypaisa.js';
-import { jazzcashCheckout, jazzcashMockReturn, jazzcashVerify } from './gateways/jazzcash.js';
+import { jazzcashCheckout, jazzcashInquire, jazzcashMockReturn, jazzcashVerify } from './gateways/jazzcash.js';
 import {
   ONEBILL,
   onebillConsumerNumber,
@@ -247,17 +247,34 @@ export class OnlinePaymentsService {
     return this.apply('JAZZCASH', result);
   }
 
+  /**
+   * Asks the gateway what happened to an open checkout and applies the answer.
+   * Returns null when it could not be asked (mock mode, 1Bill, or the call
+   * failed), so the caller knows nothing new was learned.
+   */
+  async refresh(checkout: OnlinePayment): Promise<OnlinePayment | null> {
+    if (this.config.mode === 'mock' || this.config.mode === 'off') return null;
+    const ask =
+      checkout.provider === PaymentMethod.JAZZCASH
+        ? jazzcashInquire
+        : checkout.provider === PaymentMethod.EASYPAISA
+          ? easypaisaInquire
+          : null;
+    if (!ask) return null;
+    const result = await ask(this.config, checkout.txnRef).catch((error: Error) => {
+      this.logger.warn(`${checkout.provider} inquiry for ${checkout.txnRef} failed: ${error.message}`);
+      return null;
+    });
+    if (!result) return null;
+    return this.apply(checkout.provider as OnlineProvider, result);
+  }
+
   /** Asks Easypaisa what happened to an order, then applies the answer. */
   async easypaisaCheck(orderRef: string) {
     const checkout = await this.prisma.onlinePayment.findFirst({ where: { txnRef: orderRef, provider: PaymentMethod.EASYPAISA } });
     if (!checkout) return null;
     // Mock mode has no Easypaisa to ask; its checkout page settles orders itself.
-    if (this.config.mode === 'mock') return checkout;
-    const result = await easypaisaInquire(this.config, orderRef).catch((error: Error) => {
-      this.logger.warn(`Easypaisa inquiry for ${orderRef} failed: ${error.message}`);
-      return null;
-    });
-    return result ? this.apply('EASYPAISA', result) : checkout;
+    return (await this.refresh(checkout)) ?? checkout;
   }
 
   // ----- 1Bill (1LINK calls these) -----
