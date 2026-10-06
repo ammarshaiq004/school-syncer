@@ -95,6 +95,7 @@ model School {
   reconciliations      PaymentReconciliation[]
   reconciliationIssues ReconciliationIssue[]
   gatewayStatements    GatewayStatement[]
+  paymentGateways      SchoolPaymentGateway[]
 }
 
 model Campus {
@@ -1955,6 +1956,28 @@ model ReconciliationIssue {
 
   @@unique([schoolId, key])
   @@index([schoolId, status, date])
+}
+
+/// A school's own merchant account with a gateway, so parents' payments
+/// settle straight to the school. Schools without one use the server's
+/// account from the environment, if it has one. Secrets are AES-256-GCM
+/// encrypted with PAYMENTS_SECRET_KEY and never sent back to the browser.
+model SchoolPaymentGateway {
+  id          String        @id @default(cuid())
+  schoolId    String
+  provider    PaymentMethod // JAZZCASH, EASYPAISA or ONEBILL
+  enabled     Boolean       @default(true)
+  /// Identifiers that are not secret: merchant id, store id, biller prefix, usernames.
+  settings    Json          @default("{}")
+  /// Encrypted JSON of the secrets (passwords, integrity salt, hash key).
+  secrets     String        @default("")
+  updatedById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, provider])
 }
 
 /// A settlement or transaction report downloaded from a gateway's merchant

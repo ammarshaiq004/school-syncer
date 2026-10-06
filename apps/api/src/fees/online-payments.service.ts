@@ -1,13 +1,22 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { CheckoutStatus, InvoiceStatus, PaymentMethod, Prisma, type OnlinePayment } from '@prisma/client';
 import { randomInt } from 'node:crypto';
 import type { AuthUser } from '../common/auth-user.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { lateFine } from './fee-calculator.js';
 import { enabledProviders, gatewayConfig, type GatewayConfig } from './gateways/gateway-config.js';
+import { onebillAuthorised } from './gateways/onebill.js';
+import {
+  goLiveProblems,
+  openSecrets,
+  secretKey,
+  withSchoolAccounts,
+  type AccountSource,
+  type SchoolAccount,
+} from './gateways/school-accounts.js';
 import type { CheckoutAction, GatewayResult } from './gateways/gateway-types.js';
 import { easypaisaCheckout, easypaisaInquire, easypaisaResult } from './gateways/easypaisa.js';
-import { jazzcashCheckout, jazzcashInquire, jazzcashMockReturn, jazzcashVerify } from './gateways/jazzcash.js';
+import { jazzcashCheckout, jazzcashInquire, jazzcashIpnAck, jazzcashMockReturn, jazzcashVerify } from './gateways/jazzcash.js';
 import {
   ONEBILL,
   onebillConsumerNumber,
@@ -34,23 +43,64 @@ type CheckoutRow = OnlinePayment & { payment?: { receiptNo: string; receivedAt: 
  * message, cash book), through the same PaymentsService the fee counter uses.
  */
 @Injectable()
-export class OnlinePaymentsService {
+export class OnlinePaymentsService implements OnModuleInit {
   private readonly logger = new Logger(OnlinePaymentsService.name);
+  /** The server's settings and account from the environment; schools may have their own (configFor). */
   readonly config: GatewayConfig = gatewayConfig();
+  private readonly cache = new Map<string, { at: number; value: { config: GatewayConfig; sources: Record<OnlineProvider, AccountSource> } }>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly payments: PaymentsService,
   ) {}
 
-  options() {
-    const enabled = enabledProviders(this.config);
+  onModuleInit() {
+    for (const problem of goLiveProblems(this.config)) this.logger.warn(`Online payments (${this.config.mode}): ${problem}`);
+  }
+
+  /** A school's own merchant accounts, decrypted. One that can't be decrypted counts as switched off. */
+  async schoolAccounts(schoolId: string): Promise<SchoolAccount[]> {
+    const rows = await this.prisma.schoolPaymentGateway.findMany({ where: { schoolId } });
+    const key = secretKey();
+    return rows.map((r) => {
+      const provider = r.provider as OnlineProvider;
+      const settings = (r.settings ?? {}) as Record<string, string>;
+      try {
+        if (r.secrets && !key) throw new Error('PAYMENTS_SECRET_KEY is not set');
+        return { provider, enabled: r.enabled, settings, secrets: key ? openSecrets(r.secrets, key) : {} };
+      } catch (error) {
+        this.logger.error(`Cannot read the ${provider} account of school ${schoolId}: ${(error as Error).message}`);
+        return { provider, enabled: false, settings, secrets: {} };
+      }
+    });
+  }
+
+  /** Gateway settings for one school: its own accounts, else the server's. Cached for a minute. */
+  async configFor(schoolId: string) {
+    const hit = this.cache.get(schoolId);
+    if (hit && Date.now() - hit.at < 60_000) return hit.value;
+    const value =
+      this.config.mode === 'mock' || this.config.mode === 'off'
+        ? withSchoolAccounts(this.config, [])
+        : withSchoolAccounts(this.config, await this.schoolAccounts(schoolId));
+    this.cache.set(schoolId, { at: Date.now(), value });
+    return value;
+  }
+
+  /** After a school changes its accounts. */
+  forget(schoolId: string) {
+    this.cache.delete(schoolId);
+  }
+
+  async options(schoolId: string) {
+    const enabled = enabledProviders((await this.configFor(schoolId)).config);
     return { mode: this.config.mode, providers: ONLINE_PROVIDERS.filter((p) => enabled[p]) };
   }
 
   /** Starts a checkout for the full amount due today on one of the parent's vouchers. */
   async start(user: AuthUser, invoiceId: string, provider: OnlineProvider, contact: { mobile?: string } = {}) {
-    if (!enabledProviders(this.config)[provider]) {
+    const { config } = await this.configFor(user.schoolId);
+    if (!enabledProviders(config)[provider]) {
       throw new BadRequestException('This payment method is not set up for your school yet.');
     }
     const invoice = await this.prisma.invoice.findFirst({
@@ -70,7 +120,7 @@ export class OnlinePaymentsService {
 
     const now = new Date();
     const expiresAt = new Date(
-      now.getTime() + (provider === 'ONEBILL' ? this.config.onebillDays * 86_400_000 : this.config.checkoutMinutes * 60_000),
+      now.getTime() + (provider === 'ONEBILL' ? config.onebillDays * 86_400_000 : config.checkoutMinutes * 60_000),
     );
     let checkout: OnlinePayment | undefined;
     for (let attempt = 0; !checkout; attempt++) {
@@ -83,7 +133,7 @@ export class OnlinePaymentsService {
             amount,
             txnRef: txnRef(),
             consumerNumber:
-              provider === 'ONEBILL' ? onebillConsumerNumber(this.config.onebill.billerPrefix, () => randomInt(10) / 10) : null,
+              provider === 'ONEBILL' ? onebillConsumerNumber(config.onebill.billerPrefix, () => randomInt(10) / 10) : null,
             createdById: user.sub,
             expiresAt,
           },
@@ -96,9 +146,9 @@ export class OnlinePaymentsService {
 
     let action: CheckoutAction;
     if (provider === 'ONEBILL') action = { kind: 'onebill', consumerNumber: checkout.consumerNumber! };
-    else if (this.config.mode === 'mock') action = { kind: 'mock' };
+    else if (config.mode === 'mock') action = { kind: 'mock' };
     else if (provider === 'JAZZCASH') {
-      action = jazzcashCheckout(this.config, {
+      action = jazzcashCheckout(config, {
         txnRef: checkout.txnRef,
         amount,
         billReference: invoice.voucherNo,
@@ -107,7 +157,7 @@ export class OnlinePaymentsService {
         expiresAt,
       });
     } else {
-      action = easypaisaCheckout(this.config, { txnRef: checkout.txnRef, amount, expiresAt, mobile: contact.mobile });
+      action = easypaisaCheckout(config, { txnRef: checkout.txnRef, amount, expiresAt, mobile: contact.mobile });
     }
     return { checkout: this.view(checkout), action };
   }
@@ -242,9 +292,20 @@ export class OnlinePaymentsService {
 
   /** JazzCash return post. Null when the post is not a genuine JazzCash response. */
   async jazzcashReturn(body: Record<string, unknown>) {
-    const result = jazzcashVerify(this.config, body);
+    const ref = typeof body.pp_TxnRefNo === 'string' ? body.pp_TxnRefNo : '';
+    const checkout = ref ? await this.prisma.onlinePayment.findFirst({ where: { txnRef: ref, provider: PaymentMethod.JAZZCASH } }) : null;
+    if (!checkout) return null;
+    // Signed with the salt of the account the checkout was sent to.
+    const result = jazzcashVerify((await this.configFor(checkout.schoolId)).config, body);
     if (!result) return null;
     return this.apply('JAZZCASH', result);
+  }
+
+  /** JazzCash IPN: applies the post like a return and answers in JazzCash's signed format. */
+  async jazzcashIpn(body: Record<string, unknown>) {
+    const checkout = await this.jazzcashReturn(body);
+    const config = checkout ? (await this.configFor(checkout.schoolId)).config : this.config;
+    return jazzcashIpnAck(config, Boolean(checkout));
   }
 
   /**
@@ -261,7 +322,8 @@ export class OnlinePaymentsService {
           ? easypaisaInquire
           : null;
     if (!ask) return null;
-    const result = await ask(this.config, checkout.txnRef).catch((error: Error) => {
+    const { config } = await this.configFor(checkout.schoolId);
+    const result = await ask(config, checkout.txnRef).catch((error: Error) => {
       this.logger.warn(`${checkout.provider} inquiry for ${checkout.txnRef} failed: ${error.message}`);
       return null;
     });
@@ -278,6 +340,27 @@ export class OnlinePaymentsService {
   }
 
   // ----- 1Bill (1LINK calls these) -----
+
+  /**
+   * Whether a 1LINK call carries the credentials of the biller this consumer
+   * number belongs to: the school's own 1Bill account or the server's.
+   */
+  async onebillAuthorised(consumerNumber: string | undefined, username?: string, password?: string) {
+    let schoolId: string | undefined;
+    if (consumerNumber) {
+      schoolId = (await this.prisma.onlinePayment.findUnique({ where: { consumerNumber }, select: { schoolId: true } }))?.schoolId;
+    }
+    if (!schoolId && consumerNumber && this.config.mode !== 'mock') {
+      // An unknown number: is it under one of the schools' biller prefixes?
+      const billers = await this.prisma.schoolPaymentGateway.findMany({ where: { provider: PaymentMethod.ONEBILL, enabled: true } });
+      schoolId = billers.find((b) => {
+        const prefix = (b.settings as Record<string, string>).billerPrefix;
+        return prefix && consumerNumber.startsWith(prefix);
+      })?.schoolId;
+    }
+    const config = schoolId ? (await this.configFor(schoolId)).config : this.config;
+    return onebillAuthorised(config, username, password);
+  }
 
   async onebillInquiry(consumerNumber: string | undefined) {
     if (!consumerNumber || !/^\d{5,24}$/.test(consumerNumber)) return onebillInquiryResponse(null, ONEBILL.INVALID_DATA);

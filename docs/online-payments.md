@@ -36,6 +36,34 @@ the app closes the browser and shows the checkout, which refreshes until the gat
 receipt. 1Bill shows the number to pay from a banking app. In mock mode the app shows Approve and Decline buttons in
 place of the gateway.
 
+## Merchant accounts
+
+A gateway takes payments for a school with either:
+
+- **the school's own merchant account**, entered by the owner or an admin in **System settings > Online payments**.
+  Money settles straight to the school. Secrets (passwords, integrity salt, hash key) are encrypted with AES-256-GCM
+  using `PAYMENTS_SECRET_KEY` and never sent back to the browser; leaving a secret box empty keeps the saved value; or
+- **the server's account** from the environment (`JAZZCASH_*`, `EASYPAISA_*`, `ONEBILL_*`), used for every school that
+  has no account of its own for that gateway. Leave these empty if every school must bring its own.
+
+A school can switch a gateway off, which hides it from parents even when the server has an account. Callbacks find the
+right account from the checkout: JazzCash posts are checked with that account's integrity salt, Easypaisa inquiries
+use that store's credentials, and 1LINK calls must carry the credentials of the biller whose prefix starts the
+consumer number. Each school needs its own 1Bill biller prefix.
+
+## Going live
+
+1. Set `PAYMENTS_SECRET_KEY` (32+ characters; `openssl rand -hex 32`). Keep it safe: changing it makes saved school
+   secrets unreadable, and those gateways switch off until they are entered again.
+2. Host the API at a public https address and set `API_PUBLIC_URL` and `WEB_PUBLIC_URL`. Gateways cannot reach
+   localhost. The API logs what is still missing at start-up, and Settings > Online payments shows it to schools.
+3. Run with `PAYMENTS_MODE=sandbox` and the providers' test credentials; pay one voucher with each gateway.
+4. Switch to `PAYMENTS_MODE=live` with the live credentials. Give each gateway the addresses shown under
+   **Addresses to give ...** in Settings > Online payments (return, IPN and 1LINK bill inquiry/payment URLs).
+
+Override hosts only if a provider gives you different ones: `JAZZCASH_CHECKOUT_URL`, `JAZZCASH_INQUIRY_URL`,
+`EASYPAISA_BASE_URL`.
+
 ## Daily reconciliation
 
 Every night (02:00 Pakistan time by default, `RECONCILE_AT`; `off` disables it) the API reconciles the previous day for
