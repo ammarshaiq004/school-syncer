@@ -252,10 +252,12 @@ describe('Payment reconciliation (e2e)', () => {
       return new Response(JSON.stringify(answer), { status: 200, headers: { 'Content-Type': 'application/json' } });
     });
     Object.assign(online, { config: sandbox });
+    online.forget(schoolId);
     try {
       expect(await reconciliation.sweep(schoolId)).toBe(1);
     } finally {
       Object.assign(online, { config: mock });
+      online.forget(schoolId);
       fetchSpy.mockRestore();
     }
     expect(asked[0]).toEqual([sandbox.jazzcash.inquiryUrl, expect.objectContaining({ pp_TxnRefNo: ref.Sana, pp_MerchantID: 'MC1' })]);

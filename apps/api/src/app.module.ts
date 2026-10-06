@@ -21,6 +21,7 @@ import { PayrollController } from './hr/payroll.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { FeesController } from './fees/fees.controller.js';
+import { PaymentAccountsController } from './fees/payment-accounts.controller.js';
 import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
 import { PaymentsService } from './fees/payments.service.js';
 import {
@@ -116,6 +117,7 @@ import { UsersController } from './users/users.controller.js';
     OnlinePaymentsAdminController,
     ParentPaymentsController,
     ReconciliationController,
+    PaymentAccountsController,
     AnnouncementsController,
     DashboardController,
     ParentController,

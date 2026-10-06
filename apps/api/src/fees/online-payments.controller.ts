@@ -7,9 +7,8 @@ import type { AuthUser } from '../common/auth-user.js';
 import { AllowWhenReadOnly, CurrentUser, Permission, Public, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { easypaisaConfirm } from './gateways/easypaisa.js';
-import { jazzcashIpnAck } from './gateways/jazzcash.js';
 import type { CheckoutAction } from './gateways/gateway-types.js';
-import { onebillAuthorised, onebillInquiryResponse, ONEBILL, type OnebillPaymentRequest } from './gateways/onebill.js';
+import { onebillInquiryResponse, ONEBILL, type OnebillPaymentRequest } from './gateways/onebill.js';
 import { ONLINE_PROVIDERS, OnlinePaymentsService } from './online-payments.service.js';
 
 const checkoutSchema = z.object({
@@ -34,8 +33,8 @@ export class ParentPaymentsController {
 
   /** Which gateways the parent can choose, and whether checkouts are simulated. */
   @Get('payment-options')
-  options() {
-    return this.online.options();
+  options(@CurrentUser() user: AuthUser) {
+    return this.online.options(user.schoolId);
   }
 
   // A school behind on its SchoolSyncer bill still collects its own fees.
@@ -128,8 +127,7 @@ export class PaymentGatewayController {
   @Post('ipn/jazzcash')
   @HttpCode(200)
   async jazzcashIpn(@Body() body: Record<string, unknown>) {
-    const checkout = await this.online.jazzcashReturn(body ?? {});
-    return jazzcashIpnAck(this.online.config, Boolean(checkout));
+    return this.online.jazzcashIpn(body ?? {});
   }
 
   /** Easypaisa's first redirect: hand the auth_token back to Confirm.jsf. */
@@ -166,23 +164,25 @@ export class PaymentGatewayController {
 
   @Post('1bill/bill-inquiry')
   @HttpCode(200)
-  onebillInquiry(
+  async onebillInquiry(
     @Headers('username') username: string | undefined,
     @Headers('password') password: string | undefined,
     @Body() body: { consumer_number?: string } | undefined,
   ) {
-    if (!onebillAuthorised(this.online.config, username, password)) return onebillInquiryResponse(null, ONEBILL.SERVICE_FAIL);
+    if (!(await this.online.onebillAuthorised(body?.consumer_number, username, password))) {
+      return onebillInquiryResponse(null, ONEBILL.SERVICE_FAIL);
+    }
     return this.online.onebillInquiry(body?.consumer_number);
   }
 
   @Post('1bill/bill-payment')
   @HttpCode(200)
-  onebillPayment(
+  async onebillPayment(
     @Headers('username') username: string | undefined,
     @Headers('password') password: string | undefined,
     @Body() body: OnebillPaymentRequest | undefined,
   ) {
-    if (!onebillAuthorised(this.online.config, username, password)) {
+    if (!(await this.online.onebillAuthorised(body?.consumer_number, username, password))) {
       return { response_Code: ONEBILL.SERVICE_FAIL, Identification_parameter: '', reserved: '' };
     }
     return this.online.onebillPayment(body ?? {});

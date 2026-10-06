@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { ArrowRight, Building, History, Library, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
+import { ArrowRight, Building, CreditCard, History, Library, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
 import { Alert, buttonClass, Card, CardHeader, ErrorState, PageHeader, SkeletonRows, TabPanel, Tabs } from "@/components/ui";
 import { AuditLog } from "@/components/settings/audit-log";
+import { PaymentAccounts } from "@/components/settings/payment-accounts";
 import { RolesManager } from "@/components/settings/roles-manager";
 import { FeeSettingsForm, SchoolProfileForm, type School } from "@/components/settings/school-settings";
 import type { SchoolMode } from "@/lib/api";
@@ -13,7 +14,7 @@ import { can, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 import { SchoolModeSettings } from "./school-mode";
 
-type Tab = "profile" | "mode" | "fees" | "library" | "roles" | "audit";
+type Tab = "profile" | "mode" | "fees" | "payments" | "library" | "roles" | "audit";
 
 export default function SettingsPage() {
   return (
@@ -38,6 +39,9 @@ function Settings() {
     { value: "profile", label: "School profile", icon: <Building /> },
     { value: "mode", label: "School mode", icon: <Shuffle /> },
     { value: "fees", label: "Fees", icon: <Wallet /> },
+    ...(setup && user.plan?.features.includes("online_payments") !== false
+      ? [{ value: "payments", label: "Online payments", icon: <CreditCard /> }]
+      : []),
     ...((data?.mode ?? user.school?.mode) !== "ONLINE" ? [{ value: "library", label: "Library", icon: <Library /> }] : []),
     ...(setup && can(user, "users") ? [{ value: "roles", label: "Roles and permissions", icon: <ShieldCheck /> }] : []),
     ...(setup && can(user, "audit") ? [{ value: "audit", label: "Audit log", icon: <History /> }] : []),
@@ -82,6 +86,9 @@ function Settings() {
         <TabPanel value="fees">
           <div className="max-w-3xl">{schoolSection((s) => <FeeSettingsForm key={s.id} school={s} readOnly={!canEditSettings} onSaved={setSaved} />)}</div>
         </TabPanel>
+        {tabs.some((t) => t.value === "payments") && (
+          <TabPanel value="payments">{tab === "payments" && <PaymentAccounts readOnly={!canEditSettings} />}</TabPanel>
+        )}
         {tabs.some((t) => t.value === "library") && (
           <TabPanel value="library">
             <Card className="max-w-3xl">
