@@ -28,7 +28,7 @@ export type StudentSheetRow = Partial<Record<(typeof STUDENT_COLUMNS)[number]["k
 const norm = (s: string) => s.toLowerCase().replace(/[_.]/g, " ").replace(/\s+/g, " ").trim();
 
 /** Excel dates arrive as Date objects; send them as the day-first text schools type. */
-function cellText(value: unknown): string {
+export function cellText(value: unknown): string {
   if (value == null) return "";
   if (value instanceof Date) {
     const pad = (n: number) => String(n).padStart(2, "0");

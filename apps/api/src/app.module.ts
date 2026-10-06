@@ -29,6 +29,9 @@ import {
   PaymentGatewayController,
 } from './fees/online-payments.controller.js';
 import { OnlinePaymentsService } from './fees/online-payments.service.js';
+import { ReconciliationController } from './fees/reconciliation/reconciliation.controller.js';
+import { ReconciliationScheduler } from './fees/reconciliation/reconciliation.scheduler.js';
+import { ReconciliationService } from './fees/reconciliation/reconciliation.service.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { ElearningModule } from './elearning/elearning.module.js';
 import { GradebookModule } from './gradebook/gradebook.module.js';
@@ -112,6 +115,7 @@ import { UsersController } from './users/users.controller.js';
     PaymentGatewayController,
     OnlinePaymentsAdminController,
     ParentPaymentsController,
+    ReconciliationController,
     AnnouncementsController,
     DashboardController,
     ParentController,
@@ -124,6 +128,8 @@ import { UsersController } from './users/users.controller.js';
   providers: [
     PaymentsService,
     OnlinePaymentsService,
+    ReconciliationService,
+    ReconciliationScheduler,
     // Order matters: authenticate first, then check roles, then the school's plan.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

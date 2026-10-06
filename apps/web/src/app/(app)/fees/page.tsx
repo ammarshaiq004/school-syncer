@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock } from "lucide-react";
+import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock, ScanSearch } from "lucide-react";
 import { CHECKOUT_LABEL, CHECKOUT_TONE, PROVIDER_LABEL, type Checkout, type CheckoutStatus } from "@/components/invoices/online-payment";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
+import { ReconciliationTab } from "@/components/fees/reconciliation-tab";
 import {
   Alert,
   Badge,
@@ -64,6 +65,7 @@ const TABS = [
   { value: "invoices", label: "Invoices", icon: <ReceiptText /> },
   { value: "defaulters", label: "Defaulters", icon: <BellRing /> },
   { value: "online", label: "Online payments", icon: <Globe /> },
+  { value: "reconciliation", label: "Reconciliation", icon: <ScanSearch /> },
   { value: "setup", label: "Fee setup", icon: <Wallet /> },
 ];
 
@@ -84,7 +86,8 @@ const monthLabel = (period: string) =>
 export default function FeesPage() {
   const toast = useToast();
   const user = useSession();
-  const tabs = TABS.filter((t) => t.value !== "online" || user.plan?.features.includes("online_payments") !== false);
+  const onlinePayments = user.plan?.features.includes("online_payments") !== false;
+  const tabs = TABS.filter((t) => (t.value !== "online" && t.value !== "reconciliation") || onlinePayments);
   const [tab, setTab] = useState("invoices");
   // A link may point straight at a tab, e.g. /fees#defaulters from the dashboard.
   useEffect(() => {
@@ -150,6 +153,9 @@ export default function FeesPage() {
         </TabPanel>
         <TabPanel value="online">
           <OnlinePaymentsTab />
+        </TabPanel>
+        <TabPanel value="reconciliation">
+          <ReconciliationTab />
         </TabPanel>
         <TabPanel value="setup">
           <SetupTab />

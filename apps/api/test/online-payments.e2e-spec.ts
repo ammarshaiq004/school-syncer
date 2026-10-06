@@ -141,6 +141,8 @@ describe('Online fee payments (e2e)', () => {
     forged.pp_ResponseCode = '000';
     const back = await request(server).post('/api/payments/return/jazzcash').type('form').send(forged).expect(303);
     expect(back.headers.location).toBe('http://localhost:3000/parent/invoices?payment=unverified');
+    const ipn = await request(server).post('/api/payments/ipn/jazzcash').send(forged).expect(200);
+    expect(ipn.body.pp_ResponseCode).toBe('001');
     const after = await request(server).get(`/api/parent/payments/${start.body.checkout.id}`).set(parent).expect(200);
     expect(after.body.status).toBe('PENDING');
   });

@@ -91,6 +91,10 @@ model School {
   files StoredFile[]
 
   assistantUsage AssistantUsage[]
+
+  reconciliations      PaymentReconciliation[]
+  reconciliationIssues ReconciliationIssue[]
+  gatewayStatements    GatewayStatement[]
 }
 
 model Campus {
@@ -653,8 +657,8 @@ model Invoice {
   status    InvoiceStatus @default(UNPAID)
   createdAt DateTime      @default(now())
 
-  school       School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  student      Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  school       School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student      Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   lines        InvoiceLine[]
   payments     Payment[]
   libraryFines BookLoan[]
@@ -695,8 +699,8 @@ model Payment {
   receivedAt   DateTime      @default(now())
   receivedById String?
 
-  invoice    Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
-  receivedBy User?   @relation(fields: [receivedById], references: [id], onDelete: SetNull)
+  invoice    Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  receivedBy User?          @relation(fields: [receivedById], references: [id], onDelete: SetNull)
   checkout   OnlinePayment?
 
   // A gateway transaction is only ever counted once.
@@ -1867,8 +1871,129 @@ model OnlinePayment {
   invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
+  reconciliationIssues ReconciliationIssue[]
+  statementLines       GatewayStatementLine[]
+
   @@index([schoolId, createdAt])
   @@index([invoiceId])
+  @@index([status, provider])
+}
+
+enum ReconciliationStatus {
+  RUNNING
+  CLEAN // every online payment of the day agrees with the gateway
+  ISSUES // something needs the fee office (see ReconciliationIssue)
+  FAILED // the run itself broke; it is retried
+}
+
+enum ReconciliationIssueKind {
+  NEEDS_REVIEW // money confirmed but held, e.g. the voucher was settled at the counter meanwhile
+  RECEIPT_MISMATCH // a paid checkout whose receipt is missing or differs from it
+  STILL_PENDING // past its expiry and the gateway still can't say what happened
+  NOT_IN_STATEMENT // we issued a receipt the gateway statement doesn't list
+  NOT_IN_BOOKS // the gateway statement lists money we have no receipt for
+  AMOUNT_MISMATCH // the statement and the checkout disagree on the amount
+}
+
+enum ReconciliationIssueStatus {
+  OPEN
+  RESOLVED
+}
+
+/// One school's check of one day's online payments against the gateways
+/// (SCHOOL-78). Run every night for the day before, and again on demand or
+/// when a gateway statement is uploaded.
+model PaymentReconciliation {
+  id         String               @id @default(cuid())
+  schoolId   String
+  date       DateTime             @db.Date // the school-local day checked
+  status     ReconciliationStatus @default(RUNNING)
+  /// Checkouts started that day that were checked.
+  checked    Int                  @default(0)
+  /// Open checkouts this run settled by asking the gateway (paid or failed).
+  settled    Int                  @default(0)
+  /// Per gateway: { books: {count, amount}, statement: {count, amount} | null }.
+  totals     Json                 @default("{}")
+  openIssues Int                  @default(0)
+  trigger    String               @default("auto") // auto, manual or statement
+  error      String?
+  ranById    String?
+  startedAt  DateTime             @default(now())
+  finishedAt DateTime?
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, date])
+}
+
+/// Something reconciliation found that a person has to look at. Re-runs update
+/// the same row (by key), clear it when it no longer applies, and never reopen
+/// one the fee office resolved.
+model ReconciliationIssue {
+  id              String                    @id @default(cuid())
+  schoolId        String
+  date            DateTime                  @db.Date
+  kind            ReconciliationIssueKind
+  provider        PaymentMethod
+  status          ReconciliationIssueStatus @default(OPEN)
+  /// Stable identity across runs: kind and the reference it is about.
+  key             String
+  reference       String
+  amount          Int?
+  detail          String
+  onlinePaymentId String?
+  statementLineId String?
+  note            String?
+  resolvedAt      DateTime?
+  resolvedById    String?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  school        School                @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  onlinePayment OnlinePayment?        @relation(fields: [onlinePaymentId], references: [id], onDelete: SetNull)
+  statementLine GatewayStatementLine? @relation(fields: [statementLineId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, key])
+  @@index([schoolId, status, date])
+}
+
+/// A settlement or transaction report downloaded from a gateway's merchant
+/// portal and uploaded by the fee office, covering fromDate..toDate.
+model GatewayStatement {
+  id           String        @id @default(cuid())
+  schoolId     String
+  provider     PaymentMethod
+  fileName     String
+  fromDate     DateTime      @db.Date
+  toDate       DateTime      @db.Date
+  rows         Int
+  matched      Int
+  uploadedById String?
+  createdAt    DateTime      @default(now())
+
+  school School                 @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  lines  GatewayStatementLine[]
+}
+
+/// One successful transaction on a gateway statement.
+model GatewayStatementLine {
+  id              String        @id @default(cuid())
+  statementId     String
+  schoolId        String
+  provider        PaymentMethod
+  date            DateTime      @db.Date
+  /// Our reference as the gateway shows it (order ref, pp_TxnRefNo or 1Bill consumer number).
+  reference       String
+  /// The gateway's own transaction id, when the report has one.
+  providerRef     String?
+  amount          Int
+  onlinePaymentId String?
+
+  statement     GatewayStatement      @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  onlinePayment OnlinePayment?        @relation(fields: [onlinePaymentId], references: [id], onDelete: SetNull)
+  issues        ReconciliationIssue[]
+
+  @@index([schoolId, provider, date])
 }
 
 enum FilePurpose {

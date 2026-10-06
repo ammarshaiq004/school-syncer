@@ -112,3 +112,67 @@ export function jazzcashMockReturn(
   fields.pp_SecureHash = jazzcashHash(fields, c.jazzcash.integritySalt);
   return fields;
 }
+
+/**
+ * Transaction Status Inquiry: asks JazzCash what happened to one checkout,
+ * for returns that never reached us (the parent closed the browser). The
+ * request and the answer are signed like the checkout form.
+ */
+export function jazzcashInquiryRequest(c: GatewayConfig, txnRef: string) {
+  const body: Record<string, string> = {
+    pp_TxnRefNo: txnRef,
+    pp_MerchantID: c.jazzcash.merchantId,
+    pp_Password: c.jazzcash.password,
+  };
+  body.pp_SecureHash = jazzcashHash(body, c.jazzcash.integritySalt);
+  return { url: c.jazzcash.inquiryUrl, headers: { 'Content-Type': 'application/json' }, body };
+}
+
+/**
+ * Reads an inquiry answer. pp_ResponseCode is about the inquiry itself;
+ * pp_PaymentResponseCode is the checkout's own result, in the same codes the
+ * return post uses. Null when the answer is not signed by this merchant.
+ */
+export function jazzcashInquiryResult(c: GatewayConfig, txnRef: string, body: Record<string, unknown>): GatewayResult | null {
+  const fields: Record<string, string> = {};
+  for (const [k, v] of Object.entries(body)) if (typeof v === 'string') fields[k] = v;
+  const given = (fields.pp_SecureHash ?? '').toUpperCase();
+  const expected = jazzcashHash(fields, c.jazzcash.integritySalt);
+  if (given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) return null;
+  if (fields.pp_ResponseCode !== '000') {
+    // Unknown reference or the inquiry failed: nothing is settled by it.
+    return { txnRef, outcome: 'PENDING', responseCode: fields.pp_ResponseCode, message: fields.pp_ResponseMessage };
+  }
+  const code = fields.pp_PaymentResponseCode ?? '';
+  return {
+    txnRef,
+    outcome: PAID.has(code) ? 'PAID' : PENDING.has(code) || code === '' ? 'PENDING' : 'FAILED',
+    amount: rupeesFromPaisa(fields.pp_Amount),
+    providerRef: fields.pp_RetreivalReferenceNo || fields.pp_AuthCode || undefined,
+    responseCode: code,
+    message: fields.pp_PaymentResponseMessage || fields.pp_ResponseMessage,
+  };
+}
+
+/** Calls Status Inquiry (sandbox or live). Never used in mock mode. */
+export async function jazzcashInquire(c: GatewayConfig, txnRef: string): Promise<GatewayResult | null> {
+  const req = jazzcashInquiryRequest(c, txnRef);
+  const res = await fetch(req.url, {
+    method: 'POST',
+    headers: req.headers,
+    body: JSON.stringify(req.body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) return { txnRef, outcome: 'PENDING', message: `JazzCash inquiry returned HTTP ${res.status}` };
+  return jazzcashInquiryResult(c, txnRef, (await res.json()) as Record<string, unknown>);
+}
+
+/** What JazzCash expects back from our IPN listener, signed. */
+export function jazzcashIpnAck(c: GatewayConfig, ok: boolean): Record<string, string> {
+  const body: Record<string, string> = {
+    pp_ResponseCode: ok ? '000' : '001',
+    pp_ResponseMessage: ok ? 'IPN received' : 'IPN rejected',
+  };
+  body.pp_SecureHash = jazzcashHash(body, c.jazzcash.integritySalt);
+  return body;
+}

@@ -24,7 +24,7 @@ export interface GatewayConfig {
   checkoutMinutes: number;
   /** Days a 1Bill consumer number can be paid against. */
   onebillDays: number;
-  jazzcash: { merchantId: string; password: string; integritySalt: string; url: string };
+  jazzcash: { merchantId: string; password: string; integritySalt: string; url: string; inquiryUrl: string };
   easypaisa: {
     storeId: string;
     hashKey: string;
@@ -47,10 +47,12 @@ const MOCK = {
 const HOSTS = {
   sandbox: {
     jazzcash: 'https://sandbox.jazzcash.com.pk/CustomerPortal/transactionmanagement/merchantform/',
+    jazzcashInquiry: 'https://sandbox.jazzcash.com.pk/ApplicationAPI/API/PaymentInquiry/Inquire',
     easypaisa: 'https://easypaystg.easypaisa.com.pk',
   },
   live: {
     jazzcash: 'https://payments.jazzcash.com.pk/CustomerPortal/transactionmanagement/merchantform/',
+    jazzcashInquiry: 'https://payments.jazzcash.com.pk/ApplicationAPI/API/PaymentInquiry/Inquire',
     easypaisa: 'https://easypay.easypaisa.com.pk',
   },
 };
@@ -73,6 +75,7 @@ export function gatewayConfig(env: Record<string, string | undefined> = process.
       password: pick('JAZZCASH_PASSWORD', MOCK.jazzcash.password),
       integritySalt: pick('JAZZCASH_INTEGRITY_SALT', MOCK.jazzcash.integritySalt),
       url: env.JAZZCASH_CHECKOUT_URL || real?.jazzcash || '',
+      inquiryUrl: env.JAZZCASH_INQUIRY_URL || real?.jazzcashInquiry || '',
     },
     easypaisa: {
       storeId: pick('EASYPAISA_STORE_ID', MOCK.easypaisa.storeId),
