@@ -1,4 +1,5 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useRef } from 'react';
 import { Linking, View } from 'react-native';
 import { Badge, Body, Button, Card, ErrorText, H1, H2, Loading, Muted, Row, Screen, Stat } from '@/components/ui';
 import { day, rupees, todayIso } from '@/lib/format';
@@ -10,6 +11,16 @@ export default function ChildScreen() {
   const children = useApi<Child[]>('/parent/children');
   const c = children.data?.find((x) => x.id === studentId);
   const today = todayIso();
+
+  // Coming back from paying a voucher shows it settled.
+  const { reload } = children;
+  const seen = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (seen.current) reload();
+      seen.current = true;
+    }, [reload]),
+  );
 
   return (
     <Screen onRefresh={children.reload} refreshing={children.refreshing}>
@@ -105,9 +116,15 @@ export default function ChildScreen() {
             <H2>Fees</H2>
             {!c.unpaidInvoices.length && <Muted>All fees are paid. Thank you.</Muted>}
             {c.unpaidInvoices.map((i) => (
-              <Row key={i.id} title={`${i.period} · ${rupees(i.balance)}`} subtitle={`Voucher ${i.voucherNo} · due ${day(i.dueDate, true)}`} />
+              <Row
+                key={i.id}
+                title={`${i.period} · ${rupees(i.balance)}`}
+                subtitle={`Voucher ${i.voucherNo} · due ${day(i.dueDate, true)}`}
+                right={<Badge tone="blue">Pay</Badge>}
+                onPress={() => router.push({ pathname: '/pay/[invoiceId]', params: { invoiceId: i.id } })}
+              />
             ))}
-            {c.unpaidInvoices.length > 0 && <Muted>Pay at the bank or by JazzCash or Easypaisa using the voucher number.</Muted>}
+            {c.unpaidInvoices.length > 0 && <Muted>Tap a voucher to pay online or see the other ways to pay.</Muted>}
           </Card>
         </>
       )}

@@ -26,3 +26,12 @@ Set `PAYMENTS_MODE` (see `apps/api/.env.example`):
 - `off` (default when `NODE_ENV=production`): no online payments, so a server never runs mock mode by accident.
 
 Online payments need the `online_payments` plan feature (Growth and Enterprise).
+
+## Mobile app
+
+In the mobile app a parent taps an unpaid voucher on a child's screen to open **Pay fees**. It uses the same parent
+endpoints as the portal. JazzCash and Easypaisa open their hosted checkout in an in-app browser (the signed form is
+posted from inside the app); when the gateway sends the parent back to the portal's `/parent/invoices?payment=` page,
+the app closes the browser and shows the checkout, which refreshes until the gateway confirms and then shows the
+receipt. 1Bill shows the number to pay from a banking app. In mock mode the app shows Approve and Decline buttons in
+place of the gateway.

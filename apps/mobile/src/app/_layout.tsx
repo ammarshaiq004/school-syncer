@@ -21,6 +21,9 @@ export default function RootLayout() {
         <Stack.Screen name="parent/[studentId]" options={{ title: '' }} />
         <Stack.Screen name="report-card/[examId]/[studentId]" options={{ title: 'Report card' }} />
         <Stack.Screen name="timetable/[studentId]" options={{ title: 'Timetable' }} />
+        <Stack.Screen name="pay/[invoiceId]" options={{ title: 'Pay fees' }} />
+        <Stack.Screen name="payment/[id]/index" options={{ title: 'Payment' }} />
+        <Stack.Screen name="payment/[id]/gateway" options={{ title: 'Checkout' }} />
         <Stack.Screen name="student/index" options={{ title: 'Today' }} />
         <Stack.Screen name="teacher/index" options={{ title: 'Today' }} />
         <Stack.Screen name="teacher/attendance/[sectionId]" options={{ title: 'Attendance' }} />
