@@ -223,4 +223,11 @@ describe('School payment accounts (e2e)', () => {
       process.env.PAYMENTS_SECRET_KEY = key;
     }
   });
+
+  it('has no mock approval outside mock mode', async () => {
+    const start = await request(server).post(`/api/parent/invoices/${voucher.Sana}/checkout`).set(parent).send({ provider: 'ONEBILL' }).expect(201);
+    await request(server).post(`/api/parent/payments/${start.body.checkout.id}/mock`).set(parent).send({ approve: true }).expect(404);
+    const still = await request(server).get(`/api/parent/payments/${start.body.checkout.id}`).set(parent).expect(200);
+    expect(still.body.status).toBe('PENDING');
+  });
 });

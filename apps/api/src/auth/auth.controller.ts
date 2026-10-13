@@ -3,6 +3,7 @@ import { Role } from '@prisma/client';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Public } from '../common/decorators.js';
 import { PermissionService } from '../common/permission.service.js';
+import { RateLimit } from '../common/rate-limit.guard.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   loginSchema,
@@ -25,6 +26,8 @@ export class AuthController {
 
   @Public()
   @Post('register-school')
+  // A few schools per address an hour; more is a script, not a person.
+  @RateLimit('sign-up', 10, 60 * 60_000)
   registerSchool(
     @Body(new ZodValidationPipe(registerSchoolSchema)) body: RegisterSchoolInput,
   ) {

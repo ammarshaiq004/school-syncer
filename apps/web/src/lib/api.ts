@@ -1,5 +1,7 @@
+/** Set at build time; next.config.ts refuses a production build without it. */
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:4000/api");
 
 const TOKEN_KEY = "schoolsyncer.token";
 /** The SchoolSyncer console signs in separately, so both can be open at once. */

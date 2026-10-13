@@ -76,11 +76,6 @@ export const LIMITS: Record<FilePurpose, Partial<Record<FileKind, number>>> = {
   SUBMISSION: { video: 100 * MB, audio: 50 * MB, image: 10 * MB, document: 25 * MB, archive: 50 * MB },
 };
 
-/** The upload cap the HTTP layer enforces before any of the checks below. */
-export const MAX_UPLOAD_BYTES = Math.max(
-  ...Object.values(LIMITS).flatMap((byKind) => Object.values(byKind)),
-);
-
 /** Bytes the type check needs from the start of a file. */
 export const SNIFF_BYTES = 4096;
 

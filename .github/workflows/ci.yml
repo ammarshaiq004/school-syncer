@@ -21,6 +21,9 @@ jobs:
     env:
       DATABASE_URL: postgresql://schoolsyncer:schoolsyncer@localhost:5432/schoolsyncer?schema=public
       JWT_SECRET: ci-only-secret
+      # Baked into the web and app bundles; production builds refuse to run without them.
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api
+      EXPO_PUBLIC_API_URL: http://localhost:4000/api
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -29,8 +32,16 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Audit production dependencies
+        # TODO(SCHOOL-66): make this blocking once the current high advisories
+        # are fixed upstream. All are transitive with no compatible fix today:
+        # deepmerge-ts <8 via prisma 6 (@prisma/config; fixed only in Prisma 7),
+        # node-forge and braces via expo's CLI (no patched release yet).
+        continue-on-error: true
+        run: pnpm audit --audit-level=high --prod
       - run: pnpm lint
       - run: pnpm --filter mobile typecheck
+      - run: pnpm --filter web test
       - name: Apply database migrations
         run: pnpm --filter api prisma:deploy
       - run: pnpm --filter api test

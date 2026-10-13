@@ -10,7 +10,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { LoginInput, RegisterSchoolInput } from './auth.schemas.js';
-import { LoginRateLimiter } from './login-rate-limit.js';
+import { checkNoPassword, LoginRateLimiter } from './login-rate-limit.js';
 import { SchoolSetupService } from './school-setup.service.js';
 
 @Injectable()
@@ -58,15 +58,16 @@ export class AuthService {
       u.email === login ? 0 : u.phone === input.login ? 1 : 2;
     matches.sort((a, b) => rank(a) - rank(b));
     let user: (typeof matches)[number] | null = null;
+    let checked = false;
     for (const candidate of matches) {
-      if (
-        candidate.passwordHash &&
-        (await bcrypt.compare(input.password, candidate.passwordHash))
-      ) {
+      if (!candidate.passwordHash) continue;
+      checked = true;
+      if (await bcrypt.compare(input.password, candidate.passwordHash)) {
         user = candidate;
         break;
       }
     }
+    if (!checked) await checkNoPassword(input.password);
     if (!user) {
       this.limiter.recordFailure(limitKey);
       throw new UnauthorizedException('Wrong school, login or password');

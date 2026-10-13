@@ -1,4 +1,11 @@
-export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+/**
+ * Inlined when the app is bundled. Development falls back to a local API; a
+ * release build without it cannot reach any server, so it says so loudly.
+ */
+export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? (__DEV__ ? 'http://localhost:4000/api' : '');
+if (!API_URL) {
+  console.error('EXPO_PUBLIC_API_URL was not set when this app was built; it cannot reach the SchoolSyncer API.');
+}
 
 export type Role =
   | 'OWNER'
