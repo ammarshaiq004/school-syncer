@@ -26,6 +26,8 @@ export interface NewStudent {
   address?: string;
   medicalNotes?: string;
   guardians: GuardianInput[];
+  /** A campus-limited admin's campuses: the section must be at one of them. */
+  campuses?: string[] | null;
 }
 
 /** Next admission number for the school, e.g. "2026-0042". */
@@ -54,7 +56,9 @@ export async function createStudentRecord(
     where: { id: input.sectionId, schoolId: input.schoolId },
     include: { class: true },
   });
-  if (!section) throw new NotFoundException('Section not found');
+  if (!section || (input.campuses && !input.campuses.includes(section.class.campusId))) {
+    throw new NotFoundException('Section not found');
+  }
 
   const admissionNo =
     input.admissionNo ?? (await nextAdmissionNo(tx, input.schoolId));

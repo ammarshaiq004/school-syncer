@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { z } from 'zod';
-import { SETUP_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, SETUP_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -32,6 +32,13 @@ const listSchema = z
   });
 type ListQuery = z.infer<typeof listSchema>;
 
+/**
+ * Log entries are not tied to a campus and their before/after snapshots can
+ * hold any record (salaries included), so only school-wide administrators
+ * may read the log.
+ */
+const NOT_WIDE = 'Only school-wide administrators can read the audit log';
+
 /** The school's own audit log (System settings > Audit log). */
 @Controller('audit')
 @Roles(...SETUP_ROLES)
@@ -44,6 +51,7 @@ export class AuditController {
     @CurrentUser() user: AuthUser,
     @Query(new ZodValidationPipe(listSchema)) query: ListQuery,
   ) {
+    assertSchoolWide(user, NOT_WIDE);
     const where = auditWhere(user.schoolId, query);
     const [total, rows] = await Promise.all([
       this.prisma.auditLog.count({ where }),
@@ -73,6 +81,7 @@ export class AuditController {
   /** Values for the filter dropdowns. */
   @Get('facets')
   async facets(@CurrentUser() user: AuthUser) {
+    assertSchoolWide(user, NOT_WIDE);
     const [entities, actions] = await Promise.all([
       this.prisma.auditLog.findMany({
         where: { schoolId: user.schoolId },

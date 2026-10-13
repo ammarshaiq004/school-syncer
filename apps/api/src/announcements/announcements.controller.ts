@@ -1,7 +1,7 @@
-import { Body, Controller, Get, NotFoundException, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, NotFoundException, Post } from '@nestjs/common';
 import { Audience, Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import { adminScope, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
@@ -51,7 +51,7 @@ export class AnnouncementsController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(announcementSchema)) body: AnnouncementInput,
   ) {
-    const enrollment = await this.audienceFilter(user.schoolId, body);
+    const enrollment = await this.audienceFilter(user, body);
     const announcement = await this.prisma.announcement.create({
       data: { ...body, schoolId: user.schoolId, createdById: user.sub },
     });
@@ -80,20 +80,27 @@ export class AnnouncementsController {
     return { ...announcement, messages };
   }
 
+  /** A campus-limited admin may only address their own campuses (or a class or section in them). */
   private async audienceFilter(
-    schoolId: string,
+    user: AuthUser,
     body: AnnouncementInput,
   ): Promise<Prisma.EnrollmentWhereInput> {
     const active = { status: 'ACTIVE' as const, academicYear: { isCurrent: true } };
-    if (body.audience === Audience.SCHOOL) return active;
-    const where = { id: body.targetId, schoolId };
-    const found =
+    const scope = adminScope(user);
+    if (body.audience === Audience.SCHOOL) {
+      if (scope) throw new ForbiddenException('Only school-wide staff can address the whole school');
+      return active;
+    }
+    const where = { id: body.targetId, schoolId: user.schoolId };
+    const campusId =
       body.audience === Audience.CAMPUS
-        ? await this.prisma.campus.count({ where })
+        ? (await this.prisma.campus.findFirst({ where, select: { id: true } }))?.id
         : body.audience === Audience.CLASS
-          ? await this.prisma.class.count({ where })
-          : await this.prisma.section.count({ where });
-    if (!found) throw new NotFoundException('Audience not found');
+          ? (await this.prisma.class.findFirst({ where, select: { campusId: true } }))?.campusId
+          : (await this.prisma.section.findFirst({ where, select: { class: { select: { campusId: true } } } }))?.class
+              .campusId;
+    if (!campusId) throw new NotFoundException('Audience not found');
+    if (scope && !scope.includes(campusId)) throw new ForbiddenException('That campus is not yours to address');
     if (body.audience === Audience.CAMPUS) return { ...active, section: { class: { campusId: body.targetId } } };
     if (body.audience === Audience.CLASS) return { ...active, section: { classId: body.targetId } };
     return { ...active, sectionId: body.targetId };

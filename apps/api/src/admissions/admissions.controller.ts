@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -9,9 +10,9 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApplicationStage, Gender } from '@prisma/client';
+import { ApplicationStage, Gender, Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { SETUP_ROLES } from '../common/admin-roles.js';
+import { adminScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Public, RequiresFeature, Roles } from '../common/decorators.js';
@@ -69,6 +70,7 @@ export class AdmissionsController {
   ) {
     const school = await this.prisma.school.findUnique({ where: { slug } });
     if (!school) throw new NotFoundException('School not found');
+    await this.assertTakingEnquiries(school.id, true);
     await this.assertClassAtCampus(school.id, body.campusId, body.classId);
     await this.prisma.application.create({
       data: { ...body, schoolId: school.id, source: body.source ?? 'Website' },
@@ -83,6 +85,7 @@ export class AdmissionsController {
     const school = await this.prisma.school.findUnique({
       where: { slug },
       select: {
+        id: true,
         name: true,
         logoUrl: true,
         campuses: {
@@ -91,14 +94,16 @@ export class AdmissionsController {
       },
     });
     if (!school) throw new NotFoundException('School not found');
-    return school;
+    await this.assertTakingEnquiries(school.id, false);
+    const { id: _id, ...options } = school;
+    return options;
   }
 
   @Get('applications')
   @Roles(...SETUP_ROLES)
   list(@CurrentUser() user: AuthUser, @Query('stage') stage?: ApplicationStage) {
     return this.prisma.application.findMany({
-      where: { schoolId: user.schoolId, ...(stage ? { stage } : {}) },
+      where: { ...this.scoped(user), ...(stage ? { stage } : {}) },
       orderBy: { createdAt: 'desc' },
       include: {
         campus: { select: { name: true } },
@@ -113,7 +118,7 @@ export class AdmissionsController {
   async funnel(@CurrentUser() user: AuthUser) {
     const rows = await this.prisma.application.groupBy({
       by: ['stage'],
-      where: { schoolId: user.schoolId },
+      where: this.scoped(user),
       _count: true,
     });
     return Object.values(ApplicationStage).map((stage) => ({
@@ -128,6 +133,10 @@ export class AdmissionsController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(enquirySchema)) body: EnquiryInput,
   ) {
+    const scope = adminScope(user);
+    if (scope && !scope.includes(body.campusId)) {
+      throw new ForbiddenException('That campus is not yours to manage');
+    }
     await this.assertClassAtCampus(user.schoolId, body.campusId, body.classId);
     const application = await this.prisma.application.create({
       data: { ...body, schoolId: user.schoolId, source: body.source ?? 'Walk-in' },
@@ -172,6 +181,7 @@ export class AdmissionsController {
       const created = await createStudentRecord(tx, {
         schoolId: user.schoolId,
         sectionId: body.sectionId,
+        campuses: adminScope(user),
         admissionNo: body.admissionNo,
         firstName,
         lastName: rest.join(' ') || undefined,
@@ -199,9 +209,31 @@ export class AdmissionsController {
     return student;
   }
 
+  /** The caller's school, narrowed to their campuses for a campus-limited admin. */
+  private scoped(user: AuthUser): Prisma.ApplicationWhereInput {
+    const scope = adminScope(user);
+    return { schoolId: user.schoolId, ...(scope ? { campusId: { in: scope } } : {}) };
+  }
+
+  /**
+   * Public routes skip the subscription guard, so they apply the plan here: a
+   * suspended school, or one without admissions on its plan, takes no
+   * enquiries, and a read-only school shows its form but cannot save one.
+   */
+  private async assertTakingEnquiries(schoolId: string, saving: boolean) {
+    const plan = await this.subscriptions.forSchool(schoolId);
+    if (
+      plan.access === 'blocked' ||
+      !plan.features.includes('admissions') ||
+      (saving && plan.access === 'read_only')
+    ) {
+      throw new NotFoundException('This school is not taking enquiries online');
+    }
+  }
+
   private async findOwned(user: AuthUser, id: string) {
     const application = await this.prisma.application.findFirst({
-      where: { id, schoolId: user.schoolId },
+      where: { id, ...this.scoped(user) },
     });
     if (!application) throw new NotFoundException('Application not found');
     return application;

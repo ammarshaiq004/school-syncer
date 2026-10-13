@@ -20,14 +20,23 @@ import {
   StaffStatus,
 } from '@prisma/client';
 import { z } from 'zod';
-import { FEE_ROLES, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import {
+  adminScope,
+  campusScopeFor,
+  FEE_ROLES,
+  hasAnyRole,
+  SETUP_ROLES,
+  STAFF_ROLES,
+} from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { campusScopeViolation, holdsOwner, ownerRuleViolation } from '../users/user-rules.js';
 import { daysBetween } from './payroll-calculator.js';
+import { staffWhere } from './staff-where.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 const rupees = z.number().int().min(0).max(100_000_000);
@@ -72,12 +81,6 @@ const leaveSchema = z
   .refine((l) => l.fromDate <= l.toDate, 'The leave must end on or after its first day');
 const decideSchema = z.object({ approve: z.boolean() });
 
-/** Anyone holding a staff role, as opposed to parents and students. */
-const staffWhere = (schoolId: string): Prisma.UserWhereInput => ({
-  schoolId,
-  roles: { some: { role: { in: STAFF_ROLES } } },
-});
-
 @Controller('hr')
 @Permission('hr')
 @RequiresFeature('hr')
@@ -93,7 +96,7 @@ export class HrController {
   @Roles(...FEE_ROLES)
   async staff(@CurrentUser() user: AuthUser) {
     const users = await this.prisma.user.findMany({
-      where: staffWhere(user.schoolId),
+      where: staffWhere(user.schoolId, campusScopeFor(user, FEE_ROLES)),
       orderBy: { name: 'asc' },
       select: {
         id: true,
@@ -116,11 +119,23 @@ export class HrController {
     @Param('userId') userId: string,
     @Body(new ZodValidationPipe(profileSchema)) body: z.infer<typeof profileSchema>,
   ) {
+    const scope = adminScope(user);
     const staff = await this.prisma.user.findFirst({
-      where: { id: userId, ...staffWhere(user.schoolId) },
-      include: { staffProfile: { include: { payItems: true } } },
+      where: { id: userId, ...staffWhere(user.schoolId, scope) },
+      include: { roles: true, staffProfile: { include: { payItems: true } } },
     });
     if (!staff) throw new NotFoundException('Staff member not found');
+    // The users screen's rules: only an owner touches an owner, nobody but an
+    // owner sets their own pay, and a campus admin only their campus's staff.
+    const editorIsOwner = holdsOwner(user.roles);
+    const problem = ownerRuleViolation({ editorIsOwner, targetGrants: staff.roles });
+    if (problem) throw new ForbiddenException(problem);
+    if (userId === user.sub && !editorIsOwner) {
+      throw new ForbiddenException('Someone else must change your own pay and bank details');
+    }
+    if (campusScopeViolation(scope, staff.roles)) {
+      throw new ForbiddenException('You can only change staff on your own campuses');
+    }
 
     const employeeNo =
       body.employeeNo ?? staff.staffProfile?.employeeNo ?? (await this.nextEmployeeNo(user.schoolId));
@@ -165,7 +180,7 @@ export class HrController {
     @Query('date', new ZodValidationPipe(isoDate)) date: string,
   ) {
     const [staff, records] = await Promise.all([
-      this.activeStaff(user.schoolId),
+      this.activeStaff(user.schoolId, adminScope(user)),
       this.prisma.staffAttendance.findMany({ where: { schoolId: user.schoolId, date: dayStart(date) } }),
     ]);
     return {
@@ -190,7 +205,7 @@ export class HrController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(attendanceSchema)) body: z.infer<typeof attendanceSchema>,
   ) {
-    const staffIds = new Set((await this.activeStaff(user.schoolId)).map((s) => s.id));
+    const staffIds = new Set((await this.activeStaff(user.schoolId, adminScope(user))).map((s) => s.id));
     if (body.records.some((r) => !staffIds.has(r.userId))) {
       throw new NotFoundException('Staff member not found');
     }
@@ -246,15 +261,20 @@ export class HrController {
     });
   }
 
-  /** Administrators see every request; everyone else sees their own. */
+  /** Administrators see every request on their campuses; everyone else sees their own. */
   @Get('leave')
   @Roles(...STAFF_ROLES)
   async leave(@CurrentUser() user: AuthUser, @Query('status') status?: string) {
     const parsed = z.enum(LeaveStatus).optional().safeParse(status || undefined);
+    const scope = adminScope(user);
     const requests = await this.prisma.leaveRequest.findMany({
       where: {
         schoolId: user.schoolId,
-        ...(hasAnyRole(user, SETUP_ROLES) ? {} : { userId: user.sub }),
+        ...(hasAnyRole(user, SETUP_ROLES)
+          ? scope
+            ? { OR: [{ userId: user.sub }, { user: staffWhere(user.schoolId, scope) }] }
+            : {}
+          : { userId: user.sub }),
         ...(parsed.success && parsed.data ? { status: parsed.data } : {}),
       },
       orderBy: [{ status: 'asc' }, { fromDate: 'desc' }],
@@ -274,7 +294,9 @@ export class HrController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(decideSchema)) body: z.infer<typeof decideSchema>,
   ) {
-    const request = await this.prisma.leaveRequest.findFirst({ where: { id, schoolId: user.schoolId } });
+    const request = await this.prisma.leaveRequest.findFirst({
+      where: { id, schoolId: user.schoolId, user: staffWhere(user.schoolId, adminScope(user)) },
+    });
     if (!request) throw new NotFoundException('Leave request not found');
     if (request.status !== LeaveStatus.PENDING) throw new ConflictException('This request was already decided');
     if (request.userId === user.sub && !hasAnyRole(user, [Role.OWNER])) {
@@ -311,10 +333,10 @@ export class HrController {
     return { status, days: days.length };
   }
 
-  private activeStaff(schoolId: string) {
+  private activeStaff(schoolId: string, scope: string[] | null) {
     return this.prisma.user.findMany({
       where: {
-        ...staffWhere(schoolId),
+        ...staffWhere(schoolId, scope),
         isActive: true,
         OR: [{ staffProfile: null }, { staffProfile: { status: StaffStatus.ACTIVE } }],
       },

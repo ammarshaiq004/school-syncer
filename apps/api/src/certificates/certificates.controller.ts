@@ -18,6 +18,7 @@ import {
 } from '@prisma/client';
 import { z } from 'zod';
 import {
+  adminScope,
   campusScope,
   SETUP_ROLES,
   STAFF_ROLES,
@@ -164,7 +165,7 @@ export class CertificatesController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(issueSchema)) body: IssueInput,
   ) {
-    const student = await this.student(user, body.studentId);
+    const student = await this.student(user, body.studentId, adminScope(user));
     const today = localToday();
     const issuedOn = body.issuedOn ?? today;
     const details = certificateDetails(student, body);
@@ -318,6 +319,7 @@ export class CertificatesController {
     @Body(new ZodValidationPipe(cancelSchema)) body: { reason: string },
   ) {
     const before = await this.get(user, id);
+    await this.student(user, before.studentId, adminScope(user));
     if (before.cancelledAt)
       throw new ConflictException('This certificate is already cancelled');
     const after = await this.prisma.certificate.update({
@@ -395,7 +397,7 @@ export class CertificatesController {
     @CurrentUser() user: AuthUser,
     @Query('campusId') campusId?: string,
   ) {
-    const campuses = campusScope(user);
+    const campuses = adminScope(user);
     const wanted = campusId
       ? campuses && !campuses.includes(campusId)
         ? []
@@ -452,8 +454,8 @@ export class CertificatesController {
     });
   }
 
-  private async student(user: AuthUser, id: string) {
-    const campuses = campusScope(user);
+  /** A student in `campuses` (by default the caller's campus scope; admin actions pass adminScope). */
+  private async student(user: AuthUser, id: string, campuses = campusScope(user)) {
     const student = await this.prisma.student.findFirst({
       where: {
         id,

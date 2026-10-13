@@ -15,7 +15,7 @@ import {
 } from '@nestjs/common';
 import { FilePurpose, LessonKind, Prisma, type StoredFile } from '@prisma/client';
 import { z } from 'zod';
-import { ATTENDANCE_ROLES, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../../common/admin-roles.js';
+import { administers, ATTENDANCE_ROLES, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../../common/admin-roles.js';
 import { AuditService } from '../../common/audit.service.js';
 import type { AuthUser } from '../../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../../common/decorators.js';
@@ -138,9 +138,10 @@ export class ElearningCoursesController {
     const taught = section.subjects.find((s) => s.subjectId === body.subjectId);
     if (!taught) throw new NotFoundException('This subject is not taught in this section');
     if (!manageable.includes(taught)) throw new ForbiddenException('You do not teach this subject in this section');
-    let teacherId = taught.teacherId ?? (hasAnyRole(user, SETUP_ROLES) ? null : user.sub);
+    const isAdmin = administers(user, section.class.campusId);
+    let teacherId = taught.teacherId ?? (isAdmin ? null : user.sub);
     if (body.teacherId !== undefined) {
-      if (!hasAnyRole(user, SETUP_ROLES)) throw new ForbiddenException('Only admins can choose the teacher');
+      if (!isAdmin) throw new ForbiddenException('Only admins can choose the teacher');
       teacherId = await this.staffUser(user, body.teacherId);
     }
     const existing = await this.prisma.course.findUnique({
@@ -246,7 +247,9 @@ export class ElearningCoursesController {
       isPublished: body.isPublished,
     };
     if (body.teacherId !== undefined) {
-      if (!hasAnyRole(user, SETUP_ROLES)) throw new ForbiddenException('Only admins can change the teacher');
+      if (!administers(user, before.section.class.campusId)) {
+        throw new ForbiddenException('Only admins can change the teacher');
+      }
       data.teacherId = body.teacherId === null ? null : await this.staffUser(user, body.teacherId);
     }
     const course = await this.prisma.course.update({ where: { id: before.id }, data, include: courseSummary });

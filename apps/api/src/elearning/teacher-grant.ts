@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { ATTENDANCE_ROLES, campusScope } from '../common/admin-roles.js';
+import { adminScope, ATTENDANCE_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 
 /**
@@ -8,7 +8,7 @@ import type { AuthUser } from '../common/auth-user.js';
  * of their campuses, so they cannot hand a section to another campus's staff.
  */
 export function teacherGrantInScope(user: AuthUser): Prisma.RoleAssignmentWhereInput {
-  const scope = campusScope(user);
+  const scope = adminScope(user);
   return {
     role: { in: ATTENDANCE_ROLES },
     ...(scope ? { OR: [{ campusId: null }, { campusId: { in: scope } }] } : {}),
