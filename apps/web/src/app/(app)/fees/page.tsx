@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock, ScanSearch, Undo2 } from "lucide-react";
+import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock, ScanSearch, Undo2, Scale } from "lucide-react";
 import { CHECKOUT_LABEL, CHECKOUT_TONE, PROVIDER_LABEL, type Checkout, type CheckoutStatus } from "@/components/invoices/online-payment";
-import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
+import { InvoiceStatusPill } from "@/components/fees/invoice-status";
 import { ReasonDialog } from "@/components/fees/reason-dialog";
+import { FeeRulesTab, type FeePolicy, type RunSummary } from "@/components/fees/fee-rules-tab";
 import { ReconciliationTab } from "@/components/fees/reconciliation-tab";
 import {
   Alert,
@@ -42,11 +43,26 @@ interface Invoice {
   id: string;
   voucherNo: string;
   period: string;
+  kind: "MONTHLY" | "ADHOC";
   dueDate: string;
   total: number;
   paid: number;
   status: string;
   student: { id: string; firstName: string; lastName: string | null; admissionNo: string };
+}
+/** Shape of GET /fees/invoices/paged: one page, with totals over every matching voucher. */
+interface InvoicePage {
+  items: Invoice[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: { vouchers: number; billed: number; collected: number; outstanding: number; overdue: { invoices: number; amount: number } };
+}
+/** Shape of GET /fees/outstanding: the one outstanding figure the dashboard and reports share. */
+interface Outstanding {
+  outstanding: { invoices: number; amount: number };
+  overdue: { invoices: number; amount: number };
+  lateFines: number;
 }
 interface Defaulter {
   invoiceId: string;
@@ -69,14 +85,22 @@ const TABS = [
   { value: "online", label: "Online payments", icon: <Globe /> },
   { value: "reconciliation", label: "Reconciliation", icon: <ScanSearch /> },
   { value: "setup", label: "Fee setup", icon: <Wallet /> },
+  { value: "rules", label: "Fee rules", icon: <Scale /> },
 ];
 
 const STATUS_OPTIONS = [
   { value: "UNPAID", label: "Unpaid" },
   { value: "PARTIAL", label: "Partially paid" },
   { value: "PAID", label: "Paid" },
+  { value: "OVERDUE", label: "Overdue" },
+  { value: "CARRIED_FORWARD", label: "Carried forward" },
   { value: "CANCELLED", label: "Cancelled" },
 ];
+const KIND_OPTIONS = [
+  { value: "MONTHLY", label: "Monthly vouchers" },
+  { value: "ADHOC", label: "One-off vouchers" },
+];
+const PAGE_SIZES = [25, 50, 100, 200];
 
 const FREQUENCY_LABEL: Record<string, string> = { MONTHLY: "Every month", ANNUAL: "Once a year", ONE_TIME: "One time" };
 
@@ -100,11 +124,29 @@ export default function FeesPage() {
     // Only on first load; the tab list does not change while the page is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [period, setPeriod] = useState(thisMonth());
-  const [status, setStatus] = useState("");
-  const [search, setSearch] = useState("");
-  const query = new URLSearchParams({ period, ...(status && { status }), ...(search && { search }) }).toString();
-  const invoices = useApi<Invoice[]>(`/fees/invoices?${query}`);
+  const [period, setPeriodState] = useState(thisMonth());
+  const [status, setStatusState] = useState("");
+  const [kind, setKindState] = useState("");
+  const [classId, setClassIdState] = useState("");
+  const [search, setSearchState] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  // Any filter change starts again from the first page.
+  const filter = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setPage(1);
+  };
+  const setPeriod = filter(setPeriodState);
+  const query = new URLSearchParams({
+    ...(period && { period }),
+    ...(status && { status }),
+    ...(kind && { kind }),
+    ...(classId && { classId }),
+    ...(search && { search }),
+    page: String(page),
+    pageSize: String(pageSize),
+  }).toString();
+  const invoices = useApi<InvoicePage>(`/fees/invoices/paged?${query}`);
   const [generateOpen, setGenerateOpen] = useState(false);
   // Remount the dialog each time it opens so it starts on the month being viewed.
   const [generateKey, setGenerateKey] = useState(0);
@@ -131,7 +173,7 @@ export default function FeesPage() {
         onOpenChange={setGenerateOpen}
         initialPeriod={period}
         onDone={async (p, message) => {
-          toast.success("Vouchers generated", message);
+          toast.success("Voucher run finished", message);
           setTab("invoices");
           if (p !== period) setPeriod(p);
           else await invoices.reload();
@@ -144,9 +186,17 @@ export default function FeesPage() {
             period={period}
             setPeriod={setPeriod}
             status={status}
-            setStatus={setStatus}
+            setStatus={filter(setStatusState)}
+            kind={kind}
+            setKind={filter(setKindState)}
+            classId={classId}
+            setClassId={filter(setClassIdState)}
             search={search}
-            setSearch={setSearch}
+            setSearch={filter(setSearchState)}
+            page={page}
+            setPage={setPage}
+            pageSize={pageSize}
+            setPageSize={filter(setPageSize)}
             onGenerate={openGenerate}
           />
         </TabPanel>
@@ -164,6 +214,9 @@ export default function FeesPage() {
         </TabPanel>
         <TabPanel value="setup">
           <SetupTab />
+        </TabPanel>
+        <TabPanel value="rules">
+          <FeeRulesTab />
         </TabPanel>
       </Tabs>
     </div>
@@ -183,6 +236,9 @@ function GenerateDialog({
 }) {
   const [period, setPeriod] = useState(initialPeriod);
   const [sendWhatsApp, setSendWhatsApp] = useState(false);
+  const policy = useApi<FeePolicy>(open ? "/fees/policy" : null);
+  const [carry, setCarry] = useState<boolean | null>(null);
+  const carryForward = carry ?? policy.data?.carryForwardArrears ?? false;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -190,14 +246,14 @@ function GenerateDialog({
     event.preventDefault();
     setBusy(true);
     try {
-      const res = await api<{ created: number; skipped: number; totalBilled: number; messages: number }>(
-        "/fees/invoices/generate",
-        { method: "POST", body: { period, sendWhatsApp } },
-      );
+      const res = await api<RunSummary>("/fees/invoices/generate", { method: "POST", body: { period, sendWhatsApp, carryForward } });
       const message =
-        `Created ${res.created} vouchers totalling ${rupees(res.totalBilled)}.` +
+        `Created ${plural(res.created, "voucher")} totalling ${rupees(res.totalBilled)}.` +
+        (res.alreadyBilled ? ` ${res.alreadyBilled} already had one.` : "") +
+        (res.carriedForward ? ` ${plural(res.carriedForward, "earlier balance")} carried forward.` : "") +
+        (res.skipped ? ` ${res.skipped} had nothing to bill.` : "") +
         (res.messages ? ` ${res.messages} sent on WhatsApp.` : "") +
-        (res.created === 0 ? " Everyone already has a voucher for this month, or no fee structure is set." : "");
+        (res.created === 0 && !res.alreadyBilled ? " No fee structure is set for these classes." : "");
       setError("");
       onOpenChange(false);
       await onDone(period, message);
@@ -213,7 +269,7 @@ function GenerateDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Generate vouchers"
-      description="Bills every active student for the month using the fee setup. Students who already have a voucher for the month are skipped, so it is safe to run again."
+      description="Bills every active student for the month using the fee setup, concessions and sibling discount. Students who already have a voucher for the month are skipped, so it is safe to run again, for example after a failed run."
       footer={
         <>
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
@@ -228,6 +284,11 @@ function GenerateDialog({
       <form id="generate-vouchers" onSubmit={generate} className="flex flex-col gap-4">
         <TextField label="Month" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} required />
         <Checkbox checked={sendWhatsApp} onCheckedChange={setSendWhatsApp} label="Also send each voucher to parents on WhatsApp" />
+        <Checkbox
+          checked={carryForward}
+          onCheckedChange={setCarry}
+          label="Carry overdue balances from earlier vouchers onto this month's voucher"
+        />
         {error && <Alert tone="danger">{error}</Alert>}
       </form>
     </Dialog>
@@ -240,45 +301,63 @@ function InvoicesTab({
   setPeriod,
   status,
   setStatus,
+  kind,
+  setKind,
+  classId,
+  setClassId,
   search,
   setSearch,
+  page,
+  setPage,
+  pageSize,
+  setPageSize,
   onGenerate,
 }: {
-  invoices: { data: Invoice[] | null; error: string; reload: () => Promise<void> };
+  invoices: { data: InvoicePage | null; error: string; reload: () => Promise<void> };
   period: string;
   setPeriod: (v: string) => void;
   status: string;
   setStatus: (v: string) => void;
+  kind: string;
+  setKind: (v: string) => void;
+  classId: string;
+  setClassId: (v: string) => void;
   search: string;
   setSearch: (v: string) => void;
+  page: number;
+  setPage: (v: number) => void;
+  pageSize: number;
+  setPageSize: (v: number) => void;
   onGenerate: () => void;
 }) {
   const router = useRouter();
-  const rows = invoices.data;
-  // Voided vouchers bill nothing.
-  const live = rows?.filter((i) => i.status !== "CANCELLED");
-  const billed = live?.reduce((s, i) => s + i.total, 0) ?? 0;
-  const collected = live?.reduce((s, i) => s + i.paid, 0) ?? 0;
-  const outstanding = rows?.filter((i) => i.status !== "CANCELLED").reduce((s, i) => s + Math.max(0, i.total - i.paid), 0) ?? 0;
-  const overdue = rows?.filter((i) => invoiceDisplay(i) === "OVERDUE") ?? [];
-  const loading = !rows && !invoices.error;
+  const classes = useApi<SchoolClass[]>("/classes");
+  const data = invoices.data;
+  const rows = data?.items ?? null;
+  // Totals cover every voucher the filters match, not just this page.
+  const summary = data?.summary;
+  const billed = summary?.billed ?? 0;
+  const collected = summary?.collected ?? 0;
+  const loading = !data && !invoices.error;
   const rate = billed ? Math.round((collected / billed) * 1000) / 10 : 0;
+  const classOptions = classes.data?.map((c) => ({ value: c.id, label: `${c.name} (${c.campus.name})` })) ?? [];
 
   const columns: Column<Invoice>[] = [
     {
       id: "voucher",
       header: "Voucher",
-      sortValue: (i) => i.voucherNo,
       cell: (i) => (
-        <Link className="font-mono text-xs font-medium text-brand hover:underline" href={`/fees/invoices/${i.id}`}>
-          {i.voucherNo}
-        </Link>
+        <div className="min-w-0">
+          <Link className="font-mono text-xs font-medium text-brand hover:underline" href={`/fees/invoices/${i.id}`}>
+            {i.voucherNo}
+          </Link>
+          <div className="text-xs text-fg-muted">{i.kind === "ADHOC" ? "One-off" : monthLabel(i.period)}</div>
+        </div>
       ),
     },
     {
       id: "student",
       header: "Student",
-      sortValue: (i) => fullName(i.student),
       cell: (i) => (
         <div className="min-w-0">
           <div className="font-medium text-fg">{fullName(i.student)}</div>
@@ -286,19 +365,26 @@ function InvoicesTab({
         </div>
       ),
     },
-    { id: "due", header: "Due", sortValue: (i) => i.dueDate, cell: (i) => day(i.dueDate), hideBelow: "md" },
-    { id: "total", header: "Total", align: "right", sortValue: (i) => i.total, cell: (i) => rupees(i.total) },
-    { id: "paid", header: "Paid", align: "right", sortValue: (i) => i.paid, cell: (i) => rupees(i.paid), hideBelow: "sm" },
-    { id: "status", header: "Status", sortValue: (i) => invoiceDisplay(i), cell: (i) => <InvoiceStatusPill invoice={i} /> },
+    { id: "due", header: "Due", cell: (i) => day(i.dueDate), hideBelow: "md" },
+    { id: "total", header: "Total", align: "right", cell: (i) => rupees(i.total) },
+    { id: "paid", header: "Paid", align: "right", cell: (i) => rupees(i.paid), hideBelow: "sm" },
+    { id: "status", header: "Status", cell: (i) => <InvoiceStatusPill invoice={i} /> },
   ];
 
   return (
     <div className="flex flex-col gap-6">
       <StatGrid>
-        <KpiCard label="Billed" value={rupees(billed)} icon={<ReceiptText />} loading={loading} hint={live ? `${live.length} vouchers` : undefined} />
-        <KpiCard label="Collected" value={rupees(collected)} icon={<Banknote />} tone="success" loading={loading} hint={rows ? `${rate}% of billed` : undefined} />
-        <KpiCard label="Outstanding" value={rupees(outstanding)} icon={<Wallet />} tone="warning" loading={loading} />
-        <KpiCard label="Overdue vouchers" value={overdue.length.toLocaleString("en-PK")} icon={<CircleAlert />} tone="danger" loading={loading} hint={rows ? "Past the due date" : undefined} />
+        <KpiCard label="Billed" value={rupees(billed)} icon={<ReceiptText />} loading={loading} hint={summary ? plural(summary.vouchers, "voucher") : undefined} />
+        <KpiCard label="Collected" value={rupees(collected)} icon={<Banknote />} tone="success" loading={loading} hint={summary ? `${rate}% of billed` : undefined} />
+        <KpiCard label="Outstanding" value={rupees(summary?.outstanding ?? 0)} icon={<Wallet />} tone="warning" loading={loading} hint={summary ? "Unpaid on these vouchers" : undefined} />
+        <KpiCard
+          label="Overdue vouchers"
+          value={(summary?.overdue.invoices ?? 0).toLocaleString("en-PK")}
+          icon={<CircleAlert />}
+          tone="danger"
+          loading={loading}
+          hint={summary ? `${rupees(summary.overdue.amount)} past the due date` : undefined}
+        />
       </StatGrid>
       <DataTable
         label="Fee vouchers"
@@ -316,7 +402,7 @@ function InvoicesTab({
           <>
             <input
               type="month"
-              aria-label="Month"
+              aria-label="Month (clear for every month)"
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
               className={cn(inputClass, "h-9 w-40")}
@@ -329,15 +415,35 @@ function InvoicesTab({
               onChange={(e) => setStatus(e.target.value)}
               wrapperClassName="w-40"
             />
+            <NativeSelect
+              aria-label="Class"
+              placeholder="All classes"
+              options={classOptions}
+              value={classId}
+              onChange={(e) => setClassId(e.target.value)}
+              wrapperClassName="w-44"
+            />
+            <NativeSelect
+              aria-label="Voucher type"
+              placeholder="All vouchers"
+              options={KIND_OPTIONS}
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+              wrapperClassName="w-40"
+            />
           </>
         }
-        filtered={!!status || !!search}
-        defaultSort={{ id: "voucher", dir: "asc" }}
+        filtered={!!status || !!search || !!kind || !!classId}
+        serverPagination={
+          data
+            ? { page, pageSize, total: data.total, onPageChange: setPage, onPageSizeChange: setPageSize, pageSizeOptions: PAGE_SIZES }
+            : undefined
+        }
         onRowClick={(i) => router.push(`/fees/invoices/${i.id}`)}
         getRowLabel={(i) => `Voucher ${i.voucherNo} for ${fullName(i.student)}`}
         empty={{
           icon: <ReceiptText />,
-          title: `No vouchers for ${monthLabel(period)} yet`,
+          title: period ? `No vouchers for ${monthLabel(period)} yet` : "No vouchers yet",
           description: "Generate this month's vouchers to bill every active student.",
           action: (
             <Button icon={<FilePlus2 />} onClick={onGenerate}>
@@ -400,7 +506,12 @@ function PaymentsTab() {
       sortValue: (r) => r.receivedAt,
       cell: (r) => (
         <div className="min-w-0">
-          <div className={cn("font-mono text-xs font-medium text-fg", r.reversedAt && "line-through text-fg-muted")}>{r.receiptNo}</div>
+          <Link
+            className={cn("font-mono text-xs font-medium text-fg hover:text-brand", r.reversedAt && "line-through text-fg-muted")}
+            href={`/fees/receipts/${r.id}`}
+          >
+            {r.receiptNo}
+          </Link>
           <div className="text-xs text-fg-muted">{day(r.receivedAt)}</div>
         </div>
       ),
@@ -646,6 +757,8 @@ function OnlinePaymentsTab() {
 function DefaultersTab() {
   const toast = useToast();
   const defaulters = useApi<Defaulter[]>("/fees/defaulters");
+  // The same figures the dashboard and the outstanding report show.
+  const owed = useApi<Outstanding>("/fees/outstanding");
   const [period, setPeriod] = useState(thisMonth());
   const [busy, setBusy] = useState(false);
   const rows = defaulters.data;
@@ -712,10 +825,18 @@ function DefaultersTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <StatGrid cols={3}>
+      <StatGrid>
         <KpiCard label="Overdue vouchers" value={(rows?.length ?? 0).toLocaleString("en-PK")} icon={<CircleAlert />} tone="danger" loading={loading} />
-        <KpiCard label="Outstanding" value={rupees(rows?.reduce((s, r) => s + r.balance, 0) ?? 0)} icon={<Wallet />} tone="warning" loading={loading} />
-        <KpiCard label="Late fines so far" value={rupees(rows?.reduce((s, r) => s + r.lateFine, 0) ?? 0)} icon={<CalendarClock />} tone="neutral" loading={loading} />
+        <KpiCard label="Overdue balance" value={rupees(rows?.reduce((s, r) => s + r.balance, 0) ?? 0)} icon={<Wallet />} tone="warning" loading={loading} hint="Past the due date" />
+        <KpiCard
+          label="Outstanding"
+          value={rupees(owed.data?.outstanding.amount ?? 0)}
+          icon={<ReceiptText />}
+          tone="neutral"
+          loading={!owed.data && !owed.error}
+          hint={owed.data ? `All ${plural(owed.data.outstanding.invoices, "open voucher")}` : undefined}
+        />
+        <KpiCard label="Late fines not yet booked" value={rupees(rows?.reduce((s, r) => s + r.lateFine, 0) ?? 0)} icon={<CalendarClock />} tone="neutral" loading={loading} hint="Added when paid" />
       </StatGrid>
       <DataTable
         label="Defaulters"

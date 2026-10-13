@@ -293,8 +293,10 @@ export const HEATMAP_DAYS = 26 * 7;
 export interface FeeInvoiceInput {
   total: number;
   paid: number;
-  status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED';
+  status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED' | 'CARRIED_FORWARD';
   dueDate: string;
+  /** Earlier balances carried onto this voucher; already billed on their own vouchers. */
+  arrears?: number;
 }
 
 /** Billed, paid and outstanding totals over a student's invoices (cancelled ones ignored). */
@@ -303,7 +305,7 @@ export function feeSummary(invoices: FeeInvoiceInput[], today: string) {
   const open = live.filter((i) => i.status === 'UNPAID' || i.status === 'PARTIAL');
   const due = (list: FeeInvoiceInput[]) => list.reduce((s, i) => s + Math.max(0, i.total - i.paid), 0);
   return {
-    totalBilled: live.reduce((s, i) => s + i.total, 0),
+    totalBilled: live.reduce((s, i) => s + i.total - (i.arrears ?? 0), 0),
     totalPaid: live.reduce((s, i) => s + i.paid, 0),
     balance: due(open),
     overdueBalance: due(open.filter((i) => i.dueDate < today)),
@@ -370,7 +372,7 @@ export async function studentPerformance(
     access.fees
       ? prisma.invoice.findMany({
           where: { studentId, schoolId },
-          select: { total: true, paid: true, status: true, dueDate: true },
+          select: { total: true, paid: true, status: true, dueDate: true, arrears: true },
         })
       : [],
     access.fees

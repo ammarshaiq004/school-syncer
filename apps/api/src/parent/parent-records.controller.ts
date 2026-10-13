@@ -16,7 +16,7 @@ import {
   RequiresFeature,
   Roles,
 } from '../common/decorators.js';
-import { lateFine } from '../fees/fee-calculator.js';
+import { fineDue, fineRule } from '../fees/fee-calculator.js';
 import { isoDay } from '../lesson-plans/lesson-plan-rules.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -99,7 +99,7 @@ export class ParentRecordsController {
       }),
       this.prisma.school.findUniqueOrThrow({
         where: { id: user.schoolId },
-        select: { lateFeePerDay: true },
+        select: { lateFeePerDay: true, lateFeeMaxDays: true, lateFeeCap: true },
       }),
     ]);
     const today = localToday();
@@ -107,9 +107,10 @@ export class ParentRecordsController {
     const asOf = dayStart(today);
     const items = invoices.map((i) => {
       const displayStatus = invoiceDisplayStatus(i, today);
-      const balance = Math.max(i.total - i.paid, 0);
-      const fine =
-        balance > 0 ? lateFine(i.dueDate, asOf, school.lateFeePerDay) : 0;
+      // A carried-forward voucher's balance is owed on the later voucher.
+      const owing = i.status === InvoiceStatus.UNPAID || i.status === InvoiceStatus.PARTIAL;
+      const balance = owing ? Math.max(i.total - i.paid, 0) : 0;
+      const fine = fineDue(i, asOf, fineRule(school));
       return {
         id: i.id,
         voucherNo: i.voucherNo,
@@ -164,6 +165,8 @@ export class ParentRecordsController {
             logoUrl: true,
             currency: true,
             lateFeePerDay: true,
+            lateFeeMaxDays: true,
+            lateFeeCap: true,
           },
         },
         lines: {
@@ -201,11 +204,9 @@ export class ParentRecordsController {
       },
     });
     if (!i) throw new NotFoundException('Invoice not found');
-    const { lateFeePerDay, ...school } = i.school;
-    const fine =
-      i.total - i.paid > 0
-        ? lateFine(i.dueDate, dayStart(localToday()), lateFeePerDay)
-        : 0;
+    const { lateFeePerDay, lateFeeMaxDays, lateFeeCap, ...school } = i.school;
+    const fine = fineDue(i, dayStart(localToday()), fineRule({ lateFeePerDay, lateFeeMaxDays, lateFeeCap }));
+    const owing = i.status === InvoiceStatus.UNPAID || i.status === InvoiceStatus.PARTIAL;
     return {
       id: i.id,
       voucherNo: i.voucherNo,
@@ -222,7 +223,7 @@ export class ParentRecordsController {
         className: className(i.student),
       },
       lines: i.lines,
-      breakdown: invoiceBreakdown(i.lines, i, fine),
+      breakdown: invoiceBreakdown(i.lines, i, fine, owing),
       payments: i.payments.map(({ checkout, ...p }) => ({ ...p, checkoutId: checkout?.id ?? null })),
     };
   }

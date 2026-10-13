@@ -52,12 +52,27 @@ model School {
   auditLogs     AuditLog[]
   lateFeePerDay Int            @default(0)
   feeDueDay     Int            @default(10)
+  /// Late fine caps: at most this many days are charged, and at most this many
+  /// rupees on one voucher. Null means no cap.
+  lateFeeMaxDays Int?
+  lateFeeCap     Int?
+  /// Sibling discount (SCHOOL-140): percent off the listed fee heads for the
+  /// second child of a family, and for the third and later children.
+  siblingSecondPercent Int      @default(0)
+  siblingThirdPercent  Int      @default(0)
+  siblingFeeHeadIds    String[] @default([])
+  /// A one-time fee head billed on its own voucher when a student is admitted,
+  /// at the amount the fee setup gives the student's class. Null = none.
+  admissionFeeHeadId   String?
+  /// Monthly runs move an earlier voucher's unpaid balance onto the new voucher.
+  carryForwardArrears  Boolean  @default(false)
 
   students          Student[]
   guardians         Guardian[]
   applications      Application[]
   feeHeads          FeeHead[]
   invoices          Invoice[]
+  voucherRuns       VoucherRun[]
   onlinePayments    OnlinePayment[]
   notifications     NotificationLog[]
   announcements     Announcement[]
@@ -637,6 +652,9 @@ model Concession {
   type      ConcessionType
   value     Int // percent (0-100) or rupees
   reason    String?
+  /// The first and last billing months (YYYY-MM) it applies to; null = open-ended.
+  validFrom String?
+  validTo   String?
   createdAt DateTime       @default(now())
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -650,6 +668,13 @@ enum InvoiceStatus {
   PARTIAL
   PAID
   CANCELLED
+  /// The unpaid balance moved onto a later voucher (carriedToId); owed there, not here.
+  CARRIED_FORWARD
+}
+
+enum InvoiceKind {
+  MONTHLY // a month's voucher from a voucher run
+  ADHOC // a one-off voucher for one student: admission, registration, a one-time charge
 }
 
 model Invoice {
@@ -663,26 +688,79 @@ model Invoice {
   total         Int
   paid          Int           @default(0)
   status        InvoiceStatus @default(UNPAID)
+  kind          InvoiceKind   @default(MONTHLY)
+  /// The billing month on a MONTHLY voucher, null on ad-hoc ones: one monthly
+  /// voucher per student per month, however often a run is repeated.
+  monthlyPeriod String?
   createdAt     DateTime      @default(now())
   /// Set when the voucher is voided (status CANCELLED); the reason is required.
   cancelledAt   DateTime?
   cancelledById String?
   cancelReason  String?
+  /// Late fine already added to `total` as LATE_FINE lines (net of waivers).
+  fineBooked       Int       @default(0)
+  /// Set when the fee office waives the late fine; no more fine builds up.
+  fineWaivedAt     DateTime?
+  fineWaivedById   String?
+  fineWaiverReason String?
+  /// Earlier balances carried onto this voucher as ARREARS lines (part of `total`).
+  arrears          Int       @default(0)
+  carriedToId      String?
+  runId            String?
 
   school       School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   student      Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  carriedTo    Invoice?        @relation("CarriedForward", fields: [carriedToId], references: [id], onDelete: SetNull)
+  carriedFrom  Invoice[]       @relation("CarriedForward")
+  run          VoucherRun?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   lines        InvoiceLine[]
   payments     Payment[]
   libraryFines BookLoan[]
   checkouts    OnlinePayment[]
 
-  @@unique([studentId, period])
+  @@unique([studentId, monthlyPeriod])
   @@index([schoolId, period, status])
+  @@index([schoolId, status, dueDate])
+}
+
+enum VoucherRunStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// One press of "Generate vouchers": what it billed, skipped and carried forward.
+model VoucherRun {
+  id          String           @id @default(cuid())
+  schoolId    String
+  period      String
+  classId     String?
+  /// Held while the run is going so a double click cannot start a second one.
+  lockKey     String?          @unique
+  status      VoucherRunStatus @default(RUNNING)
+  startedById String?
+  startedAt   DateTime         @default(now())
+  finishedAt  DateTime?
+  students    Int              @default(0)
+  created     Int              @default(0)
+  skipped     Int              @default(0)
+  totalBilled Int              @default(0)
+  carried     Int              @default(0)
+  messages    Int              @default(0)
+  error       String?
+
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+
+  @@index([schoolId, startedAt])
 }
 
 enum InvoiceLineKind {
   FEE // billed when the voucher was generated
   ADJUSTMENT // a discount (negative) or extra charge added by the fee office afterwards
+  SIBLING_DISCOUNT // the school's sibling discount, applied by the voucher run
+  LATE_FINE // a late fine booked onto the voucher (negative when waived)
+  ARREARS // an earlier voucher's unpaid balance carried forward
 }
 
 model InvoiceLine {

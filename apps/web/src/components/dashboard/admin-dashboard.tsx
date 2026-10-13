@@ -114,6 +114,8 @@ export interface Summary {
     collectedToday: number;
   };
   overdue?: { invoices: number; amount: number };
+  /** Every open voucher's balance: the same figure as the fees page and the outstanding report. */
+  outstanding?: { invoices: number; amount: number };
   collectionTrend?: { period: string; billed: number; collected: number }[];
   recentPayments?: RecentPayment[];
   topDefaulters?: Defaulter[];
@@ -417,7 +419,11 @@ export function AdminDashboard() {
                 <div className="flex flex-col gap-5">
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
                     <FeeStat label="Collected" value={rupees(fees.collected)} tone="text-success-text" />
-                    <FeeStat label="Outstanding" value={rupees(fees.outstanding ?? Math.max(0, fees.billed - fees.collected))} />
+                    <FeeStat
+                      label="Outstanding"
+                      value={rupees(s.outstanding?.amount ?? fees.outstanding ?? Math.max(0, fees.billed - fees.collected))}
+                      note={s.outstanding ? "All months" : undefined}
+                    />
                     <FeeStat
                       label="Overdue"
                       value={rupees(s.overdue?.amount ?? 0)}

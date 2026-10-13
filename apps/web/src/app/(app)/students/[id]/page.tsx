@@ -18,6 +18,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { StudentFees } from "@/components/fees/student-fees";
 import { StudentLoginCard, type StudentLogin } from "@/components/student/student-login-card";
 import { StudentLibrary } from "@/components/student-library";
 import { StudentTransport } from "@/components/student-transport";
@@ -68,13 +69,12 @@ interface Profile {
     guardian: { name: string; phone: string; cnic: string | null; userId: string | null };
   }[];
   enrollments: { id: string; rollNo: number | null; status: string; academicYear: { name: string }; section: { name: string; class: { name: string } } }[];
-  invoices: { id: string; period: string; total: number; paid: number; status: string }[];
+  invoices: { id: string; period: string; total: number; paid: number; status: string; dueDate: string; kind: "MONTHLY" | "ADHOC" }[];
   attendanceSummary: Record<string, number>;
   /** The student's own login for the student workspace, if any. */
   user?: StudentLogin | null;
 }
 
-type Invoice = Profile["invoices"][number];
 type Enrollment = Profile["enrollments"][number];
 
 const enrollmentColumns: Column<Enrollment>[] = [
@@ -82,23 +82,6 @@ const enrollmentColumns: Column<Enrollment>[] = [
   { id: "class", header: "Class", cell: (e) => `${e.section.class.name} ${e.section.name}` },
   { id: "roll", header: "Roll", align: "right", cell: (e) => e.rollNo ?? "–" },
   { id: "status", header: "Status", cell: (e) => <StatusPill status={e.status} /> },
-];
-
-const invoiceColumns: Column<Invoice>[] = [
-  {
-    id: "period",
-    header: "Month",
-    sortValue: (i) => i.period,
-    cell: (i) => (
-      <Link className="font-medium text-fg hover:text-brand" href={`/fees/invoices/${i.id}`}>
-        {i.period}
-      </Link>
-    ),
-  },
-  { id: "total", header: "Total", align: "right", sortValue: (i) => i.total, cell: (i) => rupees(i.total) },
-  { id: "paid", header: "Paid", align: "right", sortValue: (i) => i.paid, cell: (i) => rupees(i.paid) },
-  { id: "balance", header: "Balance", align: "right", hideBelow: "sm", sortValue: (i) => i.total - i.paid, cell: (i) => rupees(Math.max(0, i.total - i.paid)) },
-  { id: "status", header: "Status", cell: (i) => <StatusPill status={i.status} /> },
 ];
 
 function ProfileSkeleton() {
@@ -166,7 +149,10 @@ export default function StudentProfilePage() {
   const onCampus = user.school?.mode !== "ONLINE";
   const transport = onCampus && user.plan?.features.includes("transport") !== false;
   const library = onCampus && user.plan?.features.includes("library") !== false;
-  const balance = s.invoices.reduce((sum, i) => sum + Math.max(0, i.total - i.paid), 0);
+  // Only open vouchers owe money; a carried-forward balance is owed on the later voucher.
+  const balance = s.invoices
+    .filter((i) => i.status === "UNPAID" || i.status === "PARTIAL")
+    .reduce((sum, i) => sum + Math.max(0, i.total - i.paid), 0);
   const waPhone = primary ? primary.guardian.phone.replace(/\D/g, "").replace(/^0/, "92") : "";
 
   const tabs: TabItem[] = [
@@ -365,15 +351,7 @@ export default function StudentProfilePage() {
 
         {canFees && (
           <TabPanel value="fees">
-            <DataTable
-              label="Invoices"
-              columns={invoiceColumns}
-              data={s.invoices}
-              getRowId={(i) => i.id}
-              pageSize={0}
-              defaultSort={{ id: "period", dir: "desc" }}
-              empty={{ title: "No invoices yet", description: "Monthly invoices appear here once fees are generated." }}
-            />
+            <StudentFees studentId={s.id} invoices={s.invoices} onChanged={student.reload} />
           </TabPanel>
         )}
 

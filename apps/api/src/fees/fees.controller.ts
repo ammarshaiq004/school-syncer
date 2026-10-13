@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -12,13 +13,13 @@ import {
 import {
   ConcessionType,
   FeeFrequency,
-  FineStatus,
+  InvoiceKind,
   InvoiceStatus,
   PaymentMethod,
   Prisma,
 } from '@prisma/client';
 import { z } from 'zod';
-import { campusScopeFor, FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, campusScopeFor, FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -27,11 +28,13 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { dayStart } from '../common/dates.js';
-import { monthBounds, riderFee } from '../transport/transport-rules.js';
-import { invoiceLines, lateFine, type StructureRow } from './fee-calculator.js';
-import { voucherNo } from './invoice-codes.js';
+import { dayStart, localToday } from '../common/dates.js';
+import { createAdhocVoucher } from './adhoc-vouchers.js';
+import { daysLate, fineDue, fineRule, siblingPercent } from './fee-calculator.js';
+import { billedOf, feeOutstanding, OPEN_INVOICE, overdueWhere } from './outstanding.js';
 import { PaymentsService } from './payments.service.js';
+import { schoolSiblings } from './siblings.js';
+import { VoucherRunsService } from './voucher-runs.service.js';
 
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
 
@@ -45,16 +48,65 @@ const structureSchema = z.object({
   academicYearId: z.string().min(1),
   amount: z.number().int().min(0).max(10_000_000),
 });
-const concessionSchema = z.object({
-  feeHeadId: z.string().min(1),
-  type: z.enum(ConcessionType),
-  value: z.number().int().min(0).max(10_000_000),
-  reason: z.string().trim().max(200).optional(),
-});
+const concessionSchema = z
+  .object({
+    feeHeadId: z.string().min(1),
+    type: z.enum(ConcessionType),
+    value: z.number().int().min(0).max(10_000_000),
+    reason: z.string().trim().max(200).optional(),
+    // First and last billing months it covers; left out (or null) = open-ended.
+    validFrom: period.nullish(),
+    validTo: period.nullish(),
+  })
+  .refine((c) => c.type !== ConcessionType.PERCENT || c.value <= 100, {
+    message: 'A percentage concession is at most 100',
+    path: ['value'],
+  })
+  .refine((c) => !c.validFrom || !c.validTo || c.validFrom <= c.validTo, {
+    message: 'The last month must be on or after the first month',
+    path: ['validTo'],
+  });
 const generateSchema = z.object({
   period,
   classId: z.string().optional(),
   sendWhatsApp: z.boolean().default(false),
+  // Defaults to the school's fee rule.
+  carryForward: z.boolean().optional(),
+});
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const adhocSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        feeHeadId: z.string().min(1).optional(),
+        description: z.string().trim().max(80).optional(),
+        amount: z.number().int().min(1).max(10_000_000),
+      }),
+    )
+    .min(1, 'Add at least one charge')
+    .max(10),
+  dueDate: isoDay.optional(),
+});
+const policySchema = z.object({
+  lateFeePerDay: z.number().int().min(0).max(100_000).optional(),
+  lateFeeMaxDays: z.number().int().min(1).max(366).nullable().optional(),
+  lateFeeCap: z.number().int().min(1).max(10_000_000).nullable().optional(),
+  siblingSecondPercent: z.number().int().min(0).max(100).optional(),
+  siblingThirdPercent: z.number().int().min(0).max(100).optional(),
+  siblingFeeHeadIds: z.array(z.string().min(1)).max(50).optional(),
+  admissionFeeHeadId: z.string().min(1).nullable().optional(),
+  carryForwardArrears: z.boolean().optional(),
+});
+const invoiceListSchema = z.object({
+  period: period.optional(),
+  // OVERDUE: open and past the due date.
+  status: z.enum({ ...InvoiceStatus, OVERDUE: 'OVERDUE' } as const).optional(),
+  kind: z.enum(InvoiceKind).optional(),
+  classId: z.string().min(1).optional(),
+  studentId: z.string().min(1).optional(),
+  search: z.string().trim().max(80).optional(),
+  page: z.coerce.number().int().min(1).max(100_000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(25),
 });
 const paymentSchema = z.object({
   amount: z.number().int().positive(),
@@ -83,6 +135,18 @@ const inFeeScope = (user: AuthUser): { campusId?: { in: string[] } } => {
   return scope ? { campusId: { in: scope } } : {};
 };
 
+const POLICY_FIELDS = {
+  lateFeePerDay: true,
+  lateFeeMaxDays: true,
+  lateFeeCap: true,
+  feeDueDay: true,
+  siblingSecondPercent: true,
+  siblingThirdPercent: true,
+  siblingFeeHeadIds: true,
+  admissionFeeHeadId: true,
+  carryForwardArrears: true,
+} satisfies Prisma.SchoolSelect;
+
 @Controller('fees')
 @Permission('fees')
 @RequiresFeature('fees')
@@ -92,6 +156,7 @@ export class FeesController {
     private readonly audit: AuditService,
     private readonly payments: PaymentsService,
     private readonly notifications: NotificationsService,
+    private readonly runs: VoucherRunsService,
   ) {}
 
   // ----- Fee heads and structures -----
@@ -150,7 +215,146 @@ export class FeesController {
     return structure;
   }
 
+  // ----- Fee rules (late fine caps, sibling discount, admission fee) -----
+
+  @Get('policy')
+  @Roles(...FEE_ROLES)
+  policy(@CurrentUser() user: AuthUser) {
+    return this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId }, select: POLICY_FIELDS });
+  }
+
+  /** School-wide fee rules: only fee staff who cover every campus may change them. */
+  @Put('policy')
+  @Roles(...FEE_ROLES)
+  async setPolicy(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(policySchema)) body: z.infer<typeof policySchema>,
+  ) {
+    assertSchoolWide(user, 'Fee rules apply to the whole school; ask a school-wide fee manager to change them.', FEE_ROLES);
+    const heads = [...new Set([...(body.siblingFeeHeadIds ?? []), ...(body.admissionFeeHeadId ? [body.admissionFeeHeadId] : [])])];
+    const found = await this.prisma.feeHead.findMany({ where: { id: { in: heads }, schoolId: user.schoolId } });
+    if (found.length !== heads.length) throw new NotFoundException('Fee head not found');
+    if (body.admissionFeeHeadId && found.find((h) => h.id === body.admissionFeeHeadId)?.frequency !== FeeFrequency.ONE_TIME) {
+      throw new BadRequestException('The admission fee must be a one-time fee head.');
+    }
+    const before = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId }, select: POLICY_FIELDS });
+    const after = await this.prisma.school.update({ where: { id: user.schoolId }, data: body, select: POLICY_FIELDS });
+    await this.audit.record(user, 'fee_policy.update', 'School', user.schoolId, { before, after });
+    return after;
+  }
+
   // ----- Concessions -----
+
+  /**
+   * What the student fees screen needs: the student's concessions, their
+   * place among siblings and the sibling discount it earns, and the one-time
+   * charges their class can be billed.
+   */
+  @Get('students/:studentId/fee-profile')
+  @Roles(...FEE_ROLES)
+  async feeProfile(@CurrentUser() user: AuthUser, @Param('studentId') studentId: string) {
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, schoolId: user.schoolId, ...inFeeScope(user) },
+      select: {
+        id: true,
+        concessions: { include: { feeHead: { select: { name: true, frequency: true } } }, orderBy: { createdAt: 'asc' } },
+        enrollments: {
+          where: { status: 'ACTIVE' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { academicYearId: true, section: { select: { classId: true } } },
+        },
+      },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+    const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId }, select: POLICY_FIELDS });
+    const enrollment = student.enrollments[0];
+    const year = await this.prisma.academicYear.findFirst({ where: { schoolId: user.schoolId, isCurrent: true } });
+    const place = year ? (await schoolSiblings(this.prisma, user.schoolId, year.id)).get(studentId) : undefined;
+    const others = place ? place.family.filter((id) => id !== studentId) : [];
+    const siblings = others.length
+      ? await this.prisma.student.findMany({
+          where: { id: { in: others } },
+          select: { id: true, firstName: true, lastName: true, admissionNo: true, campusId: true },
+        })
+      : [];
+    const scope = feeScope(user);
+    const percent = place
+      ? siblingPercent({ rank: place.rank, secondPercent: school.siblingSecondPercent, thirdPercent: school.siblingThirdPercent, feeHeadIds: [] })
+      : 0;
+    const heads = await this.prisma.feeHead.findMany({
+      where: { id: { in: school.siblingFeeHeadIds }, schoolId: user.schoolId },
+      select: { id: true, name: true },
+    });
+    const oneTime = enrollment
+      ? await this.prisma.feeStructure.findMany({
+          where: {
+            classId: enrollment.section.classId,
+            academicYearId: enrollment.academicYearId,
+            feeHead: { frequency: FeeFrequency.ONE_TIME },
+          },
+          select: { feeHeadId: true, amount: true, feeHead: { select: { name: true } } },
+        })
+      : [];
+    return {
+      concessions: student.concessions,
+      sibling: {
+        rank: place?.rank ?? 1,
+        familySize: place?.size ?? 1,
+        percent,
+        feeHeads: heads,
+        // A sibling at a campus the caller does not cover is counted but not named.
+        siblings: others.flatMap((id): { id: string | null; name: string; admissionNo: string | null }[] => {
+          const s = siblings.find((x) => x.id === id);
+          if (!s) return [];
+          return !scope || scope.includes(s.campusId)
+            ? [{ id: s.id, name: fullName(s), admissionNo: s.admissionNo }]
+            : [{ id: null, name: 'Sibling at another campus', admissionNo: null }];
+        }),
+      },
+      oneTimeCharges: oneTime.map((s) => ({ feeHeadId: s.feeHeadId, name: s.feeHead.name, amount: s.amount })),
+      admissionFeeHeadId: school.admissionFeeHeadId,
+    };
+  }
+
+  /** A one-off voucher for one student: admission or registration fee, a one-time charge. */
+  @Post('students/:studentId/vouchers')
+  @Roles(...FEE_ROLES)
+  async adhocVoucher(
+    @CurrentUser() user: AuthUser,
+    @Param('studentId') studentId: string,
+    @Body(new ZodValidationPipe(adhocSchema)) body: z.infer<typeof adhocSchema>,
+  ) {
+    const student = await this.prisma.student.count({ where: { id: studentId, schoolId: user.schoolId, ...inFeeScope(user) } });
+    if (!student) throw new NotFoundException('Student not found');
+    const headIds = [...new Set(body.lines.flatMap((l) => (l.feeHeadId ? [l.feeHeadId] : [])))];
+    const heads = await this.prisma.feeHead.findMany({ where: { id: { in: headIds }, schoolId: user.schoolId } });
+    if (heads.length !== headIds.length) throw new NotFoundException('Fee head not found');
+    const lines = body.lines.map((l) => {
+      const description = l.description || heads.find((h) => h.id === l.feeHeadId)?.name;
+      if (!description) throw new BadRequestException('Say what each charge is for, or pick a fee head.');
+      return { feeHeadId: l.feeHeadId ?? null, description, amount: l.amount };
+    });
+    const today = localToday();
+    if (body.dueDate && body.dueDate < today) throw new BadRequestException('The due date cannot be in the past.');
+    const invoice = await this.prisma.$transaction((tx) =>
+      createAdhocVoucher(tx, { schoolId: user.schoolId, studentId, lines, dueDate: body.dueDate ?? today }),
+    );
+    await this.audit.record(user, 'invoice.adhoc', 'Invoice', invoice.id, { after: invoice });
+    return invoice;
+  }
+
+  @Get('students/:studentId/concessions')
+  @Roles(...FEE_ROLES)
+  async concessions(@CurrentUser() user: AuthUser, @Param('studentId') studentId: string) {
+    const student = await this.prisma.student.count({ where: { id: studentId, schoolId: user.schoolId, ...inFeeScope(user) } });
+    if (!student) throw new NotFoundException('Student not found');
+    return this.prisma.concession.findMany({
+      where: { studentId },
+      include: { feeHead: { select: { name: true, frequency: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
 
   @Put('students/:studentId/concessions')
   @Roles(...FEE_ROLES)
@@ -164,12 +368,16 @@ export class FeesController {
       this.prisma.feeHead.count({ where: { id: body.feeHeadId, schoolId: user.schoolId } }),
     ]);
     if (owned.includes(0)) throw new NotFoundException('Student or fee head not found');
+    const data = { ...body, validFrom: body.validFrom ?? null, validTo: body.validTo ?? null };
+    const before = await this.prisma.concession.findUnique({
+      where: { studentId_feeHeadId: { studentId, feeHeadId: body.feeHeadId } },
+    });
     const concession = await this.prisma.concession.upsert({
       where: { studentId_feeHeadId: { studentId, feeHeadId: body.feeHeadId } },
-      update: body,
-      create: { ...body, studentId },
+      update: data,
+      create: { ...data, studentId },
     });
-    await this.audit.record(user, 'concession.set', 'Concession', concession.id, { after: concession });
+    await this.audit.record(user, 'concession.set', 'Concession', concession.id, { before, after: concession });
     return concession;
   }
 
@@ -192,138 +400,24 @@ export class FeesController {
   // ----- Invoices -----
 
   /**
-   * Bills every active student in the current academic year for a month.
-   * Students who already have an invoice for that month are skipped, so it
-   * is safe to run again after adding students.
+   * Bills every active student in the current academic year for a month, in
+   * batches that each commit whole. Students who already have the month's
+   * voucher are skipped, so it is safe to run again to fill any gap.
    */
   @Post('invoices/generate')
   @Roles(...FEE_ROLES)
-  async generate(
+  generate(
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(generateSchema)) body: z.infer<typeof generateSchema>,
   ) {
-    const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId } });
-    const year = await this.prisma.academicYear.findFirst({
-      where: { schoolId: user.schoolId, isCurrent: true },
-    });
-    if (!year) throw new NotFoundException('Set a current academic year first');
+    return this.runs.generate(user, body);
+  }
 
-    const enrollments = await this.prisma.enrollment.findMany({
-      where: {
-        schoolId: user.schoolId,
-        academicYearId: year.id,
-        status: 'ACTIVE',
-        student: { status: 'ACTIVE', invoices: { none: { period: body.period } }, ...inFeeScope(user) },
-        ...(body.classId ? { section: { classId: body.classId } } : {}),
-      },
-      include: {
-        student: { include: { concessions: true } },
-        section: { select: { classId: true } },
-      },
-    });
-    const structures = await this.prisma.feeStructure.findMany({
-      where: { schoolId: user.schoolId, academicYearId: year.id },
-      include: { feeHead: true },
-    });
-
-    const riders = await this.transportRiders(user.schoolId, enrollments.map((e) => e.studentId), body.period);
-    // Library fines not paid at the desk go on the voucher.
-    const fines = await this.prisma.bookLoan.findMany({
-      where: { schoolId: user.schoolId, studentId: { in: enrollments.map((e) => e.studentId) }, fineStatus: FineStatus.DUE },
-      include: { copy: { select: { book: { select: { title: true } } } } },
-    });
-
-    const firstMonth = year.startsOn.toISOString().slice(0, 7) === body.period;
-    const [y, m] = body.period.split('-').map(Number);
-    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const dueDate = new Date(Date.UTC(y, m - 1, Math.min(school.feeDueDay, lastDay)));
-
-    const created: { id: string; studentId: string; total: number; voucherNo: string; name: string }[] = [];
-    for (const e of enrollments) {
-      const lines = invoiceLines(
-        structures
-          .filter((s) => s.classId === e.section.classId)
-          .map((s) => ({
-            feeHeadId: s.feeHeadId,
-            feeHeadName: s.feeHead.name,
-            frequency: s.feeHead.frequency,
-            amount: s.amount,
-          }))
-          .concat(riders.get(e.studentId) ?? []),
-        e.student.concessions,
-        firstMonth,
-      );
-      const studentFines = fines.filter((f) => f.studentId === e.studentId);
-      for (const f of studentFines) {
-        lines.push({ feeHeadId: null, description: `Library fine: ${f.copy.book.title}${f.lost ? ' (lost)' : ''}`, amount: f.fine });
-      }
-      const total = lines.reduce((sum, l) => sum + l.amount, 0);
-      if (!lines.length) continue;
-      try {
-        const invoice = await this.prisma.invoice.create({
-          data: {
-            schoolId: user.schoolId,
-            studentId: e.studentId,
-            voucherNo: voucherNo(body.period),
-            period: body.period,
-            dueDate,
-            total,
-            status: total <= 0 ? InvoiceStatus.PAID : InvoiceStatus.UNPAID,
-            lines: { create: lines },
-          },
-        });
-        if (studentFines.length) {
-          await this.prisma.bookLoan.updateMany({
-            where: { id: { in: studentFines.map((f) => f.id) }, fineStatus: FineStatus.DUE },
-            data: { fineStatus: FineStatus.BILLED, invoiceId: invoice.id },
-          });
-        }
-        created.push({
-          id: invoice.id,
-          studentId: e.studentId,
-          total,
-          voucherNo: invoice.voucherNo,
-          name: fullName(e.student),
-        });
-      } catch (error) {
-        // Another run created this student's invoice first; skip it.
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') continue;
-        throw error;
-      }
-    }
-
-    let messages = 0;
-    if (body.sendWhatsApp && created.length) {
-      const phones = await guardianPhones(this.prisma, created.map((c) => c.studentId));
-      messages = await this.notifications.send(
-        user.schoolId,
-        created
-          .filter((c) => c.total > 0)
-          .flatMap((c) =>
-            (phones.get(c.studentId) ?? []).map((to) => ({
-              to,
-              template: 'fees.voucher' as const,
-              params: {
-                studentName: c.name,
-                period: body.period,
-                amount: c.total.toLocaleString('en-PK'),
-                dueDate: dueDate.toISOString().slice(0, 10),
-                voucherNo: c.voucherNo,
-                schoolName: school.name,
-              },
-            })),
-          ),
-      );
-    }
-    await this.audit.record(user, 'invoices.generate', 'Invoice', null, {
-      after: { period: body.period, created: created.length },
-    });
-    return {
-      created: created.length,
-      skipped: enrollments.length - created.length,
-      totalBilled: created.reduce((s, c) => s + c.total, 0),
-      messages,
-    };
+  /** The latest voucher runs with what each billed, skipped and carried forward. */
+  @Get('voucher-runs')
+  @Roles(...FEE_ROLES)
+  voucherRuns(@CurrentUser() user: AuthUser) {
+    return this.runs.runs(user);
   }
 
   @Get('invoices')
@@ -361,6 +455,96 @@ export class FeesController {
     });
   }
 
+  /**
+   * Vouchers a page at a time, with totals over every voucher the filters
+   * match (not just the page): billed, collected and the one shared
+   * outstanding figure.
+   */
+  @Get('invoices/paged')
+  @Roles(...FEE_ROLES)
+  async invoicePage(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(invoiceListSchema)) q: z.infer<typeof invoiceListSchema>,
+  ) {
+    const byStudent = studentSearchWhere(q.search);
+    const today = localToday();
+    const base: Prisma.InvoiceWhereInput = {
+      schoolId: user.schoolId,
+      student: {
+        ...inFeeScope(user),
+        ...(q.classId ? { enrollments: { some: { status: 'ACTIVE', section: { classId: q.classId } } } } : {}),
+      },
+      ...(q.period ? { period: q.period } : {}),
+      ...(q.kind ? { kind: q.kind } : {}),
+      ...(q.studentId ? { studentId: q.studentId } : {}),
+      ...(q.search
+        ? { OR: [{ voucherNo: { contains: q.search.toUpperCase() } }, ...(byStudent ? [{ student: byStudent }] : [])] }
+        : {}),
+    };
+    const where: Prisma.InvoiceWhereInput =
+      q.status === 'OVERDUE'
+        ? { AND: [base, overdueWhere(today)] }
+        : q.status
+          ? { ...base, status: q.status as InvoiceStatus }
+          : base;
+    const [total, items, sums, owed] = await Promise.all([
+      this.prisma.invoice.count({ where }),
+      this.prisma.invoice.findMany({
+        where,
+        orderBy: [{ period: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+        include: { student: { select: { id: true, firstName: true, lastName: true, admissionNo: true } } },
+      }),
+      // Voided vouchers bill nothing.
+      this.prisma.invoice.aggregate({
+        where: { AND: [where, { status: { not: InvoiceStatus.CANCELLED } }] },
+        _sum: { total: true, paid: true, arrears: true },
+        _count: true,
+      }),
+      feeOutstanding(this.prisma, where, today),
+    ]);
+    return {
+      items,
+      total,
+      page: q.page,
+      pageSize: q.pageSize,
+      summary: {
+        vouchers: sums._count,
+        billed: billedOf(sums._sum),
+        collected: sums._sum.paid ?? 0,
+        outstanding: owed.outstanding.amount,
+        overdue: owed.overdue,
+      },
+    };
+  }
+
+  /**
+   * The school's outstanding fees: every open voucher's balance, the overdue
+   * part (what the defaulters list adds up to) and late fines not yet booked.
+   * The dashboard and reports use the same calculation.
+   */
+  @Get('outstanding')
+  @Roles(...FEE_ROLES)
+  async outstanding(@CurrentUser() user: AuthUser) {
+    const today = localToday();
+    const where = { schoolId: user.schoolId, student: inFeeScope(user) };
+    const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId } });
+    const [owed, overdue] = await Promise.all([
+      feeOutstanding(this.prisma, where, today),
+      this.prisma.invoice.findMany({
+        where: { ...where, ...overdueWhere(today) },
+        select: { dueDate: true, total: true, paid: true, status: true, fineBooked: true, fineWaivedAt: true },
+      }),
+    ]);
+    const rule = fineRule(school);
+    return {
+      ...owed,
+      lateFines: overdue.reduce((s, i) => s + fineDue(i, dayStart(today), rule), 0),
+      asOf: today,
+    };
+  }
+
   /** Everything a printed voucher needs. */
   @Get('invoices/:id')
   @Roles(...FEE_ROLES)
@@ -368,8 +552,12 @@ export class FeesController {
     const invoice = await this.prisma.invoice.findFirst({
       where: { id, schoolId: user.schoolId, student: inFeeScope(user) },
       include: {
-        school: { select: { name: true, city: true, phone: true, logoUrl: true, lateFeePerDay: true } },
-        lines: true,
+        school: {
+          select: { name: true, city: true, phone: true, logoUrl: true, lateFeePerDay: true, lateFeeMaxDays: true, lateFeeCap: true },
+        },
+        lines: { orderBy: { id: 'asc' } },
+        carriedTo: { select: { id: true, voucherNo: true, period: true } },
+        carriedFrom: { select: { id: true, voucherNo: true, period: true } },
         payments: { orderBy: { receivedAt: 'asc' } },
         student: {
           include: {
@@ -383,9 +571,10 @@ export class FeesController {
       },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
-    const fine =
-      invoice.status === 'PAID' ? 0 : lateFine(invoice.dueDate, new Date(), invoice.school.lateFeePerDay);
-    return { ...invoice, lateFine: fine, balance: invoice.total - invoice.paid };
+    // Fine built up and not yet booked; what is booked is already a line in the total.
+    const fine = fineDue(invoice, dayStart(localToday()), fineRule(invoice.school));
+    const owing = invoice.status === InvoiceStatus.UNPAID || invoice.status === InvoiceStatus.PARTIAL;
+    return { ...invoice, lateFine: fine, balance: owing ? Math.max(0, invoice.total - invoice.paid) : 0 };
   }
 
   /** Records a counter or bank payment. */
@@ -414,14 +603,12 @@ export class FeesController {
   @Roles(...FEE_ROLES)
   async defaulters(@CurrentUser() user: AuthUser) {
     const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId } });
-    const now = new Date();
+    const today = localToday();
+    const asOf = dayStart(today);
+    const rule = fineRule(school);
+    // The same overdue rule as /fees/outstanding and the dashboard.
     const overdue = await this.prisma.invoice.findMany({
-      where: {
-        schoolId: user.schoolId,
-        student: inFeeScope(user),
-        status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
-        dueDate: { lt: now },
-      },
+      where: { schoolId: user.schoolId, student: inFeeScope(user), ...overdueWhere(today) },
       orderBy: { dueDate: 'asc' },
       include: {
         student: {
@@ -441,8 +628,8 @@ export class FeesController {
       period: i.period,
       student: i.student,
       balance: i.total - i.paid,
-      lateFine: lateFine(i.dueDate, now, school.lateFeePerDay),
-      daysOverdue: Math.floor((now.getTime() - i.dueDate.getTime()) / 86_400_000),
+      lateFine: fineDue(i, asOf, rule),
+      daysOverdue: daysLate(i.dueDate, asOf),
     }));
   }
 
@@ -459,7 +646,7 @@ export class FeesController {
         schoolId: user.schoolId,
         student: inFeeScope(user),
         period: body.period,
-        status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
+        ...OPEN_INVOICE,
       },
       include: { student: { select: { firstName: true, lastName: true } } },
     });
@@ -481,38 +668,4 @@ export class FeesController {
     );
     return { invoices: unpaid.length, messages: sent };
   }
-
-  /**
-   * A Transport line for each student who rode a school van during the
-   * month, at their stop's fee. Concessions on the Transport head apply.
-   */
-  private async transportRiders(schoolId: string, studentIds: string[], period: string) {
-    const { first, last } = monthBounds(period);
-    const rides = await this.prisma.transportAssignment.findMany({
-      where: {
-        schoolId,
-        studentId: { in: studentIds },
-        startsOn: { lte: dayStart(last) },
-        OR: [{ endsOn: null }, { endsOn: { gte: dayStart(first) } }],
-      },
-      include: { route: true, stop: true },
-      orderBy: { startsOn: 'desc' },
-    });
-    const rows = new Map<string, StructureRow[]>();
-    if (!rides.length) return rows;
-    const head = await this.prisma.feeHead.upsert({
-      where: { schoolId_name: { schoolId, name: 'Transport' } },
-      create: { schoolId, name: 'Transport', frequency: FeeFrequency.MONTHLY },
-      update: {},
-    });
-    // A student who changed routes mid-month pays the latest route's fee once.
-    for (const r of rides) {
-      if (rows.has(r.studentId)) continue;
-      rows.set(r.studentId, [
-        { feeHeadId: head.id, feeHeadName: 'Transport', frequency: FeeFrequency.MONTHLY, amount: riderFee(r.route, r.stop) },
-      ]);
-    }
-    return rows;
-  }
-
 }
