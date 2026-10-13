@@ -43,6 +43,13 @@ export function validateEnv(env: Env): Env {
   if (mode && !['mock', 'sandbox', 'live', 'off'].includes(mode)) {
     problems.push(`PAYMENTS_MODE must be one of mock, sandbox, live or off (got "${mode}")`);
   }
+  const notify = text(env, 'NOTIFY_DRIVER').toLowerCase();
+  if (notify && !['log', 'whatsapp', 'sms'].includes(notify)) {
+    problems.push(`NOTIFY_DRIVER must be one of log, whatsapp or sms (got "${notify}")`);
+  }
+  if (notify === 'sms' && !text(env, 'SMS_GATEWAY_URL')) problems.push('NOTIFY_DRIVER=sms needs SMS_GATEWAY_URL');
+  const worker = text(env, 'JOBS_WORKER').toLowerCase();
+  if (worker && !['on', 'off'].includes(worker)) problems.push(`JOBS_WORKER must be "on" or "off" (got "${worker}")`);
 
   if (text(env, 'NODE_ENV') === 'production') {
     if (!text(env, 'DATABASE_URL')) problems.push('DATABASE_URL is required');

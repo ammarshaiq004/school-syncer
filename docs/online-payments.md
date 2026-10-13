@@ -69,7 +69,8 @@ Override hosts only if a provider gives you different ones: `JAZZCASH_CHECKOUT_U
 ## Daily reconciliation
 
 Every night (02:00 Pakistan time by default, `RECONCILE_AT`; `off` disables it) the API reconciles the previous day for
-each school with online payments, and catches up on the two days before if the server was down. It:
+each school with online payments, and catches up on the two days before if the server was down. It runs as a scheduled
+background job (see Background jobs in the README), once across all API instances, and is retried if it fails. It:
 
 1. asks JazzCash (Status Inquiry) and Easypaisa (Inquire Transaction) about checkouts still open from the last 7 days,
    recording payments whose return never reached us and closing ones the gateway says were never paid. 1Bill numbers

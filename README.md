@@ -98,6 +98,8 @@ It prints a strong temporary password once; sign in at `/platform/login` and you
 
 Every account can change its own password (school app: account menu > **Change password**; console: the same in its menu; mobile app: on first sign-in). A password someone else issued must be replaced at the next sign-in before anything else works: accounts created or reset by a school admin or from the console, generated student logins (login slips), parent logins sent on WhatsApp, new console staff and the first console owner. Changing or resetting a password signs that account out everywhere else; the device it was changed on gets a fresh token. On another API instance this can take up to 30 seconds (the account cache).
 
+**Forgot password.** Staff, parents and students with a mobile number on their account can reset their own password from **Forgot password?** on the sign-in page (web and mobile app). They enter the school code and the number; a 6-digit code goes to that number through the school's messaging (see Messaging below), valid for 10 minutes and 5 tries, and only its hash is stored. Entering it with a new password signs the account out everywhere and clears any pending forced change; if several active accounts in the school share the number, all of them get the new password. The answer never says whether the number has an account. Requests are limited to 3 per number and 10 per address an hour. If the school has no way to deliver messages (no WhatsApp number or SMS gateway), the page tells the user to ask the school office for a reset. There is no email reset yet (no email provider).
+
 ## Demo data
 
 `pnpm db:seed` builds three schools (one hybrid, one physical, one online) with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Rerunning without `--reset` leaves existing demo schools alone, but adds lesson plans and chats to a demo school that has none yet. Every login's password is `password123`; the seed only creates logins, so a password changed since is kept.
@@ -190,6 +192,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | POST | `/auth/login` | anyone |
 | GET | `/auth/me` | signed in (also while a new password is pending) |
 | POST | `/auth/change-password` | signed in, not in a support session; ends other sessions and returns a new token |
+| POST | `/auth/forgot-password`, `/auth/reset-password` | anyone; a code sent to the account's phone, then a new password |
 | GET, PATCH | `/school` | signed in; PATCH needs owner, principal or admin |
 | GET, POST, PATCH, DELETE | `/campuses` | signed in; changes need owner, principal or admin |
 | GET, POST | `/academic-years` | same |
@@ -229,7 +232,8 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET | `/assistant/status`, `/assistant/options`, `/assistant/students`, `/assistant/at-risk` | owner, principal, admin, accountant and teachers; plan with the AI assistant |
 | POST | `/assistant/ask`, `/assistant/draft` | same; teachers only see the sections they teach |
 | GET | `/parent/children` | parents |
-| GET | `/notifications` | owner, principal or admin |
+| GET | `/notifications`, `/notifications/delivery` | owner, principal or admin |
+| GET, PUT, DELETE | `/school/messaging` | owner, principal or admin (changes: school-wide only); the school's own WhatsApp number |
 | GET, POST, PATCH | `/transport/vehicles`, `/transport/routes`, PUT `/transport/routes/:id/stops`, GET `/transport/routes/:id` | staff can read; changes need owner, principal or admin |
 | GET, POST | `/transport/students/:id`, `/transport/assignments`, `/transport/assignments/:id/end` | staff can read; changes need owner, principal or admin |
 | GET, POST, PATCH | `/library/books`, `/library/books/:id`, `/library/books/:id/copies`, `/library/copies/:id`, `/library/settings` | staff can read and lend; rules need owner, principal or admin |
@@ -259,13 +263,34 @@ The AI assistant (sidebar: AI assistant) is part of the Growth and Enterprise pl
 
 To switch on AI answers, set `ANTHROPIC_API_KEY` on the API (optionally `ASSISTANT_MODEL` and `ASSISTANT_DAILY_LIMIT`). Without a key, the page still shows the at-risk list and template drafts, and Ask explains that it is not switched on. Each model call is counted in `AssistantUsage` (tokens only; questions and answers are not stored).
 
-## WhatsApp and payments setup
+## Messaging (WhatsApp and SMS)
 
-By default messages are only written to the API log and the in-app message log (`NOTIFY_DRIVER=log`), so nothing is sent while developing. To send real WhatsApp messages:
+Every outgoing message (absence alerts, fee vouchers and reminders, receipts, parent invites, results, homework, announcements, password reset codes) is a row in the message log (**Communication > Message log**) plus a delivery job. Its status is honest:
 
-1. Create a WhatsApp Business account in Meta Business Manager and get a permanent token and phone number id.
-2. Create and get approval for these message templates (names and parameter order must match `apps/api/src/notifications/templates.ts`): `attendance_absent`, `fee_voucher`, `fee_reminder`, `fee_paid`, `parent_invite`, `exam_result`, `homework_assigned`, `school_announcement`.
-3. Set `NOTIFY_DRIVER=whatsapp`, `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
+- **Queued**: waiting for a worker, or for its next retry (the last provider error is shown).
+- **Sent**: WhatsApp or the SMS gateway accepted it (with the provider's message id).
+- **Not delivered** (`LOGGED`): no provider is configured, so it was only written to the log. Nothing reached the recipient.
+- **Failed**: 5 attempts over about 15 minutes all failed, or the provider refused it outright (bad number, rejected token, missing template); the error is shown.
+
+Who sends a school's messages, first match wins:
+
+1. **The school's own WhatsApp number**: **System settings > Messaging**, with the WhatsApp Cloud API phone number id and a permanent access token. The token is encrypted with `PAYMENTS_SECRET_KEY` (like merchant secrets), so the server needs that key set.
+2. **The platform WhatsApp number**: `NOTIFY_DRIVER=whatsapp` with `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
+3. **The platform SMS gateway**: `NOTIFY_DRIVER=sms` with `SMS_GATEWAY_URL`. A generic HTTP gateway, so any Pakistani aggregator can be plugged in: put `{to}`, `{from}`, `{message}` and `{apiKey}` placeholders in the URL for query-string gateways (`SMS_GATEWAY_METHOD=GET` or `POST`), or leave them out to get a JSON POST of `{ to, from, message }` with `Authorization: Bearer <SMS_GATEWAY_API_KEY>`. `SMS_SENDER_ID` is the mask; `SMS_GATEWAY_SUCCESS_MATCH` is a pattern the response must match, for gateways that answer 200 with an error. Off unless configured.
+4. Otherwise nobody (`NOTIFY_DRIVER=log`, the default): messages are logged and marked Not delivered.
+
+For WhatsApp (either number), create and get approval in Meta Business Manager for these templates (names and parameter order must match `apps/api/src/notifications/templates.ts`): `attendance_absent`, `fee_voucher`, `fee_reminder`, `fee_paid`, `parent_invite`, `exam_result`, `homework_assigned`, `school_announcement`, and `password_reset` as an **Authentication** template with a copy-code button. Phone numbers are masked in the server log; passwords and reset codes are masked in the message log and kept out of the job queue in plain text when `PAYMENTS_SECRET_KEY` is set.
+
+**What a school owner must do to deliver messages:** either add the school's own WhatsApp Business number in System settings > Messaging (Meta Business account, a verified number, a permanent system-user token with `whatsapp_business_messaging`, and the approved templates above), or ask SchoolSyncer to switch on the platform WhatsApp number or SMS gateway. Until one of these is set, the message log says "Not delivered" and forgot-password sends people to the office.
+
+## Background jobs
+
+There is no Redis: background work runs on a small job queue in Postgres inside the API (`apps/api/src/jobs`). Jobs are rows in `Job`; each API process runs a worker that claims due jobs with `SELECT ... FOR UPDATE SKIP LOCKED`, so a job runs once however many instances there are. A failed job is retried with exponential backoff until its attempts run out, then marked `FAILED` with the error; jobs of a worker that died are picked up again after 10 minutes. Recurring work (nightly payment reconciliation, hourly cleanup) is enqueued once per run slot under a unique key, so it also runs once across instances. Rate limits (sign-in, sign-up, public forms, password reset) are counted in the shared `RateLimitCounter` table, so they hold across instances and restarts.
+
+- `JOBS_WORKER=off` runs an API instance without workers (it still enqueues). At least one instance must run them.
+- `JOBS_POLL_MS` (default 2000) and `JOBS_CONCURRENCY` (default 5) tune each worker.
+
+## Payment webhooks
 
 Payment gateways post to `/api/payments/webhook/<jazzcash|easypaisa|onebill|card>` with `{ voucherNo, amount, reference }` and an `X-Signature` header holding the HMAC-SHA256 of the raw body, using `PAYMENT_WEBHOOK_SECRET_<PROVIDER>`. Each gateway's own callback format still needs a small adapter once its merchant account is approved.
 

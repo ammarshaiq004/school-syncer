@@ -68,7 +68,12 @@ export default function LoginPage() {
           autoComplete="username"
           required
         />
-        <TextField label="Password" name="password" type="password" autoComplete="current-password" required />
+        <div className="flex flex-col gap-1.5">
+          <TextField label="Password" name="password" type="password" autoComplete="current-password" required />
+          <Link href="/forgot-password" className="self-end text-[13px] font-medium text-brand hover:underline">
+            Forgot password?
+          </Link>
+        </div>
         {error && <Alert tone="danger">{error}</Alert>}
         <Button type="submit" loading={busy} className="mt-1 w-full">
           {busy ? "Signing in..." : "Sign in"}
