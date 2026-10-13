@@ -11,6 +11,7 @@ import { OnlinePaymentsService } from '../src/fees/online-payments.service.js';
 import { NotificationsService, type OutgoingMessage } from '../src/notifications/notifications.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // A school entering its own merchant accounts, in sandbox mode with the server's JazzCash account as fallback.
 describe('School payment accounts (e2e)', () => {
@@ -103,6 +104,7 @@ describe('School payment accounts (e2e)', () => {
       .expect(201);
     const invite = sent.find((m) => m.template === 'parent.invite')!;
     const login = await request(server).post('/api/auth/login').send({ schoolSlug, login: phone(1), password: invite.params.password }).expect(200);
+    await keepIssuedPassword(app, login.body);
     parent = { Authorization: `Bearer ${login.body.accessToken}` };
   });
 
@@ -222,5 +224,12 @@ describe('School payment accounts (e2e)', () => {
     } finally {
       process.env.PAYMENTS_SECRET_KEY = key;
     }
+  });
+
+  it('has no mock approval outside mock mode', async () => {
+    const start = await request(server).post(`/api/parent/invoices/${voucher.Sana}/checkout`).set(parent).send({ provider: 'ONEBILL' }).expect(201);
+    await request(server).post(`/api/parent/payments/${start.body.checkout.id}/mock`).set(parent).send({ approve: true }).expect(404);
+    const still = await request(server).get(`/api/parent/payments/${start.body.checkout.id}`).set(parent).expect(200);
+    expect(still.body.status).toBe('PENDING');
   });
 });

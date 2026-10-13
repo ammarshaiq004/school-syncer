@@ -241,18 +241,25 @@ model SectionSubject {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  schoolId     String
-  name         String
-  email        String?
-  phone        String?
+  id                 String    @id @default(cuid())
+  schoolId           String
+  name               String
+  email              String?
+  phone              String?
   /// Sign-in name for accounts without email/phone (students: admission number, lowercased).
-  username     String?
-  passwordHash String?
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  username           String?
+  passwordHash       String?
+  /// Set when someone else issued the password (admin create/reset, generated
+  /// student or parent logins); the API refuses everything but me and
+  /// change-password until the user picks their own.
+  mustChangePassword Boolean   @default(false)
+  /// Signed into each token as `tv`; bumped on a password change or reset so
+  /// older tokens stop working.
+  tokenVersion       Int       @default(0)
+  isActive           Boolean   @default(true)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   roles           RoleAssignment[]
@@ -1228,6 +1235,8 @@ model PlatformAdmin {
   role               PlatformRole @default(SUPPORT)
   // Set when an owner creates the account or resets its password.
   mustChangePassword Boolean      @default(false)
+  // Signed into console tokens as `tv`; bumped on a password change or reset.
+  tokenVersion       Int          @default(0)
   isActive           Boolean      @default(true)
   lastLoginAt        DateTime?
   createdAt          DateTime     @default(now())

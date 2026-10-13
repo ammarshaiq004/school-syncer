@@ -1,7 +1,21 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import bcrypt from 'bcryptjs';
 
 export const MAX_FAILED_LOGINS = 10;
 export const LOGIN_WINDOW_MS = 15 * 60_000;
+
+/** A bcrypt hash (12 rounds, like real passwords) of a random string nobody knows. */
+const DUMMY_HASH = '$2b$12$dVCpNvShNK53tUf2cUXlJOEvScONCoAxqGHFvorNbTDXotPUOLBBK';
+
+/**
+ * Spends the time of a password check when there was no account to check
+ * against, so a sign-in for an unknown school or login takes as long as a
+ * wrong password and response times do not reveal who has an account.
+ */
+export async function checkNoPassword(password: string): Promise<false> {
+  await bcrypt.compare(password, DUMMY_HASH);
+  return false;
+}
 
 interface Bucket {
   failures: number;

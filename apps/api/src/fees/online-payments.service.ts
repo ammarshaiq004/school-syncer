@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { CheckoutStatus, InvoiceStatus, PaymentMethod, Prisma, type OnlinePayment } from '@prisma/client';
 import { randomInt } from 'node:crypto';
 import type { AuthUser } from '../common/auth-user.js';
@@ -430,7 +430,8 @@ export class OnlinePaymentsService implements OnModuleInit {
    * and putting it through the same verification.
    */
   async mockComplete(user: AuthUser, id: string, approve: boolean) {
-    if (this.config.mode !== 'mock') throw new ForbiddenException('Payments are not in mock mode.');
+    // Outside mock mode the route does not exist.
+    if (this.config.mode !== 'mock') throw new NotFoundException();
     const c = await this.get(user, id);
     if (c.status !== CheckoutStatus.PENDING) return c;
     const at = new Date();

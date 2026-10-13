@@ -322,7 +322,7 @@ export class FeesController {
   invoices(
     @CurrentUser() user: AuthUser,
     @Query('period') periodFilter?: string,
-    @Query('status') status?: InvoiceStatus,
+    @Query('status', new ZodValidationPipe(z.enum(InvoiceStatus).optional())) status?: InvoiceStatus,
     @Query('studentId') studentId?: string,
     @Query('search') search?: string,
   ) {

@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // Staff and users: directory filters, edits, activation, password resets,
 // owner rules, the school audit log and the fee settings on /school.
@@ -38,6 +39,12 @@ describe('Staff and users (e2e)', () => {
 
   const login = (schoolSlug: string, loginId: string, password = 'password123') =>
     request(server).post('/api/auth/login').send({ schoolSlug, login: loginId, password });
+  // Admin-set passwords must be replaced on first sign-in; these tests keep them.
+  const signIn = async (schoolSlug: string, loginId: string) => {
+    const res = await login(schoolSlug, loginId).expect(200);
+    await keepIssuedPassword(app, res.body);
+    return bearer(res.body.accessToken);
+  };
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -60,7 +67,7 @@ describe('Staff and users (e2e)', () => {
       .set(ownerA)
       .send({ name: 'Imran Qureshi', phone: phone(1), password: 'password123', roles: [{ role: 'ADMIN' }] })
       .expect(201);
-    admin = bearer((await login(slugA, phone(1)).expect(200)).body.accessToken);
+    admin = await signIn(slugA, phone(1));
 
     const t = await request(server)
       .post('/api/users')
@@ -68,7 +75,7 @@ describe('Staff and users (e2e)', () => {
       .send({ name: 'Ayesha Siddiqui', phone: phone(2), password: 'password123', roles: [{ role: 'TEACHER' }] })
       .expect(201);
     teacherId = t.body.id;
-    teacher = bearer((await login(slugA, phone(2)).expect(200)).body.accessToken);
+    teacher = await signIn(slugA, phone(2));
 
     customRoleId = (
       await request(server)
@@ -233,8 +240,13 @@ describe('Staff and users (e2e)', () => {
   it('resets a password and shows the new one once', async () => {
     const res = await request(server).post(`/api/users/${teacherId}/reset-password`).set(admin).expect(200);
     expect(Object.keys(res.body)).toEqual(['temporaryPassword']);
+    // The reset ends the teacher's open sessions.
+    await request(server).get('/api/auth/me').set(teacher).expect(401);
     await login(slugA, phone(2)).expect(401);
-    await login(slugA, phone(2), res.body.temporaryPassword).expect(200);
+    const fresh = await login(slugA, phone(2), res.body.temporaryPassword).expect(200);
+    expect(fresh.body.user.mustChangePassword).toBe(true);
+    await keepIssuedPassword(app, fresh.body);
+    teacher = bearer(fresh.body.accessToken);
     await request(server).post(`/api/users/${teacherId}/reset-password`).set(teacher).expect(403);
   });
 
@@ -325,7 +337,7 @@ describe('Staff and users (e2e)', () => {
       .set(ownerA)
       .send({ name: 'Office Manager', phone: phone(6), password: 'password123', roles: [{ customRoleId: officeRole }] })
       .expect(201);
-    const office = bearer((await login(slugA, phone(6)).expect(200)).body.accessToken);
+    const office = await signIn(slugA, phone(6));
     const accountant = await request(server)
       .post('/api/users')
       .set(ownerA)
@@ -349,7 +361,7 @@ describe('Staff and users (e2e)', () => {
       .set(ownerA)
       .send({ name: 'Demoted Admin', phone: phone(9), password: 'password123', roles: [{ role: 'ADMIN' }] })
       .expect(201);
-    const demoted = bearer((await login(slugA, phone(9)).expect(200)).body.accessToken);
+    const demoted = await signIn(slugA, phone(9));
     await request(server).get('/api/users').set(demoted).expect(200);
     await request(server).patch(`/api/users/${created.body.id}`).set(ownerA).send({ roles: [{ role: 'TEACHER' }] }).expect(200);
     await request(server).get('/api/users').set(demoted).expect(403);
@@ -371,7 +383,7 @@ describe('Staff and users (e2e)', () => {
       .set(ownerA)
       .send({ name: 'South Teacher', phone: `037${run.slice(-7)}2`, roles: [{ role: 'TEACHER', campusId: south }] })
       .expect(201);
-    const principal = bearer((await login(slugA, northPhone).expect(200)).body.accessToken);
+    const principal = await signIn(slugA, northPhone);
 
     const list = await request(server).get('/api/users').set(principal).expect(200);
     const ids = list.body.map((u: { id: string }) => u.id);

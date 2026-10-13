@@ -35,6 +35,7 @@ import {
   Roles,
 } from '../common/decorators.js';
 import { studentSearchWhere } from '../common/student-search.js';
+import { RateLimit } from '../common/rate-limit.guard.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import {
@@ -510,6 +511,8 @@ export class VerifyController {
 
   @Get(':code')
   @Public()
+  // Enough for anyone checking certificates by hand, too few to guess codes.
+  @RateLimit('verify', 30, 60_000)
   async verify(@Param('code') code: string) {
     const c = await this.prisma.certificate.findUnique({
       where: { verifyCode: code.trim().toUpperCase() },

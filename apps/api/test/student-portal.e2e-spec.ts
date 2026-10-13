@@ -8,6 +8,7 @@ import { dayStart, localToday } from '../src/common/dates.js';
 import { UserStatusService } from '../src/common/user-status.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 type Headers = Record<string, string>;
 
@@ -57,6 +58,7 @@ describe('Student portal (e2e)', () => {
       .post('/api/auth/login')
       .send({ schoolSlug: slug, login: loginName, password })
       .expect(expected);
+    if (expected === 200) await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { AdmissionsController } from './admissions/admissions.controller.js';
 import { AnnouncementsController } from './announcements/announcements.controller.js';
@@ -51,8 +51,11 @@ import { AuthModule } from './auth/auth.module.js';
 import { CampusesController } from './campuses/campuses.controller.js';
 import { ClassesController } from './classes/classes.controller.js';
 import { CommonModule } from './common/common.module.js';
+import { validateEnv } from './common/env.validation.js';
 import { JwtAuthGuard } from './common/jwt-auth.guard.js';
 import { PermissionGuard } from './common/permission.guard.js';
+import { PrismaExceptionFilter } from './common/prisma-exception.filter.js';
+import { RateLimitGuard } from './common/rate-limit.guard.js';
 import { RolesGuard } from './common/roles.guard.js';
 import { RolesController } from './roles/roles.controller.js';
 import { SubscriptionGuard } from './common/subscription.guard.js';
@@ -68,7 +71,8 @@ import { UsersController } from './users/users.controller.js';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    // Refuses to start on unsafe production settings (see validateEnv).
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     JwtModule.registerAsync({
       global: true,
       inject: [ConfigService],
@@ -136,12 +140,15 @@ import { UsersController } from './users/users.controller.js';
     OnlinePaymentsService,
     ReconciliationService,
     ReconciliationScheduler,
+    // First, so floods of public requests stop before any database work.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     // Order matters: authenticate first, then check roles, then the school's plan.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: SubscriptionGuard },
     // Last: the school's role matrix (@Permission) narrows what @Roles allowed.
     { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
   ],
 })
 export class AppModule {}

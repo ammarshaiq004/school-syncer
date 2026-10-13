@@ -14,6 +14,17 @@ export interface AuthUser {
   name: string;
   roles: RoleGrant[];
   /**
+   * The user's token version when this token was issued. A password change or
+   * reset bumps the stored version, which ends every older session. Missing
+   * on tokens issued before versions existed; treated as 0.
+   */
+  tv?: number;
+  /**
+   * Not signed into tokens: JwtAuthGuard sets it from the database when the
+   * user still has to replace a password someone else issued.
+   */
+  mustChangePassword?: boolean;
+  /**
    * Present only on a support session: a SchoolSyncer staff member signed in
    * as this user from the platform console.
    */
@@ -27,4 +38,6 @@ export interface PlatformUser {
   platform: true;
   /** Missing on tokens issued before platform roles existed; treat as SUPPORT. */
   role?: PlatformRole;
+  /** The admin's token version at sign-in; see AuthUser.tv. */
+  tv?: number;
 }

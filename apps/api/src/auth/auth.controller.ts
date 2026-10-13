@@ -1,12 +1,20 @@
 import { Body, Controller, Get, HttpCode, Ip, Post } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import type { AuthUser } from '../common/auth-user.js';
-import { CurrentUser, Public } from '../common/decorators.js';
+import {
+  AllowPendingPasswordChange,
+  AllowWhenReadOnly,
+  CurrentUser,
+  Public,
+} from '../common/decorators.js';
 import { PermissionService } from '../common/permission.service.js';
+import { RateLimit } from '../common/rate-limit.guard.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
+  changePasswordSchema,
   loginSchema,
   registerSchoolSchema,
+  type ChangePasswordInput,
   type LoginInput,
   type RegisterSchoolInput,
 } from './auth.schemas.js';
@@ -25,6 +33,8 @@ export class AuthController {
 
   @Public()
   @Post('register-school')
+  // A few schools per address an hour; more is a script, not a person.
+  @RateLimit('sign-up', 10, 60 * 60_000)
   registerSchool(
     @Body(new ZodValidationPipe(registerSchoolSchema)) body: RegisterSchoolInput,
   ) {
@@ -41,8 +51,21 @@ export class AuthController {
     return this.auth.login(body, ip);
   }
 
+  /** Replaces the user's own password and ends their other sessions; returns a new token. */
+  @Post('change-password')
+  @AllowPendingPasswordChange()
+  @AllowWhenReadOnly()
+  @HttpCode(200)
+  changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(changePasswordSchema)) body: ChangePasswordInput,
+  ) {
+    return this.auth.changePassword(user, body);
+  }
+
   /** The signed-in user, with what their school's plan allows so the app can hide the rest. */
   @Get('me')
+  @AllowPendingPasswordChange()
   async me(@CurrentUser() user: AuthUser) {
     const [plan, permissions, school, student] = await Promise.all([
       this.subscriptions.forSchool(user.schoolId),
@@ -68,6 +91,8 @@ export class AuthController {
       permissions,
       // Set on a support session opened from the platform console.
       support: user.support ?? null,
+      // The app shows only the change-password screen until this is false.
+      mustChangePassword: user.mustChangePassword ?? false,
       plan: {
         name: plan.planName,
         status: plan.status,

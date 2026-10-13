@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   UnauthorizedException,
@@ -6,12 +7,18 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
+import { UserStatusService } from '../common/user-status.service.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type { LoginInput, RegisterSchoolInput } from './auth.schemas.js';
-import { LoginRateLimiter } from './login-rate-limit.js';
-import { SchoolSetupService } from './school-setup.service.js';
+import type {
+  ChangePasswordInput,
+  LoginInput,
+  RegisterSchoolInput,
+} from './auth.schemas.js';
+import { checkNoPassword, LoginRateLimiter } from './login-rate-limit.js';
+import { BCRYPT_ROUNDS, SchoolSetupService } from './school-setup.service.js';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +28,8 @@ export class AuthService {
     private readonly subscriptions: SubscriptionService,
     private readonly schools: SchoolSetupService,
     private readonly limiter: LoginRateLimiter,
+    private readonly userStatus: UserStatusService,
+    private readonly audit: AuditService,
   ) {}
 
   /** Self sign-up: a new school on a free trial, signed straight in. */
@@ -58,15 +67,16 @@ export class AuthService {
       u.email === login ? 0 : u.phone === input.login ? 1 : 2;
     matches.sort((a, b) => rank(a) - rank(b));
     let user: (typeof matches)[number] | null = null;
+    let checked = false;
     for (const candidate of matches) {
-      if (
-        candidate.passwordHash &&
-        (await bcrypt.compare(input.password, candidate.passwordHash))
-      ) {
+      if (!candidate.passwordHash) continue;
+      checked = true;
+      if (await bcrypt.compare(input.password, candidate.passwordHash)) {
         user = candidate;
         break;
       }
     }
+    if (!checked) await checkNoPassword(input.password);
     if (!user) {
       this.limiter.recordFailure(limitKey);
       throw new UnauthorizedException('Wrong school, login or password');
@@ -79,13 +89,53 @@ export class AuthService {
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
     });
-    return this.issueToken(user);
+    const session = this.issueToken(user);
+    // The app sends the user to a change-password screen first when set.
+    return {
+      ...session,
+      user: { ...session.user, mustChangePassword: user.mustChangePassword },
+    };
+  }
+
+  /**
+   * Replaces the signed-in user's password. Bumping the token version ends
+   * every other session; the caller gets a fresh token for this one.
+   */
+  async changePassword(user: AuthUser, input: ChangePasswordInput) {
+    // A support session acts as the owner but is not them.
+    if (user.support) {
+      throw new ForbiddenException('A support session cannot change this password');
+    }
+    const row = await this.prisma.user.findFirst({
+      where: { id: user.sub, schoolId: user.schoolId },
+      include: { roles: true },
+    });
+    if (!row?.passwordHash || !(await bcrypt.compare(input.currentPassword, row.passwordHash))) {
+      throw new BadRequestException('Your current password is not right');
+    }
+    if (input.newPassword === input.currentPassword) {
+      throw new BadRequestException('Choose a new password different from the current one');
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: row.id },
+      data: {
+        passwordHash: await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS),
+        mustChangePassword: false,
+        tokenVersion: { increment: 1 },
+      },
+      include: { roles: true },
+    });
+    this.userStatus.forget(row.id);
+    await this.audit.record(user, 'user.change_password', 'User', row.id);
+    const session = this.issueToken(updated);
+    return { ...session, user: { ...session.user, mustChangePassword: false } };
   }
 
   issueToken(user: {
     id: string;
     schoolId: string;
     name: string;
+    tokenVersion: number;
     roles: { role: Role; campusId: string | null; customRoleId?: string | null }[];
   }) {
     const payload: AuthUser = {
@@ -99,6 +149,7 @@ export class AuthService {
         campusId,
         customRoleId: customRoleId ?? null,
       })),
+      tv: user.tokenVersion,
     };
     return { accessToken: this.jwt.sign(payload), user: payload };
   }

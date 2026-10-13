@@ -20,6 +20,15 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
 /** A SchoolSyncer staff route: only platform tokens get in, never a school's. */
 export const PlatformOnly = () => SetMetadata(IS_PLATFORM, true);
 
+export const ALLOW_PENDING_PASSWORD = 'allowPendingPasswordChange';
+
+/**
+ * Marks the routes a user may call while they still have to replace a
+ * password someone else issued (who am I, change password). Every other
+ * route answers 403 until they do. Applies to school and console sign-ins.
+ */
+export const AllowPendingPasswordChange = () => SetMetadata(ALLOW_PENDING_PASSWORD, true);
+
 /** Needs a plan that includes this module. */
 export const RequiresFeature = (feature: Feature) => SetMetadata(FEATURE, feature);
 

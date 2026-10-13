@@ -100,13 +100,8 @@ export async function seedPlatformAdmin(
     where: { email: PLATFORM_ADMIN.email },
     // The column defaults to SUPPORT, so the demo owner says so explicitly.
     create: { ...PLATFORM_ADMIN, passwordHash, role: PlatformRole.OWNER },
-    update: {
-      name: PLATFORM_ADMIN.name,
-      passwordHash,
-      isActive: true,
-      role: PlatformRole.OWNER,
-      mustChangePassword: false,
-    },
+    // Create-only: an existing account (and its password) is left as it is.
+    update: {},
   });
 }
 

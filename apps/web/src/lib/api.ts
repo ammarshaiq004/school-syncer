@@ -1,5 +1,7 @@
+/** Set at build time; next.config.ts refuses a production build without it. */
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:4000/api");
 
 const TOKEN_KEY = "schoolsyncer.token";
 /** The SchoolSyncer console signs in separately, so both can be open at once. */
@@ -30,6 +32,8 @@ export interface SessionUser {
   school?: { id: string; name: string; slug: string; mode: SchoolMode; logoUrl: string | null };
   /** The student record behind a STUDENT login, else null. */
   studentId?: string | null;
+  /** Someone else issued the password: the app shows only the change-password page until it is replaced. */
+  mustChangePassword?: boolean;
 }
 
 /** How the school teaches: on campus, online, or both. */
@@ -185,13 +189,34 @@ export class ApiError extends Error {
 type RequestInit = { method?: string; body?: unknown };
 
 /** Calls the SchoolSyncer API with the school login's token and JSON body. */
-export const api = <T>(path: string, init: RequestInit = {}) => request<T>(path, init, getToken());
+export const api = <T>(path: string, init: RequestInit = {}) => request<T>(path, init, getToken(), "school");
 
 /** Calls the console's /platform endpoints with the SchoolSyncer staff token. */
 export const platformApi = <T>(path: string, init: RequestInit = {}) =>
-  request<T>(`/platform${path}`, init, readToken(PLATFORM_TOKEN_KEY));
+  request<T>(`/platform${path}`, init, readToken(PLATFORM_TOKEN_KEY), "platform");
 
-async function request<T>(path: string, init: RequestInit, token: string | null): Promise<T> {
+/**
+ * The token was refused (expired, signed out elsewhere, or ended by a password
+ * change or reset): forget it and go to the matching sign-in page.
+ */
+function sessionEnded(kind: "school" | "platform") {
+  if (typeof window === "undefined") return;
+  let target: string;
+  if (kind === "platform") {
+    writeToken(PLATFORM_TOKEN_KEY, null);
+    target = "/platform/login";
+  } else if (getSupportToken()) {
+    // A support session ends in this tab only; the normal login stays.
+    endSupportSession();
+    target = "/support/ended";
+  } else {
+    writeToken(TOKEN_KEY, null);
+    target = "/login";
+  }
+  if (window.location.pathname !== target) window.location.replace(target);
+}
+
+async function request<T>(path: string, init: RequestInit, token: string | null, kind: "school" | "platform"): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: init.method ?? "GET",
     headers: {
@@ -201,6 +226,8 @@ async function request<T>(path: string, init: RequestInit, token: string | null)
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
   const data = await res.json().catch(() => null);
+  // A wrong password on a sign-in form is also a 401; only a refused token ends the session.
+  if (res.status === 401 && token && !path.endsWith("/auth/login")) sessionEnded(kind);
   if (!res.ok) {
     const issues: { path: string; message: string }[] | undefined =
       data?.issues;

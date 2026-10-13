@@ -1,5 +1,7 @@
 import { HttpException } from '@nestjs/common';
+import bcrypt from 'bcryptjs';
 import {
+  checkNoPassword,
   LOGIN_WINDOW_MS,
   LoginRateLimiter,
   MAX_FAILED_LOGINS,
@@ -55,5 +57,15 @@ describe('LoginRateLimiter', () => {
     l.recordSuccess(key);
     l.recordFailure(key);
     expect(() => l.assertAllowed(key)).not.toThrow();
+  });
+});
+
+describe('checkNoPassword', () => {
+  it('runs a full-cost password check that never matches', async () => {
+    const compare = vi.spyOn(bcrypt, 'compare');
+    expect(await checkNoPassword('password123')).toBe(false);
+    const hash = compare.mock.calls[0][1];
+    expect(bcrypt.getRounds(hash)).toBe(12);
+    compare.mockRestore();
   });
 });
