@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 
 /**
@@ -20,6 +21,17 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   const proxy = trustProxy(process.env.TRUST_PROXY);
   if (proxy !== undefined) app.set('trust proxy', proxy);
+  // Security headers (HSTS, nosniff, no framing, no referrer). The API serves
+  // JSON and files, so its pages may load, run and frame nothing; the file
+  // route sets its own policy for what it serves.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'none'"] },
+      },
+    }),
+  );
   // Gateway statements arrive as JSON grids, larger than Express's 100kb default.
   app.useBodyParser('json', { limit: '2mb' });
   app.setGlobalPrefix('api');

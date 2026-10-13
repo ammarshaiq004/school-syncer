@@ -9,8 +9,8 @@
  * - "sandbox": the providers' test environments, with test merchant credentials.
  * - "live": production endpoints.
  * - "off": no online payments. The default when NODE_ENV is production, so a
- *   server never lets parents "approve" their own fees by accident; mock mode
- *   there needs PAYMENTS_MODE=mock set on purpose.
+ *   server never lets parents "approve" their own fees; the API refuses to
+ *   start with PAYMENTS_MODE=mock in production (see validateEnv).
  */
 export type PaymentsMode = 'mock' | 'sandbox' | 'live' | 'off';
 

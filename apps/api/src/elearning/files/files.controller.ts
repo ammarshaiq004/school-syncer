@@ -1,4 +1,3 @@
-import { tmpdir } from 'node:os';
 import {
   Controller,
   Delete,
@@ -12,7 +11,6 @@ import {
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { FilePurpose, Role } from '@prisma/client';
 import type { Response } from 'express';
 import { z } from 'zod';
@@ -21,18 +19,21 @@ import type { AuthUser } from '../../common/auth-user.js';
 import { CurrentUser, Permission, Public, RequiresFeature, Roles } from '../../common/decorators.js';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { acceptedExtensions, contentDisposition, LIMITS, MAX_UPLOAD_BYTES } from './file-rules.js';
+import { acceptedExtensions, contentDisposition, LIMITS } from './file-rules.js';
 import { FilesService, type UploadedTemp } from './files.service.js';
 import { LocalStorageDriver } from './storage/local.driver.js';
 import { STORAGE_DRIVER, type StorageDriver } from './storage/storage-driver.js';
-
-/** Multer writes uploads to a temp file (never memory), capped at the largest allowed file. */
-const uploadInterceptor = FileInterceptor('file', {
-  dest: tmpdir(),
-  limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5 },
-});
+import { UploadInterceptor } from './upload.interceptor.js';
 
 const staffPurpose = z.object({ purpose: z.enum([FilePurpose.LESSON, FilePurpose.ASSIGNMENT]) });
+
+/** Capped by the purpose asked for (lesson videos are the largest); an invalid one is refused after. */
+const staffUpload = UploadInterceptor((req) => {
+  const purpose = staffPurpose.safeParse(req.query);
+  return purpose.success ? [purpose.data.purpose] : staffPurpose.shape.purpose.options;
+});
+/** Students' work is capped at what a submission may be. */
+const studentUpload = UploadInterceptor(() => [FilePurpose.SUBMISSION]);
 
 /**
  * Upload and open e-school files. Teachers upload lesson videos and
@@ -62,7 +63,7 @@ export class FilesController {
   @Post('elearning/files')
   @Roles(...ATTENDANCE_ROLES)
   @Permission('elearning')
-  @UseInterceptors(uploadInterceptor)
+  @UseInterceptors(staffUpload)
   upload(
     @CurrentUser() user: AuthUser,
     @Query(new ZodValidationPipe(staffPurpose)) query: z.infer<typeof staffPurpose>,
@@ -75,7 +76,7 @@ export class FilesController {
   @Post('student/files')
   @Roles(Role.STUDENT)
   @Permission('elearning', 'view')
-  @UseInterceptors(uploadInterceptor)
+  @UseInterceptors(studentUpload)
   uploadWork(@CurrentUser() user: AuthUser, @UploadedFile() file?: UploadedTemp) {
     return this.files.upload(user, FilePurpose.SUBMISSION, file);
   }
@@ -122,6 +123,8 @@ export class FilesController {
     }
     const file = await this.prisma.storedFile.findUnique({ where: { id } });
     if (!file) throw new NotFoundException('File not found');
+    // The PDF viewer needs an unsandboxed document, so no policy (not even the API's default).
+    if (file.mimeType === 'application/pdf') res.removeHeader('Content-Security-Policy');
     res.sendFile(
       driver.pathOf(file.key),
       {
