@@ -9,6 +9,8 @@ interface Session {
   loading: boolean;
   signIn: (schoolSlug: string, login: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Replaces the user's password; the API ends other sessions and returns a token for this one. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const SessionContext = createContext<Session | null>(null);
@@ -52,7 +54,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, loading, signIn, signOut }), [user, loading, signIn, signOut]);
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const res = await api<{ accessToken: string }>('/auth/change-password', {
+      method: 'POST',
+      body: { currentPassword, newPassword },
+    });
+    setApiToken(res.accessToken);
+    await setItem(TOKEN_KEY, res.accessToken);
+    setUser(await api<SessionUser>('/auth/me'));
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, loading, signIn, signOut, changePassword }),
+    [user, loading, signIn, signOut, changePassword],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

@@ -36,10 +36,12 @@ export default function ChangePasswordPage() {
     setBusy(true);
     setError("");
     try {
-      await platformApi("/auth/change-password", {
+      // The change ends every other session, this one included; keep the fresh token.
+      const res = await platformApi<{ accessToken: string }>("/auth/change-password", {
         method: "POST",
         body: { currentPassword: form.get("currentPassword"), newPassword },
       });
+      setPlatformToken(res.accessToken);
       router.replace("/platform");
     } catch (e) {
       setError((e as Error).message);
@@ -69,7 +71,7 @@ export default function ChangePasswordPage() {
       description={
         forced
           ? `Welcome, ${admin.name}. You signed in with a temporary password. Choose your own to continue.`
-          : "Use at least 8 characters. You stay signed in on this device."
+          : "You stay signed in on this device; other devices are signed out."
       }
       homeHref="/platform"
       aside={
@@ -106,7 +108,7 @@ export default function ChangePasswordPage() {
           minLength={8}
           maxLength={128}
           required
-          hint="At least 8 characters."
+          hint="At least 8 characters, with a letter and a number."
         />
         <TextField label="Repeat new password" name="confirm" type="password" autoComplete="new-password" minLength={8} maxLength={128} required />
         {error && <Alert tone="danger">{error}</Alert>}

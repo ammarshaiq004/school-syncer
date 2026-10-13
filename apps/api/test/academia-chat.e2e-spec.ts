@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module.js';
 import { daysBefore, localToday } from '../src/common/dates.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 type Headers = Record<string, string>;
 
@@ -69,6 +70,7 @@ describe('Lesson plans and parent-teacher chat (e2e)', () => {
       .post('/api/auth/login')
       .send({ schoolSlug: slug, login, password: 'password123' })
       .expect(200);
+    await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 

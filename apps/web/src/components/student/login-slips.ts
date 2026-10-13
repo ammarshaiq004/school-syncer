@@ -41,7 +41,7 @@ export function printLoginSlips({
           <tr><th>Username</th><td class="mono">${esc(s.username)}</td></tr>
           <tr><th>Password</th><td class="mono">${s.password ? esc(s.password) : '<span class="muted">Unchanged</span>'}</td></tr>
         </table>
-        <div class="note">Keep this slip safe. Change your password after you first sign in.</div>
+        <div class="note">Keep this slip safe. You will choose your own password when you first sign in.</div>
       </div>`,
     )
     .join("");

@@ -10,6 +10,7 @@
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter api prisma:migrate",
+    "db:deploy": "pnpm --filter api prisma:deploy",
     "db:seed": "pnpm --filter api prisma:seed"
   }
 }

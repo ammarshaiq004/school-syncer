@@ -12,6 +12,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { changePasswordSchema } from '../auth/auth.schemas.js';
 import { LoginRateLimiter } from '../auth/login-rate-limit.js';
 import { BCRYPT_ROUNDS } from '../auth/school-setup.service.js';
 import type { PlatformUser } from '../common/auth-user.js';
@@ -29,10 +30,6 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(128),
-});
 
 /** Sign-in for SchoolSyncer staff, separate from school logins. */
 @Controller('platform/auth')
@@ -73,6 +70,7 @@ export class PlatformAuthController {
       name: admin.name,
       platform: true,
       role: admin.role,
+      tv: admin.tokenVersion,
     };
     // Shorter-lived than school sessions: this login reaches every school.
     return {
@@ -122,16 +120,29 @@ export class PlatformAuthController {
       throw new BadRequestException(
         'Choose a new password different from the current one',
       );
-    await this.prisma.platformAdmin.update({
+    // Bumping the version ends every other console session; this one gets a
+    // fresh token.
+    const updated = await this.prisma.platformAdmin.update({
       where: { id: admin.sub },
       data: {
         passwordHash: await bcrypt.hash(body.newPassword, BCRYPT_ROUNDS),
         mustChangePassword: false,
+        tokenVersion: { increment: 1 },
       },
     });
     await logPlatform(this.prisma, admin, 'staff.change_password', null, {
       staffId: admin.sub,
     });
-    return { ok: true };
+    const payload: PlatformUser = {
+      sub: updated.id,
+      name: updated.name,
+      platform: true,
+      role: updated.role,
+      tv: updated.tokenVersion,
+    };
+    return {
+      ok: true,
+      accessToken: this.jwt.sign(payload, { expiresIn: '4h' }),
+    };
   }
 }

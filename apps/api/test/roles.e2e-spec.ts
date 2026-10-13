@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // School roles and permissions: the module matrix under the @Roles ceiling.
 describe('Roles and permissions (e2e)', () => {
@@ -43,6 +44,7 @@ describe('Roles and permissions (e2e)', () => {
 
   async function loginAs(schoolSlug: string, login: string) {
     const res = await request(server).post('/api/auth/login').send({ schoolSlug, login, password: 'password123' }).expect(200);
+    await keepIssuedPassword(app, res.body);
     return { headers: { Authorization: `Bearer ${res.body.accessToken}` }, user: res.body.user };
   }
 
