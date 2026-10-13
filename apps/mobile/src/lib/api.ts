@@ -23,6 +23,8 @@ export interface SessionUser {
   schoolId: string;
   name: string;
   roles: { role: Role; campusId: string | null }[];
+  /** The school issued this password: only the change-password screen works until it is replaced. */
+  mustChangePassword?: boolean;
 }
 
 let token: string | null = null;
@@ -47,7 +49,12 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   }
   const data = await res.json().catch(() => null);
   if (!res.ok) {
-    const message = Array.isArray(data?.message) ? data.message.join(', ') : data?.message;
+    const issues: { message: string }[] | undefined = data?.issues;
+    const message = issues?.length
+      ? issues.map((i) => i.message).join(', ')
+      : Array.isArray(data?.message)
+        ? data.message.join(', ')
+        : data?.message;
     throw new ApiError(res.status, message ?? `Request failed (${res.status})`);
   }
   return data as T;

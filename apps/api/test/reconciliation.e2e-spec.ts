@@ -12,6 +12,7 @@ import { ReconciliationService } from '../src/fees/reconciliation/reconciliation
 import { NotificationsService, type OutgoingMessage } from '../src/notifications/notifications.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // The nightly check of online payments against the gateways (SCHOOL-78), in mock mode.
 describe('Payment reconciliation (e2e)', () => {
@@ -98,6 +99,7 @@ describe('Payment reconciliation (e2e)', () => {
       .expect(201);
     const invite = sent.find((m) => m.template === 'parent.invite')!;
     const login = await request(server).post('/api/auth/login').send({ schoolSlug, login: phone(1), password: invite.params.password }).expect(200);
+    await keepIssuedPassword(app, login.body);
     parent = { Authorization: `Bearer ${login.body.accessToken}` };
   });
 

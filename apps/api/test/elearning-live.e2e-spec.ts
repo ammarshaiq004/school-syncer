@@ -12,6 +12,7 @@ import {
 } from '../src/common/dates.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 type Headers = Record<string, string>;
 
@@ -69,6 +70,7 @@ describe('E-school live classes (e2e)', () => {
       .post('/api/auth/login')
       .send({ schoolSlug, login, password: 'password123' })
       .expect(200);
+    await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 

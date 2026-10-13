@@ -19,7 +19,7 @@ export default function LoginPage() {
     setBusy(true);
     setError("");
     try {
-      const res = await api<{ accessToken: string; user?: { roles: { role: string }[] } }>("/auth/login", {
+      const res = await api<{ accessToken: string; user?: { roles: { role: string }[]; mustChangePassword?: boolean } }>("/auth/login", {
         method: "POST",
         body: {
           schoolSlug: form.get("schoolSlug"),
@@ -28,6 +28,11 @@ export default function LoginPage() {
         },
       });
       setToken(res.accessToken);
+      // A password the school issued must be replaced before anything else.
+      if (res.user?.mustChangePassword) {
+        router.push("/change-password");
+        return;
+      }
       // Parents and students go straight to their portal.
       const roles = res.user?.roles.map((r) => r.role) ?? [];
       const staff = !res.user || roles.some((r) => (STAFF as string[]).includes(r));

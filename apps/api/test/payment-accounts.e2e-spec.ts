@@ -11,6 +11,7 @@ import { OnlinePaymentsService } from '../src/fees/online-payments.service.js';
 import { NotificationsService, type OutgoingMessage } from '../src/notifications/notifications.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // A school entering its own merchant accounts, in sandbox mode with the server's JazzCash account as fallback.
 describe('School payment accounts (e2e)', () => {
@@ -103,6 +104,7 @@ describe('School payment accounts (e2e)', () => {
       .expect(201);
     const invite = sent.find((m) => m.template === 'parent.invite')!;
     const login = await request(server).post('/api/auth/login').send({ schoolSlug, login: phone(1), password: invite.params.password }).expect(200);
+    await keepIssuedPassword(app, login.body);
     parent = { Authorization: `Bearer ${login.body.accessToken}` };
   });
 

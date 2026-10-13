@@ -6,6 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // Platform console: staff roles, schools created from the console, lifecycle,
 // a school's people, module overrides, support sessions, audit and reports.
@@ -123,20 +124,23 @@ describe('Platform console (e2e)', () => {
 
       const login = await platformLogin(staffEmail, temp).expect(200);
       expect(login.body.admin.mustChangePassword).toBe(true);
-      const staff = auth(login.body.accessToken);
+      let staff = auth(login.body.accessToken);
       // Nothing but /me and change-password works until the temporary password is replaced.
       await request(server).get('/api/platform/schools').set(staff).expect(403);
       await request(server).get('/api/platform/auth/me').set(staff).expect(200);
       await request(server)
         .post('/api/platform/auth/change-password')
         .set(staff)
-        .send({ currentPassword: 'wrong-one', newPassword: 'a-new-password' })
+        .send({ currentPassword: 'wrong-one', newPassword: 'a-new-password1' })
         .expect(400);
-      await request(server)
+      const changed = await request(server)
         .post('/api/platform/auth/change-password')
         .set(staff)
-        .send({ currentPassword: temp, newPassword: 'a-new-password' })
+        .send({ currentPassword: temp, newPassword: 'a-new-password1' })
         .expect(200);
+      // The change ends the session it was made from; the reply carries a new token.
+      await request(server).get('/api/platform/auth/me').set(staff).expect(401);
+      staff = auth(changed.body.accessToken);
       const me = await request(server).get('/api/platform/auth/me').set(staff).expect(200);
       expect(me.body).toMatchObject({ email: staffEmail, role: 'SUPPORT', mustChangePassword: false });
       await request(server).get('/api/platform/schools').set(staff).expect(200);
@@ -149,7 +153,7 @@ describe('Platform console (e2e)', () => {
         .send({ isActive: false })
         .expect(200);
       await request(server).get('/api/platform/overview').set(staff).expect(401);
-      await platformLogin(staffEmail, 'a-new-password').expect(401);
+      await platformLogin(staffEmail, 'a-new-password1').expect(401);
 
       const reset = await request(server)
         .post(`/api/platform/staff/${id}/reset-password`)
@@ -207,6 +211,8 @@ describe('Platform console (e2e)', () => {
       .set(auth(login.body.accessToken))
       .expect(200);
     expect(me.body.plan).toMatchObject({ name: 'Starter', status: 'ACTIVE' });
+    // The console chose the owner's password, so they must replace it.
+    expect(me.body.mustChangePassword).toBe(true);
     expect(me.body.support).toBeNull();
   });
 
@@ -341,6 +347,12 @@ describe('Platform console (e2e)', () => {
         .send({ reason: 'Owner lost their phone' })
         .expect(201);
       expect(reset.body.temporaryPassword).toHaveLength(12);
+      // The reset ends the owner's open sessions; they sign in with the new one.
+      await request(server).get('/api/auth/me').set(schoolA.owner).expect(401);
+      const relogin = await schoolLogin(schoolA.slug, ownerRow.email!, reset.body.temporaryPassword).expect(200);
+      expect(relogin.body.user.mustChangePassword).toBe(true);
+      await keepIssuedPassword(app, relogin.body);
+      schoolA.owner = auth(relogin.body.accessToken);
       expect(
         (
           await prisma.platformAuditLog.findFirstOrThrow({

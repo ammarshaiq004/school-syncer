@@ -9,6 +9,9 @@ const MAX_ENTRIES = 10_000;
 export interface UserStatus {
   active: boolean;
   roles: RoleGrant[];
+  /** Tokens signed with another version were issued before a password change or reset. */
+  tokenVersion: number;
+  mustChangePassword: boolean;
 }
 
 interface Entry<T> {
@@ -23,7 +26,8 @@ interface Entry<T> {
  * the token with the current ones, so a role change or demotion applies
  * without waiting for the token to expire. Every write that changes a user's
  * isActive or role grants calls forget(userId) so this instance applies it at
- * once; other API instances catch up within the TTL.
+ * once; other API instances catch up within the TTL. The same goes for a
+ * password change or reset, which bumps tokenVersion to end older sessions.
  *
  * Support sessions also check the SchoolSyncer staff member who opened them:
  * once that admin is deactivated the session stops working.
@@ -43,10 +47,21 @@ export class UserStatusService {
           where: { id: userId, schoolId },
           select: {
             isActive: true,
+            tokenVersion: true,
+            mustChangePassword: true,
             roles: { select: { role: true, campusId: true, customRoleId: true } },
           },
         })
-        .then((u) => (u ? { active: u.isActive, roles: u.roles } : null)),
+        .then((u) =>
+          u
+            ? {
+                active: u.isActive,
+                roles: u.roles,
+                tokenVersion: u.tokenVersion,
+                mustChangePassword: u.mustChangePassword,
+              }
+            : null,
+        ),
     );
   }
 
