@@ -9,6 +9,7 @@ import { OnlinePaymentsService } from '../src/fees/online-payments.service.js';
 import { sign } from '../src/fees/payment-webhook.controller.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 const WEBHOOK_SECRET = 'test-jazzcash-secret';
 
@@ -85,6 +86,7 @@ describe('Fee money: de-duplication and corrections (e2e)', () => {
       .send({ name: `${role} ${n}`, phone: phone(n), password: 'password123', roles: [{ role }] })
       .expect(201);
     const res = await request(server).post('/api/auth/login').send({ schoolSlug: s.slug, login: phone(n), password: 'password123' }).expect(200);
+    await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 
