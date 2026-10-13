@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // Runs against the database in DATABASE_URL; each run uses unique emails.
 describe('SchoolSyncer API (e2e)', () => {
@@ -123,6 +124,9 @@ describe('SchoolSyncer API (e2e)', () => {
       .post('/api/auth/login')
       .send({ schoolSlug, login: '03001234567', password: 'password123' })
       .expect(200);
+    // The owner set this password, so the teacher must replace it first.
+    expect(login.body.user.mustChangePassword).toBe(true);
+    await keepIssuedPassword(app, login.body);
 
     await request(server)
       .post('/api/campuses')

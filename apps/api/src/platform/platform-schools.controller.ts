@@ -133,6 +133,7 @@ export class PlatformSchoolsController {
     const { schoolSlug, owner } = await this.setup.createSchool({
       ...body,
       password,
+      mustChangePassword: true,
       trialDays: body.trialDays ?? TRIAL_DAYS,
     });
     await logPlatform(this.prisma, admin, 'school.create', owner.schoolId, {
@@ -290,6 +291,7 @@ export class PlatformSchoolsController {
           email: body.email,
           phone: body.phone,
           passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+          mustChangePassword: true,
           roles: { create: roles },
         },
         select: userSelect,
@@ -388,8 +390,14 @@ export class PlatformSchoolsController {
     const password = temporaryPassword();
     await this.prisma.user.update({
       where: { id: uid },
-      data: { passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS) },
+      data: {
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+        mustChangePassword: true,
+        // Ends the user's open sessions.
+        tokenVersion: { increment: 1 },
+      },
     });
+    this.userStatus.forget(uid);
     const reason = body?.reason;
     await logToSchool(
       this.prisma,

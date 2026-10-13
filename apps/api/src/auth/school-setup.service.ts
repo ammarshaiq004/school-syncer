@@ -18,6 +18,8 @@ export interface NewSchool {
   email: string;
   phone?: string;
   password: string;
+  /** Set when someone else chose the owner's password (the platform console). */
+  mustChangePassword?: boolean;
   /** Defaults to PHYSICAL. */
   mode?: SchoolMode;
   /** Defaults to the trial plan. */
@@ -82,6 +84,7 @@ export class SchoolSetupService {
           email: input.email,
           phone: input.phone,
           passwordHash,
+          mustChangePassword: input.mustChangePassword ?? false,
           roles: { create: { role: Role.OWNER } },
         },
         include: { roles: true },

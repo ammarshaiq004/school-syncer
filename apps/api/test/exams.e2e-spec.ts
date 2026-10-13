@@ -10,6 +10,7 @@ import {
 } from '../src/notifications/notifications.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // One exam from setup to a parent opening the report card.
 describe('Exams and report cards (e2e)', () => {
@@ -73,6 +74,7 @@ describe('Exams and report cards (e2e)', () => {
       .post('/api/auth/login')
       .send({ schoolSlug, login, password })
       .expect(200);
+    await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 

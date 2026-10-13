@@ -1,13 +1,14 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { AuthUser, PlatformUser } from './auth-user.js';
-import { IS_PLATFORM, IS_PUBLIC } from './decorators.js';
+import { ALLOW_PENDING_PASSWORD, IS_PLATFORM, IS_PUBLIC } from './decorators.js';
 import { UserStatusService } from './user-status.service.js';
 
 @Injectable()
@@ -56,6 +57,23 @@ export class JwtAuthGuard implements CanActivate {
       // A support session ends when the staff member who opened it is deactivated.
       if (payload.support && !(await this.users.adminActive(payload.support.adminId))) {
         throw new UnauthorizedException('This support session has ended');
+      }
+      // A password change or reset bumps the version, ending older sessions.
+      if ((payload.tv ?? 0) !== status.tokenVersion) {
+        throw new UnauthorizedException('Your session has ended. Sign in again');
+      }
+      // A password someone else issued is known to them too: nothing but
+      // changing it works until the user has chosen their own. A support
+      // session is not the user, so it is not held up by this.
+      payload.mustChangePassword = status.mustChangePassword && !payload.support;
+      if (
+        payload.mustChangePassword &&
+        !this.reflector.getAllAndOverride<boolean>(ALLOW_PENDING_PASSWORD, [
+          context.getHandler(),
+          context.getClass(),
+        ])
+      ) {
+        throw new ForbiddenException('Choose a new password before carrying on');
       }
       // Grants come from the database, not the token, so a role change or
       // demotion applies within the cache TTL instead of when the token expires.

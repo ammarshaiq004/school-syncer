@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, ChevronDown, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
+import { Bell, ChevronDown, KeyRound, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
 import { Avatar } from "@/components/kit/avatar";
 import { IconButton } from "@/components/kit/button";
 import { DropdownItem, DropdownLabel, DropdownMenu, DropdownSeparator, Tooltip } from "@/components/kit/overlay";
@@ -26,12 +26,14 @@ export interface TopBarProps {
   onOpenMenu: () => void;
   onOpenPalette: () => void;
   onSignOut: () => void;
+  /** Where "Change password" goes; omitted to hide it (support sessions). */
+  changePasswordHref?: string;
   showBell: boolean;
   /** What the search button offers, e.g. "Search students and pages". */
   searchLabel?: string;
 }
 
-export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, showBell, searchLabel = "Search pages" }: TopBarProps) {
+export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, changePasswordHref, showBell, searchLabel = "Search pages" }: TopBarProps) {
   const current = viewDef(view);
   const [theme, setTheme] = useTheme();
   const CurrentIcon = current.icon;
@@ -129,6 +131,11 @@ export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu,
           <DropdownItem icon={theme === "dark" ? <Sun /> : <Moon />} onSelect={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? "Light theme" : "Dark theme"}
           </DropdownItem>
+          {changePasswordHref && (
+            <DropdownItem icon={<KeyRound />} href={changePasswordHref}>
+              Change password
+            </DropdownItem>
+          )}
           <DropdownSeparator />
           <DropdownItem icon={<LogOut />} danger onSelect={onSignOut}>
             Sign out

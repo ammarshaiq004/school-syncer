@@ -4,6 +4,11 @@
 //   pnpm prisma:seed --reset    deletes and rebuilds them (other schools are untouched)
 //
 // Every login uses the password "password123". See README "Demo data" for the list.
+// Logins that already exist are never changed, so a password someone set stays.
+//
+// Demo data has no place in production: with NODE_ENV=production the seed
+// refuses to run unless ALLOW_DEMO_SEED=true. The first real console login
+// comes from `pnpm --filter api platform:create-admin` instead.
 import { Gender, PrismaClient, Role, SchoolMode, SubscriptionStatus, VehicleType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { localToday } from '../src/common/dates.js';
@@ -240,6 +245,15 @@ async function deleteSchool(slug: string) {
 }
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') {
+    console.error(
+      'Refusing to seed demo data with NODE_ENV=production: it creates logins with the password "password123" ' +
+        'and --reset deletes schools. Create the first console owner with `pnpm --filter api platform:create-admin`. ' +
+        'Set ALLOW_DEMO_SEED=true to seed anyway.',
+    );
+    process.exitCode = 1;
+    return;
+  }
   const reset = process.argv.includes('--reset');
   const today = localToday();
   const passwordHash = await bcrypt.hash('password123', 12);

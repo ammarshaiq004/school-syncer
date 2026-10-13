@@ -8,6 +8,7 @@ import { localToday } from '../src/common/dates.js';
 import { NotificationsService, type OutgoingMessage } from '../src/notifications/notifications.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // Bell schedule, section timetables with clash checks, and homework through to parents.
 describe('Timetable and homework (e2e)', () => {
@@ -60,6 +61,7 @@ describe('Timetable and homework (e2e)', () => {
 
   async function loginAs(login: string, password = 'password123') {
     const res = await request(server).post('/api/auth/login').send({ schoolSlug, login, password }).expect(200);
+    await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 

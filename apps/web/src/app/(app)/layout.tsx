@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { GraduationCap, Lock, LogOut, Moon, X } from "lucide-react";
+import { GraduationCap, KeyRound, Lock, LogOut, Moon, X } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandLockup, BrandMark } from "@/components/brand";
 import { Alert, EmptyState } from "@/components/kit/feedback";
@@ -48,6 +48,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     api<SessionUser>("/auth/me")
       .then((me) => {
+        // A password someone else issued must be replaced before anything else.
+        if (me.mustChangePassword) {
+          router.replace("/change-password");
+          return;
+        }
         setUser(me);
         setSignedInAt(Date.now());
         // Parents and students only have their own portals (an account with both can use either).
@@ -108,6 +113,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         keywords: "light dark mode appearance",
         onSelect: () => setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark"),
       },
+      ...(user.support
+        ? []
+        : [{ id: "password", label: "Change password", group: "Actions", icon: KeyRound, keywords: "password security", href: "/change-password" }]),
       { id: "signout", label: "Sign out", group: "Actions", icon: LogOut, keywords: "log out logout", onSelect: signOut },
     ];
     return [...pages, ...views, ...actions];
@@ -193,6 +201,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             onOpenMenu={() => setMenuOpen(true)}
             onOpenPalette={() => setPaletteOpen(true)}
             onSignOut={signOut}
+            // A support session acts as the owner, so it cannot change their password.
+            changePasswordHref={user.support ? undefined : "/change-password"}
             showBell={isStaff}
             searchLabel={canFindStudents ? "Search students and pages" : undefined}
           />

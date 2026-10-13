@@ -157,6 +157,8 @@ export class PlatformStaffController {
       data: {
         passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
         mustChangePassword: true,
+        // Ends the member's open console sessions.
+        tokenVersion: { increment: 1 },
       },
     });
     await logPlatform(this.prisma, admin, 'staff.reset_password', null, {
