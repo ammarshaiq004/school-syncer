@@ -1,6 +1,9 @@
 import { Gender } from '@prisma/client';
 import { z } from 'zod';
+import { nameKey, normalizeCnic, normalizePhone } from '../common/identity.js';
 import type { GuardianInput } from './student-records.js';
+
+export { normalizePhone };
 
 /**
  * One spreadsheet row as the web app reads it: every cell is text (or empty),
@@ -60,6 +63,8 @@ export interface CheckedRow {
   name: string;
   classSection: string;
   errors: string[];
+  /** Worth a look but not wrong (a likely duplicate, a guardian name clash); importing needs a confirmation. */
+  warnings: string[];
   student?: ParsedStudent;
 }
 
@@ -69,18 +74,6 @@ export function parseGender(value: string): Gender | undefined {
   if (['f', 'female', 'girl', 'g'].includes(v)) return Gender.FEMALE;
   if (['o', 'other'].includes(v)) return Gender.OTHER;
   return undefined;
-}
-
-/** Pakistani mobile numbers in any common spelling, as 03XXXXXXXXX. */
-export function normalizePhone(value: string): string | undefined {
-  let digits = value.replace(/[\s\-().]/g, '');
-  if (digits.startsWith('+92')) digits = `0${digits.slice(3)}`;
-  else if (digits.startsWith('0092')) digits = `0${digits.slice(4)}`;
-  else if (digits.startsWith('92') && digits.length === 12)
-    digits = `0${digits.slice(2)}`;
-  else if (digits.startsWith('3') && digits.length === 10)
-    digits = `0${digits}`;
-  return /^03\d{9}$/.test(digits) ? digits : undefined;
 }
 
 /**
@@ -126,10 +119,13 @@ export function checkImportRows(
   }
   const seenAdmission = new Map<string, number>();
   const seenRoll = new Map<string, number>();
+  const seenStudent = new Map<string, number>();
+  const seenGuardian = new Map<string, { name: string; row: number }>();
 
   return rows.map((r, i) => {
     const row = i + 2;
     const errors: string[] = [];
+    const warnings: string[] = [];
     const name = [r.firstName, r.lastName].filter(Boolean).join(' ');
 
     if (!r.firstName) errors.push('First name is missing');
@@ -214,7 +210,9 @@ export function checkImportRows(
       }
     }
 
-    if (r.bFormNo.length > 20) errors.push('B-Form number is too long');
+    const bFormNo = r.bFormNo ? normalizeCnic(r.bFormNo) : undefined;
+    if (r.bFormNo && !bFormNo)
+      errors.push(`B-Form number "${r.bFormNo}" should be 13 digits like 35202-1234567-1`);
     if (r.address.length > 250) errors.push('Address is too long');
 
     const guardians: GuardianInput[] = [];
@@ -233,13 +231,21 @@ export function checkImportRows(
         errors.push(
           `${label} phone "${phoneCell}" should be a mobile number like 0300 1234567`,
         );
-      if (cnic.length > 20) errors.push(`${label} CNIC is too long`);
+      const cnicNo = cnic ? normalizeCnic(cnic) : undefined;
+      if (cnic && !cnicNo)
+        errors.push(`${label} CNIC "${cnic}" should be 13 digits like 35202-1234567-1`);
       if (phone && nameCell.length >= 2) {
+        const earlier = seenGuardian.get(phone);
+        if (earlier && nameKey(earlier.name) !== nameKey(nameCell))
+          warnings.push(
+            `${label} phone ${phone} is also on row ${earlier.row} for ${earlier.name}; both students will be linked to one guardian`,
+          );
+        else if (!earlier) seenGuardian.set(phone, { name: nameCell, row });
         guardians.push({
           name: nameCell.slice(0, 120),
           phone,
           relation: (relation || 'Guardian').slice(0, 30),
-          cnic: cnic || undefined,
+          cnic: cnicNo,
           isPrimary: guardians.length === 0,
         });
       }
@@ -266,7 +272,15 @@ export function checkImportRows(
       errors.push('Both guardians have the same phone');
     }
 
-    const checked: CheckedRow = { row, name, classSection, errors };
+    if (dateOfBirth && guardians.length) {
+      const key = `${nameKey(name)}|${dateOfBirth.toISOString()}|${guardians[0].phone}`;
+      const earlier = seenStudent.get(key);
+      if (earlier)
+        warnings.push(`Same name, date of birth and guardian phone as row ${earlier}`);
+      else seenStudent.set(key, row);
+    }
+
+    const checked: CheckedRow = { row, name, classSection, errors, warnings };
     if (!errors.length && sectionId && gender) {
       checked.student = {
         sectionId,
@@ -276,7 +290,7 @@ export function checkImportRows(
         lastName: r.lastName || undefined,
         gender,
         dateOfBirth,
-        bFormNo: r.bFormNo || undefined,
+        bFormNo,
         address: r.address || undefined,
         guardians,
       };

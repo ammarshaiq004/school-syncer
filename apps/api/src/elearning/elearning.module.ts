@@ -33,6 +33,7 @@ import { StudentQuizzesController } from './quizzes/student-quizzes.controller.j
     FilesController,
   ],
   providers: [CoursesService, LiveService, TeachingScopeService, QuizAttemptsService, FilesService, storageProvider],
-  exports: [CoursesService],
+  // Student photos (students/student-photo.controller.ts) use the same storage.
+  exports: [CoursesService, FilesService, storageProvider],
 })
 export class ElearningModule {}

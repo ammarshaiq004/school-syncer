@@ -22,6 +22,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { fullName } from "@/lib/format";
+import { formatCnic } from "@/lib/identity";
 import { useApi } from "@/lib/use-api";
 import { STATUS_OPTIONS, type StudentProfile } from "./directory-types";
 
@@ -208,7 +209,7 @@ function EditStudentDrawer({ id, name, onClose, onSaved }: { id: string | null; 
             options={[{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }, { value: "OTHER", label: "Other" }]}
           />
           <Field label="Date of birth" name="dateOfBirth" type="date" defaultValue={s.dateOfBirth?.slice(0, 10) ?? ""} />
-          <Field label="B-Form number" name="bFormNo" defaultValue={s.bFormNo ?? ""} />
+          <Field label="B-Form number" name="bFormNo" defaultValue={formatCnic(s.bFormNo)} />
           <Select label="Status" name="status" defaultValue={s.status} options={STATUS_OPTIONS} />
           <div className="sm:col-span-full">
             <Field label="Address" name="address" defaultValue={s.address ?? ""} />

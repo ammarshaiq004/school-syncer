@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock, ScanSearch, Undo2 } from "lucide-react";
 import { CHECKOUT_LABEL, CHECKOUT_TONE, PROVIDER_LABEL, type Checkout, type CheckoutStatus } from "@/components/invoices/online-payment";
+import { FeeHeadActions } from "@/components/fees/fee-head-actions";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
 import { ReasonDialog } from "@/components/fees/reason-dialog";
 import { ReconciliationTab } from "@/components/fees/reconciliation-tab";
@@ -818,7 +819,10 @@ function SetupTab() {
             {heads.data.map((h) => (
               <li key={h.id} className="flex items-center justify-between gap-3 px-1 py-2.5 text-sm">
                 <span className="font-medium text-fg">{h.name}</span>
-                <Badge tone={h.frequency === "MONTHLY" ? "primary" : "neutral"}>{FREQUENCY_LABEL[h.frequency] ?? h.frequency.toLowerCase().replace("_", " ")}</Badge>
+                <span className="flex items-center gap-1">
+                  <Badge tone={h.frequency === "MONTHLY" ? "primary" : "neutral"}>{FREQUENCY_LABEL[h.frequency] ?? h.frequency.toLowerCase().replace("_", " ")}</Badge>
+                  <FeeHeadActions head={h} onChanged={() => Promise.all([heads.reload(), structures.reload()])} />
+                </span>
               </li>
             ))}
           </ul>

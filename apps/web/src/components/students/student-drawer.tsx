@@ -34,6 +34,7 @@ import {
   type TabItem,
 } from "@/components/ui";
 import { day, rupees } from "@/lib/format";
+import { formatCnic } from "@/lib/identity";
 import {
   ATTENDANCE_LEGEND,
   ATTENDANCE_TONE,
@@ -182,7 +183,7 @@ function BioTab({ profile: s }: { profile: StudentProfile }) {
           items={[
             { label: "Gender", value: <span className="capitalize">{s.gender.toLowerCase()}</span> },
             { label: "Date of birth", value: s.dateOfBirth ? day(s.dateOfBirth) : "Not recorded" },
-            { label: "B-Form", value: s.bFormNo ? <span className="tabular-nums">{s.bFormNo}</span> : "Not recorded" },
+            { label: "B-Form", value: s.bFormNo ? <span className="tabular-nums">{formatCnic(s.bFormNo)}</span> : "Not recorded" },
             { label: "Campus", value: s.campus.name },
             { label: "Address", value: s.address ?? "Not recorded", full: true },
           ]}
@@ -250,7 +251,7 @@ function ContactTab({ profile: s }: { profile: StudentProfile }) {
               </div>
               <div className="mt-0.5 text-[13px] text-fg-muted">
                 {g.relation}
-                {g.guardian.cnic && <span className="tabular-nums"> · CNIC {g.guardian.cnic}</span>}
+                {g.guardian.cnic && <span className="tabular-nums"> · CNIC {formatCnic(g.guardian.cnic)}</span>}
               </div>
               <div className="mt-1 text-sm tabular-nums text-fg-secondary">{g.guardian.phone}</div>
             </div>

@@ -15,6 +15,7 @@ import {
 import { Prisma, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { phoneField } from '../common/identity.js';
 import { BCRYPT_ROUNDS } from '../auth/school-setup.service.js';
 import { adminScope, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
@@ -54,7 +55,7 @@ const createUserSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
     email: z.email().toLowerCase().optional(),
-    phone: z.string().trim().min(10).max(20).optional(),
+    phone: phoneField.optional(),
     // Omit to have a temporary password generated and returned once.
     password: z.string().min(8).max(128).optional(),
     roles: z.array(grantSchema).min(1),
@@ -69,7 +70,7 @@ const updateUserSchema = z
   .object({
     name: z.string().trim().min(2).max(120).optional(),
     email: z.email().toLowerCase().nullable().optional(),
-    phone: z.string().trim().min(10).max(20).nullable().optional(),
+    phone: phoneField.nullable().optional(),
     roles: z.array(grantSchema).min(1).optional(),
   })
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'Nothing to change');

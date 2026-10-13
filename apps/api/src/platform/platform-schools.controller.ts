@@ -16,6 +16,7 @@ import {
 import { PlatformRole, Prisma, Role, SubscriptionStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
+import { phoneField } from '../common/identity.js';
 import {
   BCRYPT_ROUNDS,
   SchoolSetupService,
@@ -64,7 +65,7 @@ const createUserSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
     email: z.email().toLowerCase().optional(),
-    phone: z.string().trim().min(10).max(20).optional(),
+    phone: phoneField.optional(),
     roles: z.array(grantSchema).min(1),
   })
   .refine((u) => u.email || u.phone, {

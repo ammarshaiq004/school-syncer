@@ -12,8 +12,12 @@ import { downloadStudentTemplate, readStudentFile, type ReadResult } from "@/lib
 interface CheckResult {
   valid: number;
   invalid: number;
+  /** Rows that are fine but worth a look (likely duplicates, guardian name clashes). */
+  warned?: number;
   imported: number;
-  rows: { row: number; name: string; classSection: string; errors: string[] }[];
+  /** Set when commit stopped for warnings the user has not confirmed. */
+  needsConfirmation?: boolean;
+  rows: { row: number; name: string; classSection: string; errors: string[]; warnings?: string[] }[];
 }
 
 const PREVIEW = 50;
@@ -58,7 +62,8 @@ export default function ImportStudentsPage() {
     try {
       const result = await api<CheckResult>("/students/import", {
         method: "POST",
-        body: { rows: file.read.rows, commit: true },
+        // The warnings were on screen next to the Import button, so importing confirms them.
+        body: { rows: file.read.rows, commit: true, confirmWarnings: true },
       });
       setCheck(result);
       setDone(result.imported);
@@ -70,7 +75,8 @@ export default function ImportStudentsPage() {
   }
 
   const problems = check?.rows.filter((r) => r.errors.length) ?? [];
-  const ready = check?.rows.filter((r) => !r.errors.length) ?? [];
+  const warned = check?.rows.filter((r) => !r.errors.length && r.warnings?.length) ?? [];
+  const ready = check?.rows.filter((r) => !r.errors.length && !r.warnings?.length) ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -146,14 +152,22 @@ export default function ImportStudentsPage() {
               <span className="font-medium">{file?.name}</span>
               <Badge tone="green">{check.valid} ready</Badge>
               {check.invalid > 0 && <Badge tone="red">{plural(check.invalid, "row")} to fix</Badge>}
+              {warned.length > 0 && <Badge tone="amber">{plural(warned.length, "row")} to check</Badge>}
             </div>
             <Button onClick={onImport} disabled={busy || check.invalid > 0}>
-              Import {plural(check.valid, "student")}
+              {warned.length > 0 && !check.invalid ? "Checked, import" : "Import"} {plural(check.valid, "student")}
             </Button>
           </div>
           {check.invalid > 0 && (
             <p className="mb-3 text-sm opacity-70">
               Nothing will be imported until every row is fixed, so a class is never left half done.
+            </p>
+          )}
+          {warned.length > 0 && (
+            <p className="mb-3 text-sm opacity-70">
+              Rows to check may be students already on file or a guardian phone saved under another name. Remove a
+              duplicate row or correct the name in Excel, or import as they are: a shared phone links the children to one
+              guardian.
             </p>
           )}
           <div className="overflow-x-auto">
@@ -162,7 +176,7 @@ export default function ImportStudentsPage() {
                 <tr><th className="py-2">Row</th><th>Student</th><th>Class</th><th>Status</th></tr>
               </thead>
               <tbody>
-                {[...problems, ...ready.slice(0, PREVIEW)].map((r) => (
+                {[...problems, ...warned, ...ready.slice(0, PREVIEW)].map((r) => (
                   <tr key={r.row} className={`${rowClass} align-top`}>
                     <td className="py-2 font-mono text-xs">{r.row}</td>
                     <td>{r.name || "–"}</td>
@@ -170,6 +184,8 @@ export default function ImportStudentsPage() {
                     <td className="py-2">
                       {r.errors.length ? (
                         <ul className="text-red-600">{r.errors.map((e) => <li key={e}>{e}</li>)}</ul>
+                      ) : r.warnings?.length ? (
+                        <ul className="text-warning-text">{r.warnings.map((e) => <li key={e}>{e}</li>)}</ul>
                       ) : (
                         <Badge tone="green">Ready</Badge>
                       )}

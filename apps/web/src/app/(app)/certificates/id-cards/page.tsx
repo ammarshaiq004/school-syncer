@@ -6,6 +6,7 @@ import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { IdCard, Printer } from "lucide-react";
 import { Alert, Button, buttonClass, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { day } from "@/lib/format";
+import { formatCnic } from "@/lib/identity";
 import { useSchoolMode } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
@@ -235,7 +236,7 @@ function StaffIdCard({ school, card }: { school: Letterhead; card: StaffCard }) 
         <Row label="Department">{card.department}</Row>
         <Row label="Campus">{card.campus}</Row>
         <Row label="Phone">{card.phone}</Row>
-        <Row label="CNIC">{card.cnic}</Row>
+        <Row label="CNIC">{card.cnic ? formatCnic(card.cnic) : null}</Row>
       </div>
     </CardFrame>
   );

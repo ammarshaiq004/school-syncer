@@ -29,6 +29,7 @@ import {
   STAFF_ROLES,
 } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
+import { cnicField } from '../common/identity.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -46,11 +47,7 @@ const profileSchema = z.object({
   designation: z.string().trim().min(2).max(60),
   department: z.string().trim().max(60).optional(),
   joinedOn: isoDate.optional(),
-  cnic: z
-    .string()
-    .trim()
-    .regex(/^\d{5}-?\d{7}-?\d$/, 'Use the 13-digit CNIC')
-    .optional(),
+  cnic: cnicField.optional(),
   basicSalary: rupees,
   bankName: z.string().trim().max(60).optional(),
   bankAccount: z.string().trim().max(40).optional(),
@@ -144,7 +141,7 @@ export class HrController {
       ...fields,
       employeeNo,
       joinedOn: body.joinedOn ? dayStart(body.joinedOn) : null,
-      cnic: body.cnic?.replace(/-/g, ''),
+      cnic: body.cnic,
     };
     try {
       await this.prisma.$transaction(async (tx) => {

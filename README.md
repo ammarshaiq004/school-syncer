@@ -82,6 +82,13 @@ pnpm dev               # API on :4000, web on :3000
 pnpm db:deploy         # prisma migrate deploy
 ```
 
+Phone numbers are stored as `03XXXXXXXXX` and CNICs and B-Forms as 13 digits. After deploying that change, put rows saved before it into the same form once (a dry run lists what would change; rows it cannot fix are listed and left alone, and guardians saved twice under two spellings of one number are merged when their names match):
+
+```bash
+pnpm --filter api data:normalise-contacts            # dry run
+pnpm --filter api data:normalise-contacts --apply    # or: node apps/api/dist/students/normalise-contacts.js --apply
+```
+
 Never run `pnpm db:seed` there: it creates demo logins with the password `password123`, and `--reset` deletes schools by their codes. It refuses to run with `NODE_ENV=production` (set `ALLOW_DEMO_SEED=true` only for a throwaway demo server).
 
 Create the first SchoolSyncer console owner once, after migrating:

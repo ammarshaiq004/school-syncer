@@ -159,6 +159,46 @@ describe('checkImportRows', () => {
     expect(none.errors).toEqual(['Guardian name and phone are missing']);
   });
 
+  it('stores CNIC and B-Form as 13 digits and explains bad ones', () => {
+    const [good, bad] = checkImportRows(
+      [
+        row({ bFormNo: '35202 1234567 9', guardianCnic: '35202-7654321-1', guardianPhone: '+92 300 1234567' }),
+        row({ bFormNo: '12345', guardianCnic: '35202-765432-1' }),
+      ],
+      sections,
+      new Set(),
+    );
+    expect(good.student).toMatchObject({
+      bFormNo: '3520212345679',
+      guardians: [{ phone: '03001234567', cnic: '3520276543211' }],
+    });
+    expect(bad.errors).toEqual([
+      'B-Form number "12345" should be 13 digits like 35202-1234567-1',
+      'Guardian CNIC "35202-765432-1" should be 13 digits like 35202-1234567-1',
+    ]);
+  });
+
+  it('warns about likely duplicate rows and one phone under two names', () => {
+    const rows = checkImportRows(
+      [
+        row({ dateOfBirth: '21/03/2019' }),
+        row({ dateOfBirth: '2019-03-21', firstName: 'ayesha' }),
+        row({ firstName: 'Bilal', guardianName: 'Someone Else', guardianPhone: '0300 1234567' }),
+        row({ firstName: 'Hira' }),
+      ],
+      sections,
+      new Set(),
+    );
+    expect(rows.map((r) => r.warnings)).toEqual([
+      [],
+      ['Same name, date of birth and guardian phone as row 2'],
+      ['Guardian phone 03001234567 is also on row 2 for Imran Khan; both students will be linked to one guardian'],
+      [],
+    ]);
+    // Warnings never block a row.
+    expect(rows.every((r) => r.student && !r.errors.length)).toBe(true);
+  });
+
   it('needs the campus when two campuses share a class name', () => {
     const both = [
       ...sections,

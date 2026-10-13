@@ -22,6 +22,7 @@ import { AccountsController } from './accounts/accounts.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { FeeCorrectionsController } from './fees/fee-corrections.controller.js';
 import { FeeCorrectionsService } from './fees/fee-corrections.service.js';
+import { FeeHeadsController } from './fees/fee-heads.controller.js';
 import { FeesController } from './fees/fees.controller.js';
 import { PaymentAccountsController } from './fees/payment-accounts.controller.js';
 import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
@@ -43,6 +44,12 @@ import { ChatModule } from './chat/chat.module.js';
 import { AssistantModule } from './assistant/assistant.module.js';
 import { ParentController } from './parent/parent.controller.js';
 import { ParentRecordsController } from './parent/parent-records.controller.js';
+import { StudentChangesController } from './students/student-changes.controller.js';
+import {
+  StudentPhotoContentController,
+  StudentPhotoController,
+  StudentPhotoLinks,
+} from './students/student-photo.controller.js';
 import { StudentsController } from './students/students.controller.js';
 import { StudentController } from './student/student.controller.js';
 import { AcademicYearsController } from './academic-years/academic-years.controller.js';
@@ -103,9 +110,13 @@ import { UsersController } from './users/users.controller.js';
     RolesController,
     AuditController,
     StudentsController,
+    StudentChangesController,
+    StudentPhotoController,
+    StudentPhotoContentController,
     AdmissionsController,
     AttendanceController,
     FeesController,
+    FeeHeadsController,
     FeeCorrectionsController,
     ExamsController,
     TimetableController,
@@ -135,6 +146,7 @@ import { UsersController } from './users/users.controller.js';
     PlatformController,
   ],
   providers: [
+    StudentPhotoLinks,
     PaymentsService,
     FeeCorrectionsService,
     OnlinePaymentsService,
