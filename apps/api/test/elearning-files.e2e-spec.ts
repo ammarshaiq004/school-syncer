@@ -361,6 +361,17 @@ describe('E-school files (e2e)', () => {
     expect(await prisma.storedFile.findUnique({ where: { id: res.body.id } })).toBeNull();
   });
 
+  it('refuses a file over the route limit before storing anything', async () => {
+    const before = await prisma.storedFile.count({ where: { schoolId } });
+    // Assignment files stop at 50 MB, below the 500 MB a lesson video may be.
+    const big = Buffer.concat([pdf, Buffer.alloc(51 * 1024 * 1024, 32)]);
+    const res = await upload(teacher, '/api/elearning/files?purpose=ASSIGNMENT', 'huge.pdf', big).expect(413);
+    expect(res.body.message).toContain('50 MB');
+    // Students' work is capped at 100 MB whatever its type.
+    await upload(studentA, '/api/student/files', 'huge.mp4', Buffer.concat([mp4(), Buffer.alloc(101 * 1024 * 1024)])).expect(413);
+    expect(await prisma.storedFile.count({ where: { schoolId } })).toBe(before);
+  });
+
   it("enforces the plan's storage allowance", async () => {
     const plan = await prisma.plan.create({
       data: {

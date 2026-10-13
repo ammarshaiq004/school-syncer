@@ -165,9 +165,19 @@ On a phone, the API URL must be your computer's network address (for example `ht
 ```bash
 pnpm --filter api test       # unit tests
 pnpm --filter api test:e2e   # API tests against the database in DATABASE_URL
+pnpm --filter web test       # web unit tests (node --test)
 pnpm lint
-pnpm build
+pnpm build                   # needs NEXT_PUBLIC_API_URL (apps/web/.env.local or the environment)
 ```
+
+## Production settings
+
+Run the API with `NODE_ENV=production`. It then refuses to start unless `DATABASE_URL` is set, `JWT_SECRET` and
+`FILE_SIGNING_SECRET` are different random strings of 32+ characters (`openssl rand -hex 32`; the signing secret is
+only needed with local file storage), `API_PUBLIC_URL` and `WEB_PUBLIC_URL` are https addresses, `PAYMENTS_MODE` is not
+`mock`, and `PAYMENTS_SECRET_KEY` is set for sandbox or live payments. `GET /api/health` checks the database and answers
+503 when it is unreachable. Build the web portal with `NEXT_PUBLIC_API_URL` and the app with `EXPO_PUBLIC_API_URL`
+pointing at the public API; the web build fails without it.
 
 ## API overview
 

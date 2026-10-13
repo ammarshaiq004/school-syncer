@@ -23,7 +23,9 @@ Set `PAYMENTS_MODE` (see `apps/api/.env.example`):
   verification. Use it for demos and testing with the seed data (`pnpm db:seed`, parent login 03001234567).
 - `sandbox`: the providers' test environments, with test merchant credentials.
 - `live`: production. Each gateway appears only once its credentials are set.
-- `off` (default when `NODE_ENV=production`): no online payments, so a server never runs mock mode by accident.
+- `off` (default when `NODE_ENV=production`): no online payments. With `NODE_ENV=production` the API refuses to start
+  in mock mode, since mock lets parents approve their own payments, and the mock approval route answers 404 in every
+  other mode. Sandbox and live also need `PAYMENTS_SECRET_KEY`.
 
 Online payments need the `online_payments` plan feature (Growth and Enterprise).
 

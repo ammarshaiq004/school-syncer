@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # pnpm workspaces: one entry at the root covers apps/api, apps/web and apps/mobile.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Minor and patch bumps in one PR a week; majors arrive one by one.
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

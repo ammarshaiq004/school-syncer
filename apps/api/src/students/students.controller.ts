@@ -182,7 +182,7 @@ export class StudentsController {
     @Query('sectionId') sectionId?: string,
     @Query('classId') classId?: string,
     @Query('search') search?: string,
-    @Query('status') status: StudentStatus = StudentStatus.ACTIVE,
+    @Query('status', new ZodValidationPipe(z.enum(StudentStatus).optional())) status: StudentStatus = StudentStatus.ACTIVE,
   ) {
     const reach = await this.reach(user);
     const where: Prisma.StudentWhereInput = {

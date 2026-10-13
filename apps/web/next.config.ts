@@ -1,7 +1,61 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants";
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
+/** Where lesson videos linked from YouTube and Vimeo play (see the API's video-embed.ts). */
+const VIDEO_PLAYERS = ["https://www.youtube-nocookie.com", "https://player.vimeo.com"];
 
-export default nextConfig;
+/**
+ * The Content-Security-Policy for every page. Pragmatic rather than strict:
+ * Next and the theme script use inline scripts, and uploaded files, school
+ * logos and photos come from the API or an S3 bucket on any https host.
+ */
+function contentSecurityPolicy(apiOrigin: string, dev: boolean) {
+  const directives: Record<string, string[]> = {
+    "default-src": ["'self'"],
+    // React's dev overlay and fast refresh need eval.
+    "script-src": ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],
+    "style-src": ["'self'", "'unsafe-inline'"],
+    // next/font serves Google fonts from this origin.
+    "font-src": ["'self'", "data:"],
+    "img-src": ["'self'", "data:", "blob:", "https:", apiOrigin],
+    "media-src": ["'self'", "blob:", "https:", apiOrigin],
+    "connect-src": ["'self'", apiOrigin, ...(dev ? ["ws:"] : [])],
+    "frame-src": VIDEO_PLAYERS,
+    "frame-ancestors": ["'none'"],
+    "object-src": ["'none'"],
+    "base-uri": ["'self'"],
+    // Online payments post a signed form to the gateway's hosted checkout.
+    "form-action": ["'self'", "https:"],
+  };
+  const policy = Object.entries(directives).map(([name, values]) => `${name} ${[...new Set(values)].join(" ")}`);
+  if (apiOrigin.startsWith("https:")) policy.push("upgrade-insecure-requests");
+  return policy.join("; ");
+}
+
+export default function config(phase: string): NextConfig {
+  const dev = phase === PHASE_DEVELOPMENT_SERVER;
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  // The API address is baked into the browser bundle, so a production build
+  // without it would quietly call http://localhost:4000 from users' browsers.
+  if (!apiUrl && phase === PHASE_PRODUCTION_BUILD) {
+    throw new Error(
+      "NEXT_PUBLIC_API_URL is not set. Set it to the API's public address (e.g. https://api.example.pk/api) before `next build`.",
+    );
+  }
+  const apiOrigin = new URL(apiUrl ?? "http://localhost:4000/api").origin;
+  const headers = [
+    { key: "Content-Security-Policy", value: contentSecurityPolicy(apiOrigin, dev) },
+    { key: "X-Content-Type-Options", value: "nosniff" },
+    { key: "X-Frame-Options", value: "DENY" },
+    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+    // Browsers ignore it over plain http, so it is harmless locally.
+    ...(dev ? [] : [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" }]),
+  ];
+  return {
+    poweredByHeader: false,
+    async headers() {
+      return [{ source: "/:path*", headers }];
+    },
+  };
+}

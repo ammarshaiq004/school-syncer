@@ -82,7 +82,6 @@ export class FilesService {
       const filename = cleanFilename(Buffer.from(temp.originalname, 'latin1').toString('utf8'));
       const check = checkFile(purpose, filename, temp.size, await readHead(temp.path));
       if (!check.ok) throw new BadRequestException(check.problem);
-      await this.removeStale(user.schoolId);
       await this.assertRoom(user.schoolId, temp.size);
       const key = `schools/${user.schoolId}/${purpose.toLowerCase()}/${randomUUID()}.${check.ext}`;
       await this.storage.put(key, temp.path, check.mime);
@@ -243,7 +242,9 @@ export class FilesService {
     return row;
   }
 
-  private async assertRoom(schoolId: string, adding: number) {
+  /** Throws 409 when the school's storage cannot take this many more bytes, after clearing stale uploads. */
+  async assertRoom(schoolId: string, adding: number) {
+    await this.removeStale(schoolId);
     const { usedBytes } = await this.usage(schoolId);
     const plan = await this.subscriptions.forSchool(schoolId);
     const problem = storageProblem(usedBytes, adding, plan.maxStorageMb);

@@ -13,7 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { changePasswordSchema } from '../auth/auth.schemas.js';
-import { LoginRateLimiter } from '../auth/login-rate-limit.js';
+import { checkNoPassword, LoginRateLimiter } from '../auth/login-rate-limit.js';
 import { BCRYPT_ROUNDS } from '../auth/school-setup.service.js';
 import type { PlatformUser } from '../common/auth-user.js';
 import { CurrentAdmin, PlatformOnly, Public } from '../common/decorators.js';
@@ -53,9 +53,9 @@ export class PlatformAuthController {
     const admin = await this.prisma.platformAdmin.findUnique({
       where: { email: body.email },
     });
-    const valid =
-      admin?.isActive &&
-      (await bcrypt.compare(body.password, admin.passwordHash));
+    const valid = admin?.isActive
+      ? await bcrypt.compare(body.password, admin.passwordHash)
+      : await checkNoPassword(body.password);
     if (!admin || !valid) {
       this.limiter.recordFailure(limitKey);
       throw new UnauthorizedException('Wrong email or password');

@@ -16,6 +16,7 @@ import { adminScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Public, RequiresFeature, Roles } from '../common/decorators.js';
+import { RateLimit } from '../common/rate-limit.guard.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -51,6 +52,9 @@ const admitSchema = z.object({
 });
 type AdmitInput = z.infer<typeof admitSchema>;
 
+/** Enquiries one address may send in 10 minutes (a family may enquire for several children). */
+export const ENQUIRY_LIMIT = 10;
+
 @Controller()
 @Permission('admissions')
 @RequiresFeature('admissions')
@@ -64,6 +68,7 @@ export class AdmissionsController {
   /** Online enquiry form on the school's public admission page. */
   @Public()
   @Post('public/:schoolSlug/enquiries')
+  @RateLimit('enquiry', ENQUIRY_LIMIT, 10 * 60_000)
   async publicEnquiry(
     @Param('schoolSlug') slug: string,
     @Body(new ZodValidationPipe(enquirySchema)) body: EnquiryInput,
@@ -101,7 +106,10 @@ export class AdmissionsController {
 
   @Get('applications')
   @Roles(...SETUP_ROLES)
-  list(@CurrentUser() user: AuthUser, @Query('stage') stage?: ApplicationStage) {
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query('stage', new ZodValidationPipe(z.enum(ApplicationStage).optional())) stage?: ApplicationStage,
+  ) {
     return this.prisma.application.findMany({
       where: { ...this.scoped(user), ...(stage ? { stage } : {}) },
       orderBy: { createdAt: 'desc' },
