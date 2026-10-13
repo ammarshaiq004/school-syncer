@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { campusScope, hasAnyRole, SETUP_ROLES } from '../common/admin-roles.js';
+import { administers, campusScope, workingSections } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { localToday, startOfLocalDay } from '../common/dates.js';
@@ -129,9 +129,7 @@ export class ChatService {
 
   /** May this user observe threads about students at this campus (setup roles, safeguarding)? */
   canObserve(user: AuthUser, campusId: string): boolean {
-    if (!hasAnyRole(user, SETUP_ROLES)) return false;
-    const scope = campusScope(user);
-    return !scope || scope.includes(campusId);
+    return administers(user, campusId);
   }
 
   /** Loads a thread and this user's role in it; 404 for other schools and threads the user may not see. */
@@ -258,7 +256,6 @@ export class ChatService {
    * class-teach or teach a subject in.
    */
   async staffContacts(user: AuthUser) {
-    const admin = hasAnyRole(user, SETUP_ROLES);
     const scope = campusScope(user);
     const students = await this.prisma.student.findMany({
       where: {
@@ -269,14 +266,7 @@ export class ChatService {
             status: 'ACTIVE',
             section: {
               academicYear: { isCurrent: true },
-              ...(admin
-                ? {}
-                : {
-                    OR: [
-                      { classTeacherId: user.sub },
-                      { subjects: { some: { teacherId: user.sub } } },
-                    ],
-                  }),
+              ...workingSections(user),
             },
           },
         },
@@ -355,7 +345,7 @@ export class ChatService {
     const scope = campusScope(user);
     if (scope && !scope.includes(student.campusId))
       throw new NotFoundException('Student not found');
-    const isAdmin = hasAnyRole(user, SETUP_ROLES);
+    const isAdmin = administers(user, student.campusId);
     if (!canStartThreadAbout(section, user.sub, { isAdmin })) {
       throw new ForbiddenException(
         'You can only message the parents of students you teach',

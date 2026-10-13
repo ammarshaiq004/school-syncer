@@ -16,7 +16,8 @@ import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import {
-  campusScope,
+  adminScope,
+  campusScopeFor,
   SETUP_ROLES,
   STAFF_ROLES,
 } from '../common/admin-roles.js';
@@ -89,6 +90,34 @@ type BulkLoginInput = z.infer<typeof bulkLoginSchema>;
 const fullName = (s: { firstName: string; lastName: string | null }) =>
   [s.firstName, s.lastName].filter(Boolean).join(' ');
 
+/** Office roles work with every student on their campuses. */
+const OFFICE_ROLES: Role[] = [...SETUP_ROLES, Role.ACCOUNTANT];
+
+/** What a viewer may read: which students, and whose private details. */
+interface StudentReach {
+  where: Prisma.StudentWhereInput;
+  /** True when the viewer may see this student's B-Form, address, medical notes and guardian CNIC. */
+  seesPrivate: (s: { campusId: string; enrollments: { status: string; sectionId: string }[] }) => boolean;
+}
+
+/** Blanks the private fields of a student and their guardians, for viewers who may not see them. */
+function withoutPrivate<
+  S extends {
+    bFormNo: string | null;
+    address: string | null;
+    medicalNotes: string | null;
+    guardians: { guardian: object }[];
+  },
+>(student: S): S {
+  return {
+    ...student,
+    bFormNo: null,
+    address: null,
+    medicalNotes: null,
+    guardians: student.guardians.map((g) => ({ ...g, guardian: { ...g.guardian, cnic: null, occupation: null } })),
+  };
+}
+
 @Controller('students')
 @Permission('students')
 @Roles(...STAFF_ROLES)
@@ -102,6 +131,40 @@ export class StudentsController {
     private readonly permissions: PermissionService,
   ) {}
 
+  /**
+   * Which students a viewer may read (SCHOOL-126). Office roles see every
+   * student on their campuses. Teachers and other staff see only students
+   * enrolled in a section they are class teacher of or teach a subject in,
+   * and private details only for their class-teacher sections.
+   */
+  private async reach(user: AuthUser): Promise<StudentReach> {
+    const office = campusScopeFor(user, OFFICE_ROLES);
+    if (office === null) return { where: {}, seesPrivate: () => true };
+    const [classTeacherOf, teaches] = await Promise.all([
+      this.prisma.section.findMany({
+        where: { schoolId: user.schoolId, classTeacherId: user.sub },
+        select: { id: true },
+      }),
+      this.prisma.sectionSubject.findMany({
+        where: { schoolId: user.schoolId, teacherId: user.sub },
+        select: { sectionId: true },
+      }),
+    ]);
+    const own = new Set(classTeacherOf.map((s) => s.id));
+    const taught = [...own, ...teaches.map((t) => t.sectionId)];
+    return {
+      where: {
+        OR: [
+          { campusId: { in: office } },
+          { enrollments: { some: { status: 'ACTIVE', sectionId: { in: taught } } } },
+        ],
+      },
+      seesPrivate: (s) =>
+        office.includes(s.campusId) ||
+        s.enrollments.some((e) => e.status === 'ACTIVE' && own.has(e.sectionId)),
+    };
+  }
+
   /** Which fee/exam/attendance data this viewer may see in the directory and drawer. */
   private async directoryAccess(user: AuthUser): Promise<DirectoryAccess> {
     const perms = await this.permissions.permissionsFor(user);
@@ -114,18 +177,18 @@ export class StudentsController {
   }
 
   @Get()
-  list(
+  async list(
     @CurrentUser() user: AuthUser,
     @Query('sectionId') sectionId?: string,
     @Query('classId') classId?: string,
     @Query('search') search?: string,
     @Query('status', new ZodValidationPipe(z.enum(StudentStatus).optional())) status: StudentStatus = StudentStatus.ACTIVE,
   ) {
-    const campuses = campusScope(user);
+    const reach = await this.reach(user);
     const where: Prisma.StudentWhereInput = {
       schoolId: user.schoolId,
       status,
-      ...(campuses ? { campusId: { in: campuses } } : {}),
+      ...reach.where,
       ...(sectionId || classId
         ? {
             enrollments: {
@@ -138,7 +201,7 @@ export class StudentsController {
         : {}),
       ...studentSearchWhere(search, { guardianPhone: true }),
     };
-    return this.prisma.student.findMany({
+    const students = await this.prisma.student.findMany({
       where,
       orderBy: [{ firstName: 'asc' }],
       take: 500,
@@ -155,6 +218,7 @@ export class StudentsController {
         },
       },
     });
+    return students.map((s) => (reach.seesPrivate(s) ? s : withoutPrivate(s)));
   }
 
   /**
@@ -168,18 +232,31 @@ export class StudentsController {
     @CurrentUser() user: AuthUser,
     @Query(new ZodValidationPipe(directoryQuerySchema)) query: DirectoryQuery,
   ) {
-    return studentDirectory(this.prisma, user.schoolId, campusScope(user), query, await this.directoryAccess(user));
+    return studentDirectory(
+      this.prisma,
+      user.schoolId,
+      campusScopeFor(user, OFFICE_ROLES),
+      query,
+      await this.directoryAccess(user),
+    );
   }
 
   /** Subject scores, 26 weeks of attendance and fee standing, for the directory drawer. */
   @Get(':id/performance')
   @Roles(...SETUP_ROLES, Role.ACCOUNTANT)
   async performance(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return studentPerformance(this.prisma, user.schoolId, campusScope(user), id, await this.directoryAccess(user));
+    return studentPerformance(
+      this.prisma,
+      user.schoolId,
+      campusScopeFor(user, OFFICE_ROLES),
+      id,
+      await this.directoryAccess(user),
+    );
   }
 
   @Get(':id')
   async get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const reach = await this.reach(user);
     const student = await this.prisma.student.findFirst({
       where: { id, schoolId: user.schoolId },
       include: {
@@ -200,17 +277,15 @@ export class StudentsController {
       },
     });
     if (!student) throw new NotFoundException('Student not found');
-    const scope = campusScope(user);
-    if (scope && !scope.includes(student.campusId)) {
-      throw new ForbiddenException('Student is at another campus');
-    }
+    const visible = await this.prisma.student.count({ where: { id, ...reach.where } });
+    if (!visible) throw new ForbiddenException('Student is at another campus or not in your classes');
     const attendance = await this.prisma.attendanceRecord.groupBy({
       by: ['status'],
       where: { studentId: id },
       _count: true,
     });
     return {
-      ...student,
+      ...(reach.seesPrivate(student) ? student : withoutPrivate(student)),
       attendanceSummary: Object.fromEntries(attendance.map((a) => [a.status, a._count])),
     };
   }
@@ -223,7 +298,7 @@ export class StudentsController {
   ) {
     await this.subscriptions.assertStudentRoom(user.schoolId, 1);
     const student = await this.prisma.$transaction((tx) =>
-      createStudentRecord(tx, { ...body, schoolId: user.schoolId }),
+      createStudentRecord(tx, { ...body, schoolId: user.schoolId, campuses: adminScope(user) }),
     );
     await this.audit.record(user, 'student.create', 'Student', student.id, { after: student });
     return student;
@@ -240,7 +315,7 @@ export class StudentsController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(importSchema)) body: ImportInput,
   ) {
-    const campuses = campusScope(user);
+    const campuses = adminScope(user);
     const sections = await this.prisma.section.findMany({
       where: {
         schoolId: user.schoolId,
@@ -315,6 +390,14 @@ export class StudentsController {
   ) {
     const before = await this.prisma.student.findFirst({ where: { id, schoolId: user.schoolId } });
     if (!before) throw new NotFoundException('Student not found');
+    const scope = adminScope(user);
+    if (scope && !scope.includes(before.campusId)) {
+      throw new ForbiddenException('Student is at another campus');
+    }
+    // Bringing a student back counts against the plan like admitting one.
+    if (body.status === StudentStatus.ACTIVE && before.status !== StudentStatus.ACTIVE) {
+      await this.subscriptions.assertStudentRoom(user.schoolId, 1);
+    }
     const leaving = Boolean(body.status && body.status !== StudentStatus.ACTIVE);
     const [after, offUserIds] = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.student.update({ where: { id }, data: body });
@@ -347,7 +430,7 @@ export class StudentsController {
       select: { id: true, name: true, class: { select: { name: true, campusId: true } } },
     });
     if (!section) throw new NotFoundException('Section not found');
-    const scope = campusScope(user);
+    const scope = adminScope(user);
     if (scope && !scope.includes(section.class.campusId)) {
       throw new ForbiddenException('Section is at another campus');
     }
@@ -447,7 +530,7 @@ export class StudentsController {
       },
     });
     if (!student) throw new NotFoundException('Student not found');
-    const scope = campusScope(user);
+    const scope = adminScope(user);
     if (scope && !scope.includes(student.campusId)) {
       throw new ForbiddenException('Student is at another campus');
     }
@@ -483,7 +566,7 @@ export class StudentsController {
       select: { userId: true, campusId: true },
     });
     if (!student) throw new NotFoundException('Student not found');
-    const scope = campusScope(user);
+    const scope = adminScope(user);
     if (scope && !scope.includes(student.campusId)) {
       throw new ForbiddenException('Student is at another campus');
     }
@@ -507,6 +590,10 @@ export class StudentsController {
       include: { guardian: true, student: { include: { school: true } } },
     });
     if (!link) throw new NotFoundException('Guardian not found');
+    const scope = adminScope(user);
+    if (scope && !scope.includes(link.student.campusId)) {
+      throw new ForbiddenException('Student is at another campus');
+    }
     if (link.guardian.userId) return { invited: false, reason: 'Already has a login' };
 
     const existing = await this.prisma.user.findUnique({

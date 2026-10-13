@@ -2,7 +2,7 @@ import { All, Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req,
 import { CheckoutStatus, Role } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { FEE_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, FEE_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { AllowWhenReadOnly, CurrentUser, Permission, Public, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -76,6 +76,8 @@ export class OnlinePaymentsAdminController {
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query('status') status?: string, @Query('provider') provider?: string) {
+    // Checkouts from every campus, matched to the school's merchant accounts.
+    assertSchoolWide(user, 'Only school-wide fee staff can see online payments', FEE_ROLES);
     return this.online.list(user.schoolId, {
       status: Object.values(CheckoutStatus).find((s) => s === status),
       provider: ONLINE_PROVIDERS.find((p) => p === provider),

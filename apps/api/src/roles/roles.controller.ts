@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, Role, type CustomRole } from '@prisma/client';
 import { z } from 'zod';
-import { SETUP_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
@@ -138,6 +138,7 @@ export class RolesController {
     @Param('role') roleParam: string,
     @Body(new ZodValidationPipe(builtinUpdateSchema)) body: BuiltinUpdateInput,
   ) {
+    this.assertSchoolWide(user);
     if (roleParam === Role.OWNER) throw new BadRequestException('The owner role always has full access');
     const parsed = editableRole.safeParse(roleParam);
     if (!parsed.success) throw new BadRequestException('This role cannot be edited');
@@ -172,6 +173,7 @@ export class RolesController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
   ) {
+    this.assertSchoolWide(user);
     await this.assertNameFree(user.schoolId, body.name);
     const overrides = await this.permissions.overridesFor(user.schoolId);
     const base = builtinMatrix(body.baseRole, overrides);
@@ -199,6 +201,7 @@ export class RolesController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
   ) {
+    this.assertSchoolWide(user);
     const before = await this.findOwned(user, id);
     if (body.name && body.name !== before.name) await this.assertNameFree(user.schoolId, body.name, id);
 
@@ -236,6 +239,7 @@ export class RolesController {
 
   @Delete(':id')
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    this.assertSchoolWide(user);
     const before = await this.findOwned(user, id);
     const holders = await this.prisma.roleAssignment.findMany({
       where: { customRoleId: id },
@@ -267,6 +271,7 @@ export class RolesController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(duplicateSchema)) body: DuplicateInput,
   ) {
+    this.assertSchoolWide(user);
     const source = await this.findOwned(user, id);
     let name = body.name;
     if (name) {
@@ -342,6 +347,11 @@ export class RolesController {
     const count = (key: string) =>
       new Set(assignments.filter((a) => (a.customRoleId ?? a.role) === key).map((a) => a.userId)).size;
     return view(overrides, count);
+  }
+
+  /** The matrix applies to every campus, so only a school-wide administrator may change it. */
+  private assertSchoolWide(user: AuthUser) {
+    assertSchoolWide(user, 'Only a school-wide administrator can change roles and permissions');
   }
 
   private async assertCanGrant(user: AuthUser, current: PermissionMatrix, next: PermissionMatrix) {

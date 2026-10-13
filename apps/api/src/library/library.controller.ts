@@ -20,7 +20,9 @@ import {
 } from '@prisma/client';
 import { z } from 'zod';
 import {
+  assertSchoolWide,
   campusScope,
+  inScope,
   SETUP_ROLES,
   STAFF_ROLES,
 } from '../common/admin-roles.js';
@@ -159,6 +161,7 @@ export class LibraryController {
     @Body(new ZodValidationPipe(settingsSchema))
     body: z.infer<typeof settingsSchema>,
   ) {
+    assertSchoolWide(user, 'Only school-wide staff can change library rules for every campus');
     const before = await this.settings(user.schoolId);
     await this.prisma.school.update({
       where: { id: user.schoolId },
@@ -344,6 +347,8 @@ export class LibraryController {
       where: { id, schoolId: user.schoolId },
     });
     if (!copy) throw new NotFoundException('Copy not found');
+    if (!inScope(campusScope(user), copy.campusId))
+      throw new ForbiddenException('This copy belongs to another campus');
     if (copy.status === CopyStatus.ON_LOAN)
       throw new ConflictException('This copy is on loan; take it back first');
     const after = await this.prisma.bookCopy.update({
@@ -759,7 +764,13 @@ export class LibraryController {
     });
   }
 
+  /** New copies go to a campus; campus staff may only shelve them at their own. */
   private async checkCampus(user: AuthUser, campusId?: string | null) {
+    const scope = campusScope(user);
+    if (!inScope(scope, campusId ?? null))
+      throw new ForbiddenException(
+        campusId ? 'That campus is not yours to manage' : 'Choose your campus for these copies',
+      );
     if (!campusId) return;
     const campus = await this.prisma.campus.findFirst({
       where: { id: campusId, schoolId: user.schoolId },

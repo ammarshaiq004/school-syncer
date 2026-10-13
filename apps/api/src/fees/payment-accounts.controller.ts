@@ -1,7 +1,7 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Param, Put } from '@nestjs/common';
 import { PaymentMethod } from '@prisma/client';
 import { z } from 'zod';
-import { SETUP_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -57,6 +57,9 @@ const provider = (value: string): AccountProvider => {
   if (!ACCOUNT_PROVIDERS.includes(p)) throw new BadRequestException('Unknown gateway');
   return p;
 };
+
+/** Fees from every campus land in these accounts, so a campus-limited admin cannot change them. */
+const NOT_WIDE = 'Only school-wide administrators can change where fees are paid';
 
 /**
  * A school's own JazzCash, Easypaisa and 1Bill merchant accounts, so parents'
@@ -114,6 +117,7 @@ export class PaymentAccountsController {
 
   @Put(':provider')
   async save(@CurrentUser() user: AuthUser, @Param('provider') raw: string, @Body() body: unknown) {
+    assertSchoolWide(user, NOT_WIDE);
     const p = provider(raw);
     const input = new ZodValidationPipe(SCHEMAS[p] as z.ZodType).transform(body) as {
       enabled: boolean;
@@ -156,6 +160,7 @@ export class PaymentAccountsController {
   @Delete(':provider')
   @HttpCode(200)
   async remove(@CurrentUser() user: AuthUser, @Param('provider') raw: string) {
+    assertSchoolWide(user, NOT_WIDE);
     const p = provider(raw);
     await this.prisma.schoolPaymentGateway.deleteMany({ where: { schoolId: user.schoolId, provider: p } });
     this.online.forget(user.schoolId);

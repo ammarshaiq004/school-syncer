@@ -16,7 +16,7 @@ import { Prisma, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { BCRYPT_ROUNDS } from '../auth/school-setup.service.js';
-import { campusScope, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import { adminScope, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
@@ -139,7 +139,7 @@ export class UsersController {
     @Query(new ZodValidationPipe(listQuerySchema)) query: ListQuery,
   ) {
     return this.prisma.user.findMany({
-      where: userListWhere(user.schoolId, query, campusScope(user)),
+      where: userListWhere(user.schoolId, query, adminScope(user)),
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
       select: userSelect,
     });
@@ -150,7 +150,7 @@ export class UsersController {
   @Roles(...SETUP_ROLES)
   async get(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const found = await this.prisma.user.findFirst({
-      where: userListWhere(user.schoolId, {}, campusScope(user), id),
+      where: userListWhere(user.schoolId, {}, adminScope(user), id),
       select: {
         ...userSelect,
         staffProfile: {
@@ -310,7 +310,7 @@ export class UsersController {
   /** The user, only if they belong to the caller's school (and campus scope). */
   private async findUser(user: AuthUser, id: string): Promise<SelectedUser> {
     const found = await this.prisma.user.findFirst({
-      where: userListWhere(user.schoolId, {}, campusScope(user), id),
+      where: userListWhere(user.schoolId, {}, adminScope(user), id),
       select: userSelect,
     });
     if (!found) throw new NotFoundException('User not found');
@@ -329,7 +329,7 @@ export class UsersController {
     const problem = ownerRuleViolation({ editorIsOwner, targetGrants: target.roles });
     if (problem) throw new ForbiddenException(problem);
     if (editorIsOwner || target.id === user.sub) return;
-    const outside = campusScopeViolation(campusScope(user), target.roles);
+    const outside = campusScopeViolation(adminScope(user), target.roles);
     if (outside) throw new ForbiddenException('You can only change people on your own campuses');
     // Staff grants only: parent and student access is fenced by ownership
     // checks, not by the matrix, so it says nothing about what an account can do.
@@ -384,7 +384,7 @@ export class UsersController {
     if (hasDuplicateGrant(out)) throw new BadRequestException('The same role is listed twice');
 
     // A campus-scoped editor may only grant roles on their own campuses.
-    const scope = campusScope(user);
+    const scope = adminScope(user);
     if (scope && campusScopeViolation(scope, addedGrants(current, out))) {
       throw new ForbiddenException('You can only give roles on your own campuses');
     }

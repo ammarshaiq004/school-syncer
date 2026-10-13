@@ -15,10 +15,13 @@ import {
 } from '@nestjs/common';
 import { LessonPlanStatus, Prisma } from '@prisma/client';
 import {
+  administers,
+  adminScope,
   ATTENDANCE_ROLES,
   campusScope,
   hasAnyRole,
   SETUP_ROLES,
+  workingSections,
 } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
@@ -116,28 +119,20 @@ export class LessonPlansController {
   /** Sections and subjects this user may plan for (current academic year). */
   @Get('sections')
   async sections(@CurrentUser() user: AuthUser) {
-    const admin = hasAnyRole(user, SETUP_ROLES);
     const scope = campusScope(user);
     const sections = await this.prisma.section.findMany({
       where: {
         schoolId: user.schoolId,
         academicYear: { isCurrent: true },
         ...(scope ? { class: { campusId: { in: scope } } } : {}),
-        ...(admin
-          ? {}
-          : {
-              OR: [
-                { classTeacherId: user.sub },
-                { subjects: { some: { teacherId: user.sub } } },
-              ],
-            }),
+        ...workingSections(user),
       },
       orderBy: [{ class: { sortOrder: 'asc' } }, { name: 'asc' }],
       select: {
         id: true,
         name: true,
         classTeacherId: true,
-        class: { select: { name: true } },
+        class: { select: { name: true, campusId: true } },
         subjects: {
           orderBy: { subject: { name: 'asc' } },
           select: {
@@ -148,7 +143,7 @@ export class LessonPlansController {
       },
     });
     return sections.map((s) => {
-      const all = admin || s.classTeacherId === user.sub;
+      const all = administers(user, s.class.campusId) || s.classTeacherId === user.sub;
       return {
         id: s.id,
         name: `${s.class.name} ${s.name}`,
@@ -174,6 +169,8 @@ export class LessonPlansController {
     @Query(new ZodValidationPipe(listLessonPlansSchema)) q: ListLessonPlans,
   ) {
     const admin = hasAnyRole(user, SETUP_ROLES);
+    // Others' plans only on campuses this user administers.
+    const adminCampuses = adminScope(user);
     const scope = campusScope(user);
     const weekStart: Prisma.DateTimeFilter = {};
     if (q.week) weekStart.equals = dayStart(mondayOf(q.week));
@@ -182,7 +179,11 @@ export class LessonPlansController {
     const plans = await this.prisma.lessonPlan.findMany({
       where: {
         schoolId: user.schoolId,
-        ...(admin && q.mine !== 'true' ? {} : { teacherId: user.sub }),
+        ...(!admin || q.mine === 'true'
+          ? { teacherId: user.sub }
+          : adminCampuses
+            ? { OR: [{ teacherId: user.sub }, { section: { class: { campusId: { in: adminCampuses } } } }] }
+            : {}),
         ...(admin && q.teacherId ? { teacherId: q.teacherId } : {}),
         ...(scope ? { section: { class: { campusId: { in: scope } } } } : {}),
         ...(q.sectionId ? { sectionId: q.sectionId } : {}),
@@ -201,7 +202,7 @@ export class LessonPlansController {
   @Get('review-queue')
   @Roles(...SETUP_ROLES)
   async reviewQueue(@CurrentUser() user: AuthUser) {
-    const scope = campusScope(user);
+    const scope = adminScope(user);
     const where: Prisma.LessonPlanWhereInput = {
       schoolId: user.schoolId,
       ...(scope ? { section: { class: { campusId: { in: scope } } } } : {}),
@@ -373,8 +374,7 @@ export class LessonPlansController {
     if (plan.teacherId === user.sub) return plan;
     if (!hasAnyRole(user, SETUP_ROLES))
       throw new ForbiddenException('This is not your lesson plan');
-    const scope = campusScope(user);
-    if (scope && !scope.includes(plan.section.class.campusId)) {
+    if (!administers(user, plan.section.class.campusId)) {
       throw new ForbiddenException('This plan is for another campus');
     }
     return plan;
@@ -414,10 +414,7 @@ export class LessonPlansController {
       throw new BadRequestException(
         'This subject is not taught in this section',
       );
-    const admin = hasAnyRole(user, SETUP_ROLES);
-    const scope = campusScope(user);
-    const inScope = !scope || scope.includes(section.class.campusId);
-    if (admin && inScope) return;
+    if (administers(user, section.class.campusId)) return;
     if (taught.teacherId === user.sub || section.classTeacherId === user.sub)
       return;
     throw new ForbiddenException(

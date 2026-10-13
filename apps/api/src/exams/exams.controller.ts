@@ -14,10 +14,11 @@ import {
 import { ExamStatus, Prisma, Role } from '@prisma/client';
 import { z } from 'zod';
 import {
+  administers,
+  adminScope,
   ATTENDANCE_ROLES,
   campusScope,
   hasAnyRole,
-  SETUP_ROLES,
   STAFF_ROLES,
 } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
@@ -461,7 +462,7 @@ export class ExamsController {
     body: z.infer<typeof publishSchema>,
   ) {
     const exam = await this.draftExam(user, id);
-    if (campusScope(user)) {
+    if (adminScope(user)) {
       throw new ForbiddenException(
         'Only school-wide administrators can publish results',
       );
@@ -605,7 +606,7 @@ export class ExamsController {
     const exam = await this.findExam(user, id);
     if (exam.status !== ExamStatus.PUBLISHED)
       throw new ConflictException('Exam is not published');
-    if (campusScope(user)) {
+    if (adminScope(user)) {
       throw new ForbiddenException(
         'Only school-wide administrators can unpublish results',
       );
@@ -841,9 +842,7 @@ export class ExamsController {
   }
 
   private adminFor(user: AuthUser, campusId: string) {
-    if (!hasAnyRole(user, SETUP_ROLES)) return false;
-    const scope = campusScope(user);
-    return !scope || scope.includes(campusId);
+    return administers(user, campusId);
   }
 
   private async sectionInScope(user: AuthUser, sectionId: string) {

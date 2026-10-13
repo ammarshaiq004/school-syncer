@@ -2,7 +2,8 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { EntryKind, InvoiceStatus } from '@prisma/client';
 import { z } from 'zod';
 import { totalsBy } from '../accounts/cashbook.js';
-import { campusScope, FEE_ROLES, SETUP_ROLES } from '../common/admin-roles.js';
+import { moneyScope } from '../accounts/money-scope.js';
+import { adminScope, campusScopeFor, FEE_ROLES, SETUP_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dateRange, nextDay } from '../common/date-range.js';
 import { dayStart, localDate, startOfLocalDay } from '../common/dates.js';
@@ -36,6 +37,11 @@ export class ReportsController {
     return (await this.prisma.campus.count({ where: { schoolId } })) > 1;
   }
 
+  /** The money reports cover only the campuses of campus-limited fee staff. */
+  private money(user: AuthUser) {
+    return moneyScope(user.schoolId, campusScopeFor(user, FEE_ROLES));
+  }
+
   /** Income and expenditure for a period: fees, other income, expenses by category and salaries. */
   @Get('income-expense')
   @Roles(...FEE_ROLES)
@@ -43,17 +49,18 @@ export class ReportsController {
     const r = dateRange(from, to);
     const start = startOfLocalDay(r.from);
     const end = startOfLocalDay(nextDay(r.to));
+    const money = this.money(user);
     const [fees, entries, salaries] = await Promise.all([
       this.prisma.payment.aggregate({
-        where: { schoolId: user.schoolId, receivedAt: { gte: start, lt: end } },
+        where: { schoolId: user.schoolId, receivedAt: { gte: start, lt: end }, ...money.payments },
         _sum: { amount: true },
       }),
       this.prisma.accountEntry.findMany({
-        where: { schoolId: user.schoolId, date: { gte: dayStart(r.from), lte: dayStart(r.to) } },
+        where: { schoolId: user.schoolId, date: { gte: dayStart(r.from), lte: dayStart(r.to) }, ...money.entries },
         include: { category: { select: { name: true } } },
       }),
       this.prisma.payslip.aggregate({
-        where: { run: { schoolId: user.schoolId }, paidAt: { gte: start, lt: end } },
+        where: { run: { schoolId: user.schoolId }, paidAt: { gte: start, lt: end }, ...money.payslips },
         _sum: { net: true },
       }),
     ]);
@@ -90,6 +97,7 @@ export class ReportsController {
       where: {
         schoolId: user.schoolId,
         receivedAt: { gte: startOfLocalDay(r.from), lt: startOfLocalDay(nextDay(r.to)) },
+        ...this.money(user).payments,
       },
       include: {
         invoice: {
@@ -127,6 +135,7 @@ export class ReportsController {
       where: {
         schoolId: user.schoolId,
         status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
+        ...this.money(user).invoices,
       },
       select: {
         total: true,
@@ -181,7 +190,7 @@ export class ReportsController {
     const start = dayStart(`${month}-01`);
     const end = new Date(start);
     end.setUTCMonth(end.getUTCMonth() + 1);
-    const scope = campusScope(user);
+    const scope = adminScope(user);
     const withCampus = (scope?.length ?? 2) > 1 && (await this.hasCampuses(user.schoolId));
     const sessions = await this.prisma.attendanceSession.findMany({
       where: {

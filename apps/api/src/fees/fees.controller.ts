@@ -18,7 +18,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { z } from 'zod';
-import { FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import { campusScopeFor, FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -64,6 +64,15 @@ const paymentSchema = z.object({
 
 const fullName = (s: { firstName: string; lastName: string | null }) =>
   [s.firstName, s.lastName].filter(Boolean).join(' ');
+
+/** Fee staff limited to some campuses bill and see only those campuses' students. */
+const feeScope = (user: AuthUser) => campusScopeFor(user, FEE_ROLES);
+
+/** A where-fragment for students (or classes) on the caller's fee campuses. */
+const inFeeScope = (user: AuthUser): { campusId?: { in: string[] } } => {
+  const scope = feeScope(user);
+  return scope ? { campusId: { in: scope } } : {};
+};
 
 @Controller('fees')
 @Permission('fees')
@@ -112,7 +121,7 @@ export class FeesController {
     @Body(new ZodValidationPipe(structureSchema)) body: z.infer<typeof structureSchema>,
   ) {
     const owned = await Promise.all([
-      this.prisma.class.count({ where: { id: body.classId, schoolId: user.schoolId } }),
+      this.prisma.class.count({ where: { id: body.classId, schoolId: user.schoolId, ...inFeeScope(user) } }),
       this.prisma.feeHead.count({ where: { id: body.feeHeadId, schoolId: user.schoolId } }),
       this.prisma.academicYear.count({ where: { id: body.academicYearId, schoolId: user.schoolId } }),
     ]);
@@ -142,7 +151,7 @@ export class FeesController {
     @Body(new ZodValidationPipe(concessionSchema)) body: z.infer<typeof concessionSchema>,
   ) {
     const owned = await Promise.all([
-      this.prisma.student.count({ where: { id: studentId, schoolId: user.schoolId } }),
+      this.prisma.student.count({ where: { id: studentId, schoolId: user.schoolId, ...inFeeScope(user) } }),
       this.prisma.feeHead.count({ where: { id: body.feeHeadId, schoolId: user.schoolId } }),
     ]);
     if (owned.includes(0)) throw new NotFoundException('Student or fee head not found');
@@ -163,7 +172,7 @@ export class FeesController {
     @Param('feeHeadId') feeHeadId: string,
   ) {
     const before = await this.prisma.concession.findFirst({
-      where: { studentId, feeHeadId, student: { schoolId: user.schoolId } },
+      where: { studentId, feeHeadId, student: { schoolId: user.schoolId, ...inFeeScope(user) } },
     });
     if (!before) throw new NotFoundException('Concession not found');
     await this.prisma.concession.delete({ where: { id: before.id } });
@@ -195,7 +204,7 @@ export class FeesController {
         schoolId: user.schoolId,
         academicYearId: year.id,
         status: 'ACTIVE',
-        student: { status: 'ACTIVE', invoices: { none: { period: body.period } } },
+        student: { status: 'ACTIVE', invoices: { none: { period: body.period } }, ...inFeeScope(user) },
         ...(body.classId ? { section: { classId: body.classId } } : {}),
       },
       include: {
@@ -322,6 +331,7 @@ export class FeesController {
     return this.prisma.invoice.findMany({
       where: {
         schoolId: user.schoolId,
+        student: inFeeScope(user),
         ...(periodFilter ? { period: periodFilter } : {}),
         ...(status ? { status } : {}),
         ...(studentId ? { studentId } : {}),
@@ -347,7 +357,7 @@ export class FeesController {
   @Roles(...FEE_ROLES)
   async invoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const invoice = await this.prisma.invoice.findFirst({
-      where: { id, schoolId: user.schoolId },
+      where: { id, schoolId: user.schoolId, student: inFeeScope(user) },
       include: {
         school: { select: { name: true, city: true, phone: true, logoUrl: true, lateFeePerDay: true } },
         lines: true,
@@ -377,6 +387,10 @@ export class FeesController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(paymentSchema)) body: z.infer<typeof paymentSchema>,
   ) {
+    const owned = await this.prisma.invoice.count({
+      where: { id, schoolId: user.schoolId, student: inFeeScope(user) },
+    });
+    if (!owned) throw new NotFoundException('Invoice not found');
     const result = await this.payments.record(user.schoolId, {
       invoiceId: id,
       ...body,
@@ -395,6 +409,7 @@ export class FeesController {
     const overdue = await this.prisma.invoice.findMany({
       where: {
         schoolId: user.schoolId,
+        student: inFeeScope(user),
         status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
         dueDate: { lt: now },
       },
@@ -433,6 +448,7 @@ export class FeesController {
     const unpaid = await this.prisma.invoice.findMany({
       where: {
         schoolId: user.schoolId,
+        student: inFeeScope(user),
         period: body.period,
         status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
       },

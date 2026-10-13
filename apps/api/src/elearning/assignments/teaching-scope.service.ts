@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import {
+  administers,
+  adminScope,
   campusScope,
-  hasAnyRole,
-  SETUP_ROLES,
 } from '../../common/admin-roles.js';
 import type { AuthUser } from '../../common/auth-user.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -27,15 +27,8 @@ export class TeachingScopeService {
   constructor(private readonly prisma: PrismaService) {}
 
   async where(user: AuthUser): Promise<TeachingWhere> {
-    if (hasAnyRole(user, SETUP_ROLES)) {
-      const scope = campusScope(user);
-      return scope
-        ? {
-            schoolId: user.schoolId,
-            section: { class: { campusId: { in: scope } } },
-          }
-        : { schoolId: user.schoolId };
-    }
+    const admin = adminScope(user);
+    if (admin === null) return { schoolId: user.schoolId };
     const teaches = await this.prisma.sectionSubject.findMany({
       where: { schoolId: user.schoolId, teacherId: user.sub },
       select: { sectionId: true, subjectId: true },
@@ -43,6 +36,9 @@ export class TeachingScopeService {
     return {
       schoolId: user.schoolId,
       OR: [
+        ...(admin.length
+          ? [{ section: { class: { campusId: { in: admin } } } }]
+          : []),
         { createdById: user.sub },
         { section: { classTeacherId: user.sub } },
         ...teaches.map((t) => ({
@@ -84,7 +80,7 @@ export class TeachingScopeService {
     if (!taught)
       throw new NotFoundException('This subject is not taught in this section');
     const allowed =
-      hasAnyRole(user, SETUP_ROLES) ||
+      administers(user, section.class.campusId) ||
       section.classTeacherId === user.sub ||
       taught.teacherId === user.sub;
     if (!allowed)

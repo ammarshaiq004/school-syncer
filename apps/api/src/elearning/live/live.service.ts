@@ -1,10 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import {
-  campusScope,
-  hasAnyRole,
-  SETUP_ROLES,
-} from '../../common/admin-roles.js';
+import { adminScope } from '../../common/admin-roles.js';
 import type { AuthUser } from '../../common/auth-user.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { joinWindow, JOIN_EARLY_MIN, liveEndsAt } from './live-rules.js';
@@ -38,12 +34,8 @@ export class LiveService {
 
   async scopeWhere(user: AuthUser): Promise<Prisma.LiveClassWhereInput> {
     const base: Prisma.LiveClassWhereInput = { schoolId: user.schoolId };
-    if (hasAnyRole(user, SETUP_ROLES)) {
-      const scope = campusScope(user);
-      return scope
-        ? { ...base, section: { class: { campusId: { in: scope } } } }
-        : base;
-    }
+    const admin = adminScope(user);
+    if (admin === null) return base;
     const teaches = await this.prisma.sectionSubject.findMany({
       where: { schoolId: user.schoolId, teacherId: user.sub },
       select: { sectionId: true, subjectId: true },
@@ -51,6 +43,9 @@ export class LiveService {
     return {
       ...base,
       OR: [
+        ...(admin.length
+          ? [{ section: { class: { campusId: { in: admin } } } }]
+          : []),
         { teacherId: user.sub },
         { timetableSlot: { teacherId: user.sub } },
         { section: { classTeacherId: user.sub } },
