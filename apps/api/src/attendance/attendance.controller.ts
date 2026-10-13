@@ -299,6 +299,9 @@ export class AttendanceController {
     @Param('studentId') studentId: string,
     @Query('month', new ZodValidationPipe(z.string().regex(/^\d{4}-\d{2}$/))) month: string,
   ) {
+    // Another school's student is not found, rather than an empty month.
+    const known = await this.prisma.student.count({ where: { id: studentId, schoolId: user.schoolId } });
+    if (!known) throw new NotFoundException('Student not found');
     const start = asDate(`${month}-01`);
     const end = new Date(start);
     end.setUTCMonth(end.getUTCMonth() + 1);
