@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock, ScanSearch } from "lucide-react";
+import { BellRing, CircleAlert, FilePlus2, Plus, ReceiptText, Send, Wallet, Banknote, CalendarClock, Globe, CircleCheck, Clock, ScanSearch, Undo2 } from "lucide-react";
 import { CHECKOUT_LABEL, CHECKOUT_TONE, PROVIDER_LABEL, type Checkout, type CheckoutStatus } from "@/components/invoices/online-payment";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
+import { ReasonDialog } from "@/components/fees/reason-dialog";
 import { ReconciliationTab } from "@/components/fees/reconciliation-tab";
 import {
   Alert,
@@ -33,8 +34,8 @@ import {
 import { inputClass } from "@/components/kit/styles";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { day, fullName, plural, rupees, thisMonth } from "@/lib/format";
-import { useSession } from "@/lib/session";
+import { day, fullName, plural, rupees, thisMonth, todayIso } from "@/lib/format";
+import { can, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 interface Invoice {
@@ -63,6 +64,7 @@ interface Year { id: string; name: string; isCurrent: boolean }
 
 const TABS = [
   { value: "invoices", label: "Invoices", icon: <ReceiptText /> },
+  { value: "payments", label: "Payments", icon: <Banknote /> },
   { value: "defaulters", label: "Defaulters", icon: <BellRing /> },
   { value: "online", label: "Online payments", icon: <Globe /> },
   { value: "reconciliation", label: "Reconciliation", icon: <ScanSearch /> },
@@ -147,6 +149,9 @@ export default function FeesPage() {
             setSearch={setSearch}
             onGenerate={openGenerate}
           />
+        </TabPanel>
+        <TabPanel value="payments">
+          <PaymentsTab />
         </TabPanel>
         <TabPanel value="defaulters">
           <DefaultersTab />
@@ -250,8 +255,10 @@ function InvoicesTab({
 }) {
   const router = useRouter();
   const rows = invoices.data;
-  const billed = rows?.reduce((s, i) => s + i.total, 0) ?? 0;
-  const collected = rows?.reduce((s, i) => s + i.paid, 0) ?? 0;
+  // Voided vouchers bill nothing.
+  const live = rows?.filter((i) => i.status !== "CANCELLED");
+  const billed = live?.reduce((s, i) => s + i.total, 0) ?? 0;
+  const collected = live?.reduce((s, i) => s + i.paid, 0) ?? 0;
   const outstanding = rows?.filter((i) => i.status !== "CANCELLED").reduce((s, i) => s + Math.max(0, i.total - i.paid), 0) ?? 0;
   const overdue = rows?.filter((i) => invoiceDisplay(i) === "OVERDUE") ?? [];
   const loading = !rows && !invoices.error;
@@ -288,7 +295,7 @@ function InvoicesTab({
   return (
     <div className="flex flex-col gap-6">
       <StatGrid>
-        <KpiCard label="Billed" value={rupees(billed)} icon={<ReceiptText />} loading={loading} hint={rows ? `${rows.length} vouchers` : undefined} />
+        <KpiCard label="Billed" value={rupees(billed)} icon={<ReceiptText />} loading={loading} hint={live ? `${live.length} vouchers` : undefined} />
         <KpiCard label="Collected" value={rupees(collected)} icon={<Banknote />} tone="success" loading={loading} hint={rows ? `${rate}% of billed` : undefined} />
         <KpiCard label="Outstanding" value={rupees(outstanding)} icon={<Wallet />} tone="warning" loading={loading} />
         <KpiCard label="Overdue vouchers" value={overdue.length.toLocaleString("en-PK")} icon={<CircleAlert />} tone="danger" loading={loading} hint={rows ? "Past the due date" : undefined} />
@@ -338,6 +345,181 @@ function InvoicesTab({
             </Button>
           ),
         }}
+      />
+    </div>
+  );
+}
+
+interface Receipt {
+  id: string;
+  amount: number;
+  method: string;
+  reference: string | null;
+  receiptNo: string;
+  receivedAt: string;
+  reversedAt: string | null;
+  reversalReason: string | null;
+  online: boolean;
+  receivedBy: { name: string } | null;
+  invoice: { id: string; voucherNo: string; period: string; student: { id: string; firstName: string; lastName: string | null; admissionNo: string } };
+}
+
+const METHOD_LABEL: Record<string, string> = { CASH: "Cash", BANK: "Bank", JAZZCASH: "JazzCash", EASYPAISA: "Easypaisa", ONEBILL: "1Bill", CARD: "Card" };
+const RECEIPT_OPTIONS = [
+  { value: "false", label: "Counted" },
+  { value: "true", label: "Reversed" },
+];
+
+/** Every receipt, counter and online, with a reason-required reverse for fee managers. */
+function PaymentsTab() {
+  const toast = useToast();
+  const user = useSession();
+  const canManage = can(user, "fees", "manage") && user.plan?.access !== "read_only";
+  const [from, setFrom] = useState(`${thisMonth()}-01`);
+  const [to, setTo] = useState(todayIso());
+  const [reversed, setReversed] = useState("");
+  const query = new URLSearchParams({ from, to, ...(reversed && { reversed }) }).toString();
+  const list = useApi<Receipt[]>(`/fees/payments?${query}`);
+  const [reversing, setReversing] = useState<Receipt | null>(null);
+  const rows = list.data;
+  const loading = !rows && !list.error;
+  const counted = rows?.filter((r) => !r.reversedAt) ?? [];
+  const reversedRows = rows?.filter((r) => r.reversedAt) ?? [];
+
+  async function reverse(reason: string) {
+    if (!reversing) return;
+    await api(`/fees/payments/${reversing.id}/reverse`, { method: "POST", body: { reason } });
+    toast.success("Payment reversed", `Receipt ${reversing.receiptNo} no longer counts.`);
+    await list.reload();
+  }
+
+  const columns: Column<Receipt>[] = [
+    {
+      id: "receipt",
+      header: "Receipt",
+      sortValue: (r) => r.receivedAt,
+      cell: (r) => (
+        <div className="min-w-0">
+          <div className={cn("font-mono text-xs font-medium text-fg", r.reversedAt && "line-through text-fg-muted")}>{r.receiptNo}</div>
+          <div className="text-xs text-fg-muted">{day(r.receivedAt)}</div>
+        </div>
+      ),
+    },
+    {
+      id: "student",
+      header: "Student",
+      sortValue: (r) => fullName(r.invoice.student),
+      cell: (r) => (
+        <div className="min-w-0">
+          <Link className="font-medium text-fg hover:text-brand" href={`/fees/invoices/${r.invoice.id}`}>
+            {fullName(r.invoice.student)}
+          </Link>
+          <div className="text-xs text-fg-muted">
+            {r.invoice.student.admissionNo} <span className="font-mono">{r.invoice.voucherNo}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "method",
+      header: "Method",
+      sortValue: (r) => r.method,
+      hideBelow: "md",
+      cell: (r) => (
+        <div>
+          <div className="text-fg">
+            {METHOD_LABEL[r.method] ?? r.method}
+            {r.online && <span className="ms-1 text-xs text-fg-muted">online</span>}
+          </div>
+          {r.reference && <div className="font-mono text-xs text-fg-muted">{r.reference}</div>}
+        </div>
+      ),
+    },
+    {
+      id: "amount",
+      header: "Amount",
+      align: "right",
+      sortValue: (r) => r.amount,
+      cell: (r) => <span className={cn("font-medium tabular-nums", r.reversedAt ? "text-fg-muted line-through" : "text-fg")}>{rupees(r.amount)}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortValue: (r) => (r.reversedAt ? 1 : 0),
+      cell: (r) =>
+        r.reversedAt ? (
+          <div className="flex flex-col items-start gap-0.5">
+            <Badge tone="danger">Reversed</Badge>
+            {r.reversalReason && <span className="max-w-64 text-xs text-fg-muted">{r.reversalReason}</span>}
+          </div>
+        ) : (
+          <Badge tone="success">Counted</Badge>
+        ),
+    },
+    ...(canManage
+      ? [
+          {
+            id: "actions",
+            header: <span className="sr-only">Actions</span>,
+            align: "right" as const,
+            cell: (r: Receipt) =>
+              r.reversedAt ? null : (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Undo2 />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReversing(r);
+                  }}
+                >
+                  Reverse
+                </Button>
+              ),
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <div className="flex flex-col gap-6">
+      <StatGrid cols={3}>
+        <KpiCard label="Collected" value={rupees(counted.reduce((s, r) => s + r.amount, 0))} hint={rows ? plural(counted.length, "receipt") : undefined} icon={<Banknote />} tone="success" loading={loading} />
+        <KpiCard label="Reversed" value={rupees(reversedRows.reduce((s, r) => s + r.amount, 0))} hint={rows ? plural(reversedRows.length, "receipt") : undefined} icon={<Undo2 />} tone="neutral" loading={loading} />
+        <KpiCard label="Online" value={rupees(counted.filter((r) => r.online).reduce((s, r) => s + r.amount, 0))} icon={<Globe />} loading={loading} />
+      </StatGrid>
+      <DataTable
+        label="Payments"
+        columns={columns}
+        data={rows}
+        error={list.error}
+        onRetry={list.reload}
+        getRowId={(r) => r.id}
+        getSearchText={(r) => `${fullName(r.invoice.student)} ${r.invoice.student.admissionNo} ${r.invoice.voucherNo} ${r.receiptNo} ${r.reference ?? ""}`}
+        searchPlaceholder="Search student, voucher, receipt or reference"
+        defaultSort={{ id: "receipt", dir: "desc" }}
+        filtered={!!reversed}
+        filters={
+          <>
+            <input type="date" aria-label="From" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className={cn(inputClass, "h-9 w-40")} />
+            <input type="date" aria-label="To" value={to} min={from} onChange={(e) => setTo(e.target.value)} className={cn(inputClass, "h-9 w-40")} />
+            <NativeSelect aria-label="Status" placeholder="All receipts" options={RECEIPT_OPTIONS} value={reversed} onChange={(e) => setReversed(e.target.value)} wrapperClassName="w-40" />
+          </>
+        }
+        empty={{ icon: <Banknote />, title: "No payments in these dates", description: "Payments taken at the counter, by bank or online show here." }}
+      />
+      <ReasonDialog
+        open={!!reversing}
+        onOpenChange={(o) => !o && setReversing(null)}
+        title="Reverse this payment?"
+        description={
+          reversing
+            ? `Receipt ${reversing.receiptNo} for ${rupees(reversing.amount)} stays on record but no longer counts towards voucher ${reversing.invoice.voucherNo}, the cash book or reports.`
+            : ""
+        }
+        confirmLabel="Reverse payment"
+        placeholder="Entered against the wrong student"
+        onConfirm={reverse}
       />
     </div>
   );

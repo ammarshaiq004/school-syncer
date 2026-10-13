@@ -78,7 +78,7 @@ export class DashboardController {
         _count: true,
       }),
       this.prisma.payment.aggregate({
-        where: { schoolId, receivedAt: { gte: startOfLocalDay(todayIso) }, invoice: { student: campusFilter } },
+        where: { schoolId, receivedAt: { gte: startOfLocalDay(todayIso) }, reversedAt: null, invoice: { student: campusFilter } },
         _sum: { amount: true },
       }),
       this.prisma.application.groupBy({
@@ -106,7 +106,7 @@ export class DashboardController {
         select: { status: true, session: { select: { date: true } } },
       }),
       this.prisma.payment.findMany({
-        where: { schoolId, invoice: { student: campusFilter } },
+        where: { schoolId, reversedAt: null, invoice: { student: campusFilter } },
         // `take: 0` keeps the Promise.all tuple typed while skipping the rows for non-fee staff.
         orderBy: { receivedAt: 'desc' },
         take: canFees ? 5 : 0,

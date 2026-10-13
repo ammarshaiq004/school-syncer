@@ -20,6 +20,8 @@ import { HrController } from './hr/hr.controller.js';
 import { PayrollController } from './hr/payroll.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
+import { FeeCorrectionsController } from './fees/fee-corrections.controller.js';
+import { FeeCorrectionsService } from './fees/fee-corrections.service.js';
 import { FeesController } from './fees/fees.controller.js';
 import { PaymentAccountsController } from './fees/payment-accounts.controller.js';
 import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
@@ -104,6 +106,7 @@ import { UsersController } from './users/users.controller.js';
     AdmissionsController,
     AttendanceController,
     FeesController,
+    FeeCorrectionsController,
     ExamsController,
     TimetableController,
     TransportController,
@@ -133,6 +136,7 @@ import { UsersController } from './users/users.controller.js';
   ],
   providers: [
     PaymentsService,
+    FeeCorrectionsService,
     OnlinePaymentsService,
     ReconciliationService,
     ReconciliationScheduler,

@@ -160,7 +160,7 @@ export class AccountsController {
 
     const [feesBefore, entriesBefore, salariesBefore, payments, entries, payslips] = await Promise.all([
       this.prisma.payment.aggregate({
-        where: { schoolId, receivedAt: { lt: start }, ...money.payments },
+        where: { schoolId, receivedAt: { lt: start }, reversedAt: null, ...money.payments },
         _sum: { amount: true },
       }),
       this.prisma.accountEntry.groupBy({
@@ -173,7 +173,7 @@ export class AccountsController {
         _sum: { net: true },
       }),
       this.prisma.payment.findMany({
-        where: { schoolId, receivedAt: { gte: start, lt: end }, ...money.payments },
+        where: { schoolId, receivedAt: { gte: start, lt: end }, reversedAt: null, ...money.payments },
         select: { amount: true, method: true, receivedAt: true },
       }),
       this.prisma.accountEntry.findMany({

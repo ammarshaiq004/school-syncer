@@ -52,7 +52,7 @@ export class ReportsController {
     const money = this.money(user);
     const [fees, entries, salaries] = await Promise.all([
       this.prisma.payment.aggregate({
-        where: { schoolId: user.schoolId, receivedAt: { gte: start, lt: end }, ...money.payments },
+        where: { schoolId: user.schoolId, receivedAt: { gte: start, lt: end }, reversedAt: null, ...money.payments },
         _sum: { amount: true },
       }),
       this.prisma.accountEntry.findMany({
@@ -97,6 +97,8 @@ export class ReportsController {
       where: {
         schoolId: user.schoolId,
         receivedAt: { gte: startOfLocalDay(r.from), lt: startOfLocalDay(nextDay(r.to)) },
+        // A reversed payment is not money received.
+        reversedAt: null,
         ...this.money(user).payments,
       },
       include: {

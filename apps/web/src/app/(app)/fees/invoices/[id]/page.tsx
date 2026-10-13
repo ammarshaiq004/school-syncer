@@ -2,8 +2,9 @@
 
 import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Banknote, CalendarClock, Download, Printer, ReceiptText, TriangleAlert } from "lucide-react";
+import { Ban, Banknote, CalendarClock, Download, Printer, ReceiptText, SlidersHorizontal, TriangleAlert, Undo2 } from "lucide-react";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
+import { ReasonDialog } from "@/components/fees/reason-dialog";
 import { InvoiceBreakdownCard, PrintableVoucher } from "@/components/invoices/invoice-breakdown";
 import {
   Alert,
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { day, fullName, rupees } from "@/lib/format";
+import { can, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 interface Voucher {
@@ -36,9 +38,11 @@ interface Voucher {
   balance: number;
   lateFine: number;
   status: string;
+  cancelledAt: string | null;
+  cancelReason: string | null;
   school: { name: string; city: string | null; phone: string | null };
   lines: { id: string; description: string; amount: number }[];
-  payments: { id: string; amount: number; method: string; receiptNo: string; reference: string | null; receivedAt: string }[];
+  payments: Payment[];
   student: {
     firstName: string;
     lastName: string | null;
@@ -46,6 +50,16 @@ interface Voucher {
     enrollments: { section: { name: string; class: { name: string } } }[];
     guardians: { guardian: { name: string } }[];
   };
+}
+interface Payment {
+  id: string;
+  amount: number;
+  method: string;
+  receiptNo: string;
+  reference: string | null;
+  receivedAt: string;
+  reversedAt: string | null;
+  reversalReason: string | null;
 }
 
 const METHODS = ["CASH", "BANK", "JAZZCASH", "EASYPAISA", "ONEBILL", "CARD"];
@@ -67,11 +81,38 @@ const monthLabel = (period: string) =>
 export default function VoucherPage() {
   const { id } = useParams<{ id: string }>();
   const toast = useToast();
+  const user = useSession();
+  const canManage = can(user, "fees", "manage") && user.plan?.access !== "read_only";
   const voucher = useApi<Voucher>(`/fees/invoices/${id}`);
   const [payOpen, setPayOpen] = useState(false);
+  // One key per opening of the payment dialog, so a retried save is recorded once.
+  const [payKey, setPayKey] = useState("");
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState("");
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [reversing, setReversing] = useState<Payment | null>(null);
+  const [adjustOpen, setAdjustOpen] = useState(false);
   const v = voucher.data;
+
+  function openPay() {
+    setError("");
+    // randomUUID needs a secure context; plain-http deployments fall back to a random string.
+    setPayKey(crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    setPayOpen(true);
+  }
+
+  async function voidVoucher(reason: string) {
+    await api(`/fees/invoices/${id}/cancel`, { method: "POST", body: { reason } });
+    toast.success("Voucher voided", "It no longer counts towards the student's balance.");
+    await voucher.reload();
+  }
+
+  async function reverse(reason: string) {
+    if (!reversing) return;
+    await api(`/fees/payments/${reversing.id}/reverse`, { method: "POST", body: { reason } });
+    toast.success("Payment reversed", `Receipt ${reversing.receiptNo} no longer counts.`);
+    await voucher.reload();
+  }
 
   async function pay(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -81,7 +122,12 @@ export default function VoucherPage() {
     try {
       const res = await api<{ payment: { receiptNo: string } }>(`/fees/invoices/${id}/payments`, {
         method: "POST",
-        body: { amount: Number(f.get("amount")), method: f.get("method"), reference: f.get("reference") || undefined },
+        body: {
+          amount: Number(f.get("amount")),
+          method: f.get("method"),
+          reference: f.get("reference") || undefined,
+          idempotencyKey: payKey || undefined,
+        },
       });
       toast.success("Payment recorded", `Receipt ${res.payment.receiptNo}.`);
       setError("");
@@ -124,9 +170,14 @@ export default function VoucherPage() {
   const guardian = v.student.guardians[0]?.guardian.name;
   const canPay = v.status !== "PAID" && v.status !== "CANCELLED";
   const display = invoiceDisplay(v);
+  const live = v.payments.filter((p) => !p.reversedAt);
+  const reversedCount = v.payments.length - live.length;
+  // Only a voucher with no money standing on it can be voided; reverse its payments first.
+  const canVoid = canManage && v.status !== "CANCELLED" && live.length === 0;
+  const canAdjust = canManage && v.status !== "CANCELLED";
 
   const payButton = canPay ? (
-    <Button icon={<Banknote />} onClick={() => { setError(""); setPayOpen(true); }}>
+    <Button icon={<Banknote />} onClick={openPay}>
       Record payment
     </Button>
   ) : null;
@@ -146,6 +197,16 @@ export default function VoucherPage() {
         }
         actions={
           <>
+            {canVoid && (
+              <Button variant="secondary" icon={<Ban />} onClick={() => setVoidOpen(true)}>
+                Void voucher
+              </Button>
+            )}
+            {canAdjust && (
+              <Button variant="secondary" icon={<SlidersHorizontal />} onClick={() => setAdjustOpen(true)}>
+                Adjust
+              </Button>
+            )}
             <Button variant={canPay ? "secondary" : "primary"} icon={<Download />} onClick={() => window.print()}>
               Download invoice PDF
             </Button>
@@ -161,8 +222,12 @@ export default function VoucherPage() {
         </Alert>
       )}
       {v.status === "CANCELLED" && (
-        <Alert tone="neutral" title="This voucher was cancelled" className="print:hidden">
-          It no longer counts towards the student&apos;s balance and cannot take payments.
+        <Alert
+          tone="neutral"
+          title={v.cancelledAt ? `This voucher was voided on ${day(v.cancelledAt)}` : "This voucher was cancelled"}
+          className="print:hidden"
+        >
+          {v.cancelReason ? `${v.cancelReason}. ` : ""}It no longer counts towards the student&apos;s balance and cannot take payments.
         </Alert>
       )}
 
@@ -189,7 +254,11 @@ export default function VoucherPage() {
 
         {/* Payments */}
         <Card className="self-start">
-          <CardHeader title="Payments" description={`${v.payments.length} received`} icon={<ReceiptText />} />
+          <CardHeader
+            title="Payments"
+            description={`${live.length} received${reversedCount ? `, ${reversedCount} reversed` : ""}`}
+            icon={<ReceiptText />}
+          />
           {v.payments.length === 0 ? (
             <EmptyState
               icon={<Banknote />}
@@ -209,8 +278,25 @@ export default function VoucherPage() {
                       {p.reference ? `, ref ${p.reference}` : ""}
                     </div>
                     <div className="mt-0.5 font-mono text-[11px] text-fg-muted">{p.receiptNo}</div>
+                    {p.reversedAt && (
+                      <div className="mt-1 text-xs text-danger-text">
+                        Reversed {day(p.reversedAt)}
+                        {p.reversalReason ? `: ${p.reversalReason}` : ""}
+                      </div>
+                    )}
                   </div>
-                  <div className="shrink-0 text-sm font-semibold tabular-nums text-success-text">{rupees(p.amount)}</div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {p.reversedAt ? (
+                      <div className="text-sm font-semibold tabular-nums text-fg-muted line-through">{rupees(p.amount)}</div>
+                    ) : (
+                      <div className="text-sm font-semibold tabular-nums text-success-text">{rupees(p.amount)}</div>
+                    )}
+                    {canManage && !p.reversedAt && (
+                      <Button size="sm" variant="ghost" icon={<Undo2 />} onClick={() => setReversing(p)} className="print:hidden">
+                        Reverse
+                      </Button>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
@@ -290,6 +376,136 @@ export default function VoucherPage() {
           )}
         </form>
       </Dialog>
+
+      <ReasonDialog
+        open={voidOpen}
+        onOpenChange={setVoidOpen}
+        title="Void this voucher?"
+        description={`${v.voucherNo} stops counting towards ${fullName(v.student)}'s balance and cannot take payments. It stays on record as cancelled.`}
+        confirmLabel="Void voucher"
+        placeholder="Billed by mistake"
+        onConfirm={voidVoucher}
+      />
+      <ReasonDialog
+        open={!!reversing}
+        onOpenChange={(o) => !o && setReversing(null)}
+        title="Reverse this payment?"
+        description={
+          reversing
+            ? `Receipt ${reversing.receiptNo} for ${rupees(reversing.amount)} stays on record but no longer counts towards this voucher, the cash book or reports.`
+            : ""
+        }
+        confirmLabel="Reverse payment"
+        placeholder="Cheque bounced"
+        onConfirm={reverse}
+      />
+      <AdjustDialog
+        open={adjustOpen}
+        onOpenChange={setAdjustOpen}
+        voucherId={v.id}
+        voucherNo={v.voucherNo}
+        onDone={async (message) => {
+          toast.success("Voucher adjusted", message);
+          await voucher.reload();
+        }}
+      />
     </div>
+  );
+}
+
+/** Adds a discount or an extra charge to a voucher, with the reason. */
+function AdjustDialog({
+  open,
+  onOpenChange,
+  voucherId,
+  voucherNo,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  voucherId: string;
+  voucherNo: string;
+  onDone: (message: string) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formEl = event.currentTarget;
+    const f = new FormData(formEl);
+    const rupeesOff = Number(f.get("amount"));
+    const amount = f.get("kind") === "DISCOUNT" ? -rupeesOff : rupeesOff;
+    setBusy(true);
+    try {
+      const res = await api<{ invoice: { total: number } }>(`/fees/invoices/${voucherId}/adjustments`, {
+        method: "POST",
+        body: { amount, reason: f.get("reason"), description: f.get("description") || undefined },
+      });
+      setError("");
+      formEl.reset();
+      onOpenChange(false);
+      await onDone(`The voucher total is now ${rupees(res.invoice.total)}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o);
+        if (!o) setError("");
+      }}
+      title="Adjust voucher"
+      description={`Adds a line to ${voucherNo}. A discount lowers what is owed; a charge adds to it.`}
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" form="adjust-voucher" loading={busy} icon={<SlidersHorizontal />}>
+            Add line
+          </Button>
+        </>
+      }
+    >
+      <form id="adjust-voucher" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+        <SelectField
+          label="Type"
+          name="kind"
+          options={[
+            { value: "DISCOUNT", label: "Discount" },
+            { value: "CHARGE", label: "Extra charge" },
+          ]}
+        />
+        <TextField label="Amount (Rs)" name="amount" type="number" min={1} required inputMode="numeric" />
+        <TextField
+          label="Line text"
+          name="description"
+          maxLength={80}
+          placeholder="Discount"
+          hint="Printed on the voucher"
+          wrapperClassName="sm:col-span-2"
+        />
+        <TextField
+          label="Reason"
+          name="reason"
+          required
+          minLength={3}
+          maxLength={300}
+          placeholder="Approved by the principal"
+          wrapperClassName="sm:col-span-2"
+        />
+        {error && (
+          <Alert tone="danger" className="sm:col-span-2">
+            {error}
+          </Alert>
+        )}
+      </form>
+    </Dialog>
   );
 }
