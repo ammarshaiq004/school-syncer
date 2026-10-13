@@ -73,6 +73,8 @@ export class PaymentWebhookController {
       amount: body.amount,
       method,
       reference: body.reference,
+      // The gateway's transaction id: a replayed callback is counted once.
+      idempotencyKey: `${method}:${body.reference}`,
     });
     return { receiptNo: payment.receiptNo, duplicate };
   }

@@ -1,5 +1,5 @@
-import { ConcessionType, FeeFrequency } from '@prisma/client';
-import { invoiceLines, lateFine, paymentRejection } from './fee-calculator.js';
+import { ConcessionType, FeeFrequency, InvoiceStatus } from '@prisma/client';
+import { invoiceLines, invoiceStatus, lateFine, paymentRejection } from './fee-calculator.js';
 
 const tuition = { feeHeadId: 't', feeHeadName: 'Tuition', frequency: FeeFrequency.MONTHLY, amount: 5000 };
 const annual = { feeHeadId: 'a', feeHeadName: 'Annual charges', frequency: FeeFrequency.ANNUAL, amount: 8000 };
@@ -53,5 +53,18 @@ describe('paymentRejection', () => {
     expect(paymentRejection(100, { total: 5000, paid: 5000 }, 200)).toBe(
       'This voucher is already paid in full, so no further payment can be recorded.',
     );
+  });
+});
+
+describe('invoiceStatus', () => {
+  it('follows the money: unpaid, part paid, then paid', () => {
+    expect(invoiceStatus(5000, 0)).toBe(InvoiceStatus.UNPAID);
+    expect(invoiceStatus(5000, 2000)).toBe(InvoiceStatus.PARTIAL);
+    expect(invoiceStatus(5000, 5000)).toBe(InvoiceStatus.PAID);
+  });
+
+  it('counts a late fine paid on top, and a nil voucher, as paid', () => {
+    expect(invoiceStatus(5000, 5300)).toBe(InvoiceStatus.PAID);
+    expect(invoiceStatus(0, 0)).toBe(InvoiceStatus.PAID);
   });
 });

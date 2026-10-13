@@ -275,6 +275,8 @@ export class OnlinePaymentsService implements OnModuleInit {
         amount: checkout.amount,
         method: provider as PaymentMethod,
         reference: providerRef,
+        // Our checkout reference is unique; the gateway's own id may not be (1Bill auth ids are six digits).
+        idempotencyKey: `checkout:${checkout.txnRef}`,
       });
       return await this.prisma.onlinePayment.update({
         where: { id: checkout.id },

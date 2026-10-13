@@ -60,6 +60,15 @@ const paymentSchema = z.object({
   amount: z.number().int().positive(),
   method: z.enum(PaymentMethod),
   reference: z.string().trim().max(80).optional(),
+  // Sent by the client so a retried or double-clicked save records the payment once.
+  // Namespaced so it can never match a gateway's key.
+  idempotencyKey: z
+    .string()
+    .trim()
+    .min(8)
+    .max(80)
+    .optional()
+    .transform((k) => (k ? `client:${k}` : undefined)),
 });
 
 const fullName = (s: { firstName: string; lastName: string | null }) =>

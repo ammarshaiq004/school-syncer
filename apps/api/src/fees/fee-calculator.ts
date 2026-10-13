@@ -1,4 +1,4 @@
-import { ConcessionType, FeeFrequency } from '@prisma/client';
+import { ConcessionType, FeeFrequency, InvoiceStatus } from '@prisma/client';
 
 export interface StructureRow {
   feeHeadId: string;
@@ -55,6 +55,16 @@ export function invoiceLines(
 export function lateFine(dueDate: Date, asOf: Date, perDay: number): number {
   const days = Math.floor((asOf.getTime() - dueDate.getTime()) / 86_400_000);
   return days > 0 ? days * perDay : 0;
+}
+
+/**
+ * An invoice's status from what it bills and what has been paid against it:
+ * settled once the payments cover the total (a nil voucher is settled), part
+ * paid while some money is in, otherwise unpaid. Cancelled is set by hand.
+ */
+export function invoiceStatus(total: number, paid: number): InvoiceStatus {
+  if (paid >= total) return InvoiceStatus.PAID;
+  return paid > 0 ? InvoiceStatus.PARTIAL : InvoiceStatus.UNPAID;
 }
 
 /** Rupees as the counter reads them, for payment messages: "Rs 12,500". */

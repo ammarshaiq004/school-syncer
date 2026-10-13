@@ -137,7 +137,7 @@ export class AccountsController {
     const schoolId = user.schoolId;
 
     const [feesBefore, entriesBefore, salariesBefore, payments, entries, payslips] = await Promise.all([
-      this.prisma.payment.aggregate({ where: { schoolId, receivedAt: { lt: start } }, _sum: { amount: true } }),
+      this.prisma.payment.aggregate({ where: { schoolId, receivedAt: { lt: start }, reversedAt: null }, _sum: { amount: true } }),
       this.prisma.accountEntry.groupBy({
         by: ['kind'],
         where: { schoolId, date: { lt: dayStart(r.from) } },
@@ -148,7 +148,7 @@ export class AccountsController {
         _sum: { net: true },
       }),
       this.prisma.payment.findMany({
-        where: { schoolId, receivedAt: { gte: start, lt: end } },
+        where: { schoolId, receivedAt: { gte: start, lt: end }, reversedAt: null },
         select: { amount: true, method: true, receivedAt: true },
       }),
       this.prisma.accountEntry.findMany({

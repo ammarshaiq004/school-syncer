@@ -646,17 +646,21 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id        String        @id @default(cuid())
-  schoolId  String
-  studentId String
-  voucherNo String        @unique
-  period    String // "2026-10" for monthly fees
-  issueDate DateTime      @default(now()) @db.Date
-  dueDate   DateTime      @db.Date
-  total     Int
-  paid      Int           @default(0)
-  status    InvoiceStatus @default(UNPAID)
-  createdAt DateTime      @default(now())
+  id            String        @id @default(cuid())
+  schoolId      String
+  studentId     String
+  voucherNo     String        @unique
+  period        String // "2026-10" for monthly fees
+  issueDate     DateTime      @default(now()) @db.Date
+  dueDate       DateTime      @db.Date
+  total         Int
+  paid          Int           @default(0)
+  status        InvoiceStatus @default(UNPAID)
+  createdAt     DateTime      @default(now())
+  /// Set when the voucher is voided (status CANCELLED); the reason is required.
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
 
   school       School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   student      Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -669,12 +673,21 @@ model Invoice {
   @@index([schoolId, period, status])
 }
 
+enum InvoiceLineKind {
+  FEE // billed when the voucher was generated
+  ADJUSTMENT // a discount (negative) or extra charge added by the fee office afterwards
+}
+
 model InvoiceLine {
-  id          String  @id @default(cuid())
+  id          String          @id @default(cuid())
   invoiceId   String
   feeHeadId   String?
   description String
   amount      Int
+  kind        InvoiceLineKind @default(FEE)
+  /// Why an adjustment was made, and by whom.
+  reason      String?
+  addedById   String?
 
   invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   feeHead FeeHead? @relation(fields: [feeHeadId], references: [id], onDelete: SetNull)
@@ -690,22 +703,30 @@ enum PaymentMethod {
 }
 
 model Payment {
-  id           String        @id @default(cuid())
-  schoolId     String
-  invoiceId    String
-  amount       Int
-  method       PaymentMethod
-  reference    String? // gateway or bank transaction id
-  receiptNo    String        @unique
-  receivedAt   DateTime      @default(now())
-  receivedById String?
+  id             String        @id @default(cuid())
+  schoolId       String
+  invoiceId      String
+  amount         Int
+  method         PaymentMethod
+  reference      String? // gateway or bank transaction id, or whatever the counter typed
+  /// Set only when the payment must never be counted twice: a gateway
+  /// transaction or a client-supplied key. Free-text references are not keys.
+  idempotencyKey String?
+  receiptNo      String        @unique
+  receivedAt     DateTime      @default(now())
+  receivedById   String?
+  /// A reversed payment stays on record (with its receipt number) but no longer counts.
+  reversedAt     DateTime?
+  reversedById   String?
+  reversalReason String?
 
   invoice    Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
   receivedBy User?          @relation(fields: [receivedById], references: [id], onDelete: SetNull)
   checkout   OnlinePayment?
 
-  // A gateway transaction is only ever counted once.
-  @@unique([method, reference])
+  // A gateway transaction (or a retried request) is only ever counted once per school.
+  @@unique([schoolId, idempotencyKey])
+  @@index([schoolId, method, reference])
   @@index([schoolId, receivedAt])
 }
 

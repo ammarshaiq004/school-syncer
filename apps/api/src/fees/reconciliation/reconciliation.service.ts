@@ -258,7 +258,7 @@ export class ReconciliationService {
     for (const c of candidates) for (const r of [c.txnRef, c.consumerNumber, c.providerRef]) if (r) byRef.set(r, c);
     // Online money the counter typed in by hand (e.g. a transfer to the school's wallet) is in the books too.
     const counter = refs.length
-      ? await this.prisma.payment.findMany({ where: { schoolId, method: provider, reference: { in: refs }, checkout: null } })
+      ? await this.prisma.payment.findMany({ where: { schoolId, method: provider, reference: { in: refs }, checkout: null, reversedAt: null } })
       : [];
     const counterRefs = new Map(counter.map((p) => [p.reference!, p]));
 

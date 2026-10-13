@@ -90,6 +90,7 @@ export class ParentRecordsController {
           },
           // Latest payment only, so a settled voucher can say when it was paid.
           payments: {
+            where: { reversedAt: null },
             select: { receivedAt: true },
             orderBy: { receivedAt: 'desc' },
             take: 1,
@@ -174,7 +175,9 @@ export class ParentRecordsController {
             feeHeadId: true,
           },
         },
+        // Reversed payments no longer count towards the voucher, so parents don't see them.
         payments: {
+          where: { reversedAt: null },
           orderBy: { receivedAt: 'asc' },
           select: {
             id: true,

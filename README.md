@@ -35,7 +35,7 @@ Phase 1, core operations:
 - Admissions pipeline (enquiry, test, interview, offer, admit) with a public enquiry page at `/apply/<school-code>`.
 - Student records with guardians (siblings share a guardian), class enrollments and roll numbers.
 - Daily attendance from a phone: one tap per absent child, and a WhatsApp alert to the parent the first time a child is marked absent that day. Teachers can only mark their own sections.
-- Fees: fee heads, class fee structures, concessions, monthly voucher runs, printable three-copy vouchers, counter payments, defaulters with late fines, and WhatsApp reminders.
+- Fees: fee heads, class fee structures, concessions, monthly voucher runs, printable three-copy vouchers, counter payments, defaulters with late fines, and WhatsApp reminders. Mistakes are corrected, never deleted: a voucher with no payments can be voided, a payment reversed (its receipt stays on record) and a discount or charge added to a voucher, each with a reason in the audit log; voided vouchers and reversed payments drop out of balances, reports and the cash book.
 - Online payments: signed webhook endpoint for JazzCash, Easypaisa and 1Bill confirmations, with replay protection.
 - Announcements to the whole school, a campus, a class or a section, with optional WhatsApp delivery.
 - Parent portal: attendance and unpaid fees for each child, with logins sent to parents on WhatsApp.
@@ -187,6 +187,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, POST, PUT | `/fees/heads`, `/fees/structures`, `/fees/students/:id/concessions` | owner, principal, admin or accountant |
 | POST, GET | `/fees/invoices/generate`, `/fees/invoices`, `/fees/invoices/:id`, `/fees/invoices/:id/payments` | same |
 | GET, POST | `/fees/defaulters`, `/fees/reminders` | same |
+| GET, POST | `/fees/payments`, `/fees/payments/:id/reverse`, `/fees/invoices/:id/cancel`, `/fees/invoices/:id/adjustments` | same; corrections need fees "manage" and a reason |
 | POST | `/payments/webhook/:provider` | payment gateways (signed) |
 | GET, POST | `/announcements` | staff; posting needs owner, principal or admin |
 | GET | `/dashboard/summary` | staff |

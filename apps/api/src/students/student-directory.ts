@@ -375,7 +375,7 @@ export async function studentPerformance(
       : [],
     access.fees
       ? prisma.payment.findFirst({
-          where: { invoice: { studentId }, schoolId },
+          where: { invoice: { studentId }, schoolId, reversedAt: null },
           orderBy: { receivedAt: 'desc' },
           select: { amount: true, receivedAt: true, receiptNo: true },
         })
