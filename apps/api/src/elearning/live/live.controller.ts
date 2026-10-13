@@ -15,6 +15,7 @@ import {
 import { LiveProvider, LiveStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
+  administers,
   ATTENDANCE_ROLES,
   campusScope,
   hasAnyRole,
@@ -597,7 +598,7 @@ export class ElearningLiveController {
     if (!section || (scope && !scope.includes(section.class.campusId))) {
       throw new NotFoundException('Section not found');
     }
-    const isAdmin = hasAnyRole(user, SETUP_ROLES);
+    const isAdmin = administers(user, section.class.campusId);
     const isClassTeacher = section.classTeacherId === user.sub;
     if (
       !isAdmin &&

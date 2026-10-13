@@ -9,13 +9,14 @@ import {
 } from '@nestjs/common';
 import { AttendanceStatus, LeaveStatus, LeaveType, PayrollStatus, Prisma, StaffStatus } from '@prisma/client';
 import { z } from 'zod';
-import { FEE_ROLES, hasAnyRole, STAFF_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, campusScopeFor, FEE_ROLES, hasAnyRole, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { staffWhere } from './staff-where.js';
 import { calculatePayslip, daysBetween, workingDays, type PayItem } from './payroll-calculator.js';
 
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
@@ -34,6 +35,19 @@ const slipInclude = {
   run: { select: { id: true, period: true, status: true, school: { select: { name: true } } } },
 } as const;
 
+/**
+ * Payroll is run for the whole school at once, so a campus-limited payroll
+ * user sees and pays only the payslips of staff on their campuses and cannot
+ * generate or finalise a month.
+ */
+const payrollScope = (user: AuthUser) => campusScopeFor(user, FEE_ROLES);
+
+const slipsInScope = (user: AuthUser): Prisma.PayslipWhereInput => {
+  const scope = payrollScope(user);
+  return scope ? { user: staffWhere(user.schoolId, scope) } : {};
+};
+const WHOLE_SCHOOL = 'Only school-wide staff can run or finalise payroll';
+
 @Controller('hr')
 @Permission('hr')
 @RequiresFeature('hr')
@@ -49,7 +63,7 @@ export class PayrollController {
     const runs = await this.prisma.payrollRun.findMany({
       where: { schoolId: user.schoolId },
       orderBy: { period: 'desc' },
-      include: { payslips: { select: { net: true, paidAt: true } } },
+      include: { payslips: { where: slipsInScope(user), select: { net: true, paidAt: true } } },
     });
     return runs.map(({ payslips, ...run }) => ({
       ...run,
@@ -70,6 +84,7 @@ export class PayrollController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(runSchema)) body: z.infer<typeof runSchema>,
   ) {
+    assertSchoolWide(user, WHOLE_SCHOOL, FEE_ROLES);
     const existing = await this.prisma.payrollRun.findUnique({
       where: { schoolId_period: { schoolId: user.schoolId, period: body.period } },
     });
@@ -145,7 +160,7 @@ export class PayrollController {
   async run(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const run = await this.prisma.payrollRun.findFirst({
       where: { id, schoolId: user.schoolId },
-      include: { payslips: { include: slipInclude, orderBy: { user: { name: 'asc' } } } },
+      include: { payslips: { where: slipsInScope(user), include: slipInclude, orderBy: { user: { name: 'asc' } } } },
     });
     if (!run) throw new NotFoundException('Payroll not found');
     return {
@@ -158,6 +173,7 @@ export class PayrollController {
   @Post('payroll/:id/finalize')
   @Roles(...FEE_ROLES)
   async finalize(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    assertSchoolWide(user, WHOLE_SCHOOL, FEE_ROLES);
     const run = await this.prisma.payrollRun.findFirst({ where: { id, schoolId: user.schoolId } });
     if (!run) throw new NotFoundException('Payroll not found');
     if (run.status === PayrollStatus.FINALIZED) throw new ConflictException('Already finalised');
@@ -178,7 +194,7 @@ export class PayrollController {
     @Body(new ZodValidationPipe(paySchema)) body: z.infer<typeof paySchema>,
   ) {
     const slip = await this.prisma.payslip.findFirst({
-      where: { id: payslipId, runId: id, run: { schoolId: user.schoolId } },
+      where: { id: payslipId, runId: id, run: { schoolId: user.schoolId }, ...slipsInScope(user) },
       include: { run: true },
     });
     if (!slip) throw new NotFoundException('Payslip not found');
@@ -213,7 +229,7 @@ export class PayrollController {
       where: {
         id: payslipId,
         run: { schoolId: user.schoolId, ...(isPayroll ? {} : { status: PayrollStatus.FINALIZED }) },
-        ...(isPayroll ? {} : { userId: user.sub }),
+        ...(isPayroll ? { OR: [{ userId: user.sub }, slipsInScope(user)] } : { userId: user.sub }),
       },
       include: slipInclude,
     });

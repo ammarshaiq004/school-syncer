@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { z } from 'zod';
-import { campusScope, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import { adminScope, campusScope, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -82,7 +82,7 @@ export class TimetableController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(periodsSchema)) body: z.infer<typeof periodsSchema>,
   ) {
-    await this.campusInSchool(user, body.campusId);
+    await this.campusInSchool(user, body.campusId, adminScope(user));
     const existing = await this.prisma.period.findMany({
       where: { campusId: body.campusId },
       include: { _count: { select: { slots: true } } },
@@ -149,7 +149,7 @@ export class TimetableController {
     @Param('sectionId') sectionId: string,
     @Body(new ZodValidationPipe(slotsSchema)) body: z.infer<typeof slotsSchema>,
   ) {
-    const section = await this.sectionInScope(user, sectionId);
+    const section = await this.sectionInScope(user, sectionId, adminScope(user));
     const [periods, subjects, sectionSubjects] = await Promise.all([
       this.prisma.period.findMany({ where: { campusId: section.class.campusId } }),
       this.prisma.subject.findMany({ where: { schoolId: user.schoolId } }),
@@ -281,19 +281,18 @@ export class TimetableController {
       .map(toSlot);
   }
 
-  private async campusInSchool(user: AuthUser, campusId: string) {
+  /** Admin actions pass adminScope; reads use the caller's campus scope. */
+  private async campusInSchool(user: AuthUser, campusId: string, scope = campusScope(user)) {
     const campus = await this.prisma.campus.findFirst({ where: { id: campusId ?? '', schoolId: user.schoolId } });
-    const scope = campusScope(user);
     if (!campus || (scope && !scope.includes(campus.id))) throw new NotFoundException('Campus not found');
     return campus;
   }
 
-  private async sectionInScope(user: AuthUser, sectionId: string) {
+  private async sectionInScope(user: AuthUser, sectionId: string, scope = campusScope(user)) {
     const section = await this.prisma.section.findFirst({
       where: { id: sectionId, schoolId: user.schoolId },
       include: { class: { select: { name: true, campusId: true } } },
     });
-    const scope = campusScope(user);
     if (!section || (scope && !scope.includes(section.class.campusId))) {
       throw new NotFoundException('Section not found');
     }

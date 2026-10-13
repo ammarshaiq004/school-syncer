@@ -18,7 +18,7 @@ import {
   StudentStatus,
 } from '@prisma/client';
 import { z } from 'zod';
-import { campusScope, SETUP_ROLES } from '../common/admin-roles.js';
+import { adminScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { disableStudentLogins } from '../students/student-login.js';
@@ -81,7 +81,7 @@ export class PromotionsController {
   async overview(@CurrentUser() user: AuthUser) {
     const { current, next } = await this.years(user.schoolId);
     if (!current) return { current: null, next: null, sections: [] };
-    const campuses = campusScope(user);
+    const campuses = adminScope(user);
     const sections = await this.prisma.section.findMany({
       where: {
         schoolId: user.schoolId,
@@ -589,7 +589,7 @@ export class PromotionsController {
     sectionId: string,
     yearId: string,
   ) {
-    const campuses = campusScope(user);
+    const campuses = adminScope(user);
     const section = await this.prisma.section.findFirst({
       where: {
         id: sectionId,
@@ -651,7 +651,7 @@ export class PromotionsController {
   }
 
   private wholeSchool(user: AuthUser) {
-    if (campusScope(user))
+    if (adminScope(user))
       throw new ForbiddenException(
         'Only someone who runs the whole school can set up or start a new year',
       );

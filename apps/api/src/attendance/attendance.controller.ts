@@ -11,11 +11,11 @@ import {
 import { AttendanceStatus } from '@prisma/client';
 import { z } from 'zod';
 import {
+  administers,
   ATTENDANCE_ROLES,
   campusScope,
-  hasAnyRole,
-  SETUP_ROLES,
   STAFF_ROLES,
+  workingSections,
 } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
@@ -62,15 +62,12 @@ export class AttendanceController {
   @Roles(...ATTENDANCE_ROLES)
   async mySections(@CurrentUser() user: AuthUser) {
     const scope = campusScope(user);
-    const admin = hasAnyRole(user, SETUP_ROLES);
     const sections = await this.prisma.section.findMany({
       where: {
         schoolId: user.schoolId,
         academicYear: { isCurrent: true },
         ...(scope ? { class: { campusId: { in: scope } } } : {}),
-        ...(admin
-          ? {}
-          : { OR: [{ classTeacherId: user.sub }, { subjects: { some: { teacherId: user.sub } } }] }),
+        ...workingSections(user),
       },
       include: {
         class: { select: { name: true, sortOrder: true } },
@@ -330,10 +327,7 @@ export class AttendanceController {
     });
     if (!section) throw new NotFoundException('Section not found');
 
-    if (hasAnyRole(user, SETUP_ROLES)) {
-      const scope = campusScope(user);
-      if (!scope || scope.includes(section.class.campusId)) return section;
-    }
+    if (administers(user, section.class.campusId)) return section;
     const teaches =
       section.classTeacherId === user.sub ||
       section.subjects.some((s) => s.teacherId === user.sub);

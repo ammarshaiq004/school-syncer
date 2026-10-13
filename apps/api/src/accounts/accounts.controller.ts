@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -11,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { EntryKind, EntryMethod, Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { FEE_ROLES, SETUP_ROLES } from '../common/admin-roles.js';
+import { adminScope, campusScopeFor, FEE_ROLES, inScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dateRange, nextDay } from '../common/date-range.js';
@@ -20,6 +22,7 @@ import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decor
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { cashbook, type CashMovement } from './cashbook.js';
+import { moneyScope } from './money-scope.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 
@@ -35,7 +38,12 @@ const entrySchema = z.object({
   method: z.enum(EntryMethod).default(EntryMethod.CASH),
   reference: z.string().trim().max(60).optional(),
   note: z.string().trim().max(300).optional(),
+  /** The campus the money is for; left out, a school-wide entry (or the only campus of a campus-limited user). */
+  campusId: z.string().min(1).optional(),
 });
+
+/** Campus-limited fee staff keep the books of their own campuses only. */
+const booksScope = (user: AuthUser) => campusScopeFor(user, FEE_ROLES);
 
 @Controller('accounts')
 @Permission('accounts')
@@ -83,6 +91,7 @@ export class AccountsController {
       where: {
         schoolId: user.schoolId,
         date: { gte: dayStart(r.from), lte: dayStart(r.to) },
+        ...moneyScope(user.schoolId, booksScope(user)).entries,
         ...(k.success && k.data ? { kind: k.data } : {}),
       },
       orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -100,9 +109,18 @@ export class AccountsController {
     });
     if (!category) throw new NotFoundException('Category not found');
     if (body.date > localToday()) throw new ConflictException('An entry cannot be dated in the future');
+    const scope = booksScope(user);
+    const campusId = body.campusId ?? (scope?.length === 1 ? scope[0] : undefined);
+    if (scope && !campusId) throw new BadRequestException('Choose the campus this entry is for');
+    if (campusId) {
+      const campus = await this.prisma.campus.count({ where: { id: campusId, schoolId: user.schoolId } });
+      if (!campus) throw new NotFoundException('Campus not found');
+      if (!inScope(scope, campusId)) throw new ForbiddenException('That campus is not yours to manage');
+    }
     const entry = await this.prisma.accountEntry.create({
       data: {
         ...body,
+        campusId: campusId ?? null,
         schoolId: user.schoolId,
         kind: category.kind,
         date: dayStart(body.date),
@@ -120,6 +138,9 @@ export class AccountsController {
   async removeEntry(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const entry = await this.prisma.accountEntry.findFirst({ where: { id, schoolId: user.schoolId } });
     if (!entry) throw new NotFoundException('Entry not found');
+    if (!inScope(adminScope(user), entry.campusId)) {
+      throw new ForbiddenException('Only school-wide administrators can remove this entry');
+    }
     await this.prisma.accountEntry.delete({ where: { id } });
     await this.audit.record(user, 'delete', 'AccountEntry', id, { before: entry });
     return { deleted: true };
@@ -135,28 +156,32 @@ export class AccountsController {
     const start = startOfLocalDay(r.from);
     const end = startOfLocalDay(nextDay(r.to));
     const schoolId = user.schoolId;
+    const money = moneyScope(schoolId, booksScope(user));
 
     const [feesBefore, entriesBefore, salariesBefore, payments, entries, payslips] = await Promise.all([
-      this.prisma.payment.aggregate({ where: { schoolId, receivedAt: { lt: start }, reversedAt: null }, _sum: { amount: true } }),
+      this.prisma.payment.aggregate({
+        where: { schoolId, receivedAt: { lt: start }, reversedAt: null, ...money.payments },
+        _sum: { amount: true },
+      }),
       this.prisma.accountEntry.groupBy({
         by: ['kind'],
-        where: { schoolId, date: { lt: dayStart(r.from) } },
+        where: { schoolId, date: { lt: dayStart(r.from) }, ...money.entries },
         _sum: { amount: true },
       }),
       this.prisma.payslip.aggregate({
-        where: { run: { schoolId }, paidAt: { lt: start } },
+        where: { run: { schoolId }, paidAt: { lt: start }, ...money.payslips },
         _sum: { net: true },
       }),
       this.prisma.payment.findMany({
-        where: { schoolId, receivedAt: { gte: start, lt: end }, reversedAt: null },
+        where: { schoolId, receivedAt: { gte: start, lt: end }, reversedAt: null, ...money.payments },
         select: { amount: true, method: true, receivedAt: true },
       }),
       this.prisma.accountEntry.findMany({
-        where: { schoolId, date: { gte: dayStart(r.from), lte: dayStart(r.to) } },
+        where: { schoolId, date: { gte: dayStart(r.from), lte: dayStart(r.to) }, ...money.entries },
         include: { category: { select: { name: true } } },
       }),
       this.prisma.payslip.findMany({
-        where: { run: { schoolId }, paidAt: { gte: start, lt: end } },
+        where: { run: { schoolId }, paidAt: { gte: start, lt: end }, ...money.payslips },
         include: { user: { select: { name: true } }, run: { select: { period: true } } },
       }),
     ]);

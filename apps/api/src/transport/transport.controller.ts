@@ -14,7 +14,9 @@ import {
 import { Prisma, StudentStatus, VehicleType } from '@prisma/client';
 import { z } from 'zod';
 import {
+  adminScope,
   campusScope,
+  inScope,
   SETUP_ROLES,
   STAFF_ROLES,
 } from '../common/admin-roles.js';
@@ -198,7 +200,8 @@ export class TransportController {
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(routeSchema)) body: z.infer<typeof routeSchema>,
   ) {
-    await this.checkRouteLinks(user, body);
+    // Left out, the route would be for every campus.
+    await this.checkRouteLinks(user, { ...body, campusId: body.campusId ?? null });
     const route = await this.unique(
       () =>
         this.prisma.transportRoute.create({
@@ -439,10 +442,13 @@ export class TransportController {
     @Body(new ZodValidationPipe(assignSchema))
     body: z.infer<typeof assignSchema>,
   ) {
-    const student = await this.studentInScope(user, body.studentId);
+    const student = await this.studentInScope(user, body.studentId, adminScope(user));
     if (student.status !== StudentStatus.ACTIVE)
       throw new BadRequestException('Only current students can use transport');
     const route = await this.route(user, body.routeId);
+    // School-wide routes are open to every campus; a campus route only to its own.
+    if (route.campusId && !inScope(adminScope(user), route.campusId))
+      throw new ForbiddenException('That route is not yours to manage');
     if (!route.isActive)
       throw new BadRequestException(`${route.name} is closed`);
     const stop = body.stopId
@@ -518,7 +524,7 @@ export class TransportController {
       where: { id, schoolId: user.schoolId, endsOn: null },
     });
     if (!a) throw new NotFoundException('No current ride to stop');
-    await this.studentInScope(user, a.studentId);
+    await this.studentInScope(user, a.studentId, adminScope(user));
     const endsOn = body.endsOn ?? localToday();
     if (endsOn < a.startsOn.toISOString().slice(0, 10))
       throw new BadRequestException('It ends before it started');
@@ -542,14 +548,17 @@ export class TransportController {
       : {};
   }
 
-  /** A route campus heads can change: one at their own campus. */
+  /** A route campus heads can change: one at a campus they administer. */
   private async editableRoute(user: AuthUser, id: string) {
     const route = await this.route(user, id);
-    if (campusScope(user) && route.campusId === null) {
+    const scope = adminScope(user);
+    if (scope && route.campusId === null) {
       throw new ForbiddenException(
         'Only school-wide staff can change a route for every campus',
       );
     }
+    if (!inScope(scope, route.campusId))
+      throw new ForbiddenException('That route is not yours to manage');
     return route;
   }
 
@@ -561,12 +570,15 @@ export class TransportController {
     return route;
   }
 
-  private async studentInScope(user: AuthUser, id: string) {
+  private async studentInScope(
+    user: AuthUser,
+    id: string,
+    scope: string[] | null = campusScope(user),
+  ) {
     const student = await this.prisma.student.findFirst({
       where: { id, schoolId: user.schoolId },
     });
     if (!student) throw new NotFoundException('Student not found');
-    const scope = campusScope(user);
     if (scope && !scope.includes(student.campusId))
       throw new ForbiddenException('Student is at another campus');
     return student;
@@ -576,7 +588,7 @@ export class TransportController {
     user: AuthUser,
     body: { campusId?: string | null; vehicleId?: string | null },
   ) {
-    const scope = campusScope(user);
+    const scope = adminScope(user);
     if (body.campusId) {
       const campus = await this.prisma.campus.findFirst({
         where: { id: body.campusId, schoolId: user.schoolId },

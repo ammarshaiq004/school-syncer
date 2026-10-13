@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { campusScope, hasAnyRole, SETUP_ROLES } from '../../common/admin-roles.js';
+import { administers, adminScope, campusScope } from '../../common/admin-roles.js';
 import type { AuthUser } from '../../common/auth-user.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { resolveStudent } from '../../student/student-context.js';
@@ -29,10 +29,8 @@ export class CoursesService {
   /** A Prisma filter for the courses this staff user may see. */
   async scopeWhere(user: AuthUser): Promise<Prisma.CourseWhereInput> {
     const base: Prisma.CourseWhereInput = { schoolId: user.schoolId };
-    if (hasAnyRole(user, SETUP_ROLES)) {
-      const scope = campusScope(user);
-      return scope ? { ...base, section: { class: { campusId: { in: scope } } } } : base;
-    }
+    const admin = adminScope(user);
+    if (admin === null) return base;
     const teaches = await this.prisma.sectionSubject.findMany({
       where: { schoolId: user.schoolId, teacherId: user.sub },
       select: { sectionId: true, subjectId: true },
@@ -40,6 +38,7 @@ export class CoursesService {
     return {
       ...base,
       OR: [
+        ...(admin.length ? [{ section: { class: { campusId: { in: admin } } } }] : []),
         { teacherId: user.sub },
         { section: { classTeacherId: user.sub } },
         ...teaches.map((t) => ({ sectionId: t.sectionId, subjectId: t.subjectId })),
@@ -93,7 +92,7 @@ export class CoursesService {
     if (!section || (scope && !scope.includes(section.class.campusId))) {
       throw new NotFoundException('Section not found');
     }
-    const isAdmin = hasAnyRole(user, SETUP_ROLES);
+    const isAdmin = administers(user, section.class.campusId);
     const manageable = section.subjects.filter(
       (s) => isAdmin || section.classTeacherId === user.sub || s.teacherId === user.sub,
     );

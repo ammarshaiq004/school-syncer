@@ -12,8 +12,8 @@ import {
 } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import {
+  adminScope,
   ATTENDANCE_ROLES,
-  campusScope,
   hasAnyRole,
   SETUP_ROLES,
 } from '../common/admin-roles.js';
@@ -91,7 +91,7 @@ export class ChatController {
         throw new ForbiddenException(
           'Only school administrators can view all conversations',
         );
-      const scope = campusScope(user);
+      const scope = adminScope(user);
       where = {
         schoolId: user.schoolId,
         ...(scope ? { student: { campusId: { in: scope } } } : {}),

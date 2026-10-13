@@ -9,10 +9,10 @@ import {
 import { ExamStatus } from '@prisma/client';
 import { z } from 'zod';
 import {
+  administers,
   ATTENDANCE_ROLES,
   campusScope,
-  hasAnyRole,
-  SETUP_ROLES,
+  workingSections,
 } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { localDate } from '../common/dates.js';
@@ -122,7 +122,6 @@ export class GradebookController {
     @Query(new ZodValidationPipe(sectionsQuerySchema))
     { academicYearId }: SectionsQuery,
   ) {
-    const admin = hasAnyRole(user, SETUP_ROLES);
     const scope = campusScope(user);
     const sections = await this.prisma.section.findMany({
       where: {
@@ -131,14 +130,7 @@ export class GradebookController {
           ? { academicYearId }
           : { academicYear: { isCurrent: true } }),
         ...(scope ? { class: { campusId: { in: scope } } } : {}),
-        ...(admin
-          ? {}
-          : {
-              OR: [
-                { classTeacherId: user.sub },
-                { subjects: { some: { teacherId: user.sub } } },
-              ],
-            }),
+        ...workingSections(user),
       },
       orderBy: [{ class: { sortOrder: 'asc' } }, { name: 'asc' }],
       select: {
@@ -146,7 +138,7 @@ export class GradebookController {
         name: true,
         academicYearId: true,
         classTeacherId: true,
-        class: { select: { id: true, name: true } },
+        class: { select: { id: true, name: true, campusId: true } },
         subjects: {
           orderBy: { subject: { name: 'asc' } },
           select: {
@@ -157,7 +149,7 @@ export class GradebookController {
       },
     });
     return sections.map((s) => {
-      const all = admin || s.classTeacherId === user.sub;
+      const all = administers(user, s.class.campusId) || s.classTeacherId === user.sub;
       return {
         id: s.id,
         name: `${s.class.name} ${s.name}`,
@@ -207,7 +199,7 @@ export class GradebookController {
     const taught = section.subjects[0];
     if (!taught)
       throw new NotFoundException('This subject is not taught in this section');
-    const admin = hasAnyRole(user, SETUP_ROLES);
+    const admin = administers(user, section.class.campusId);
     const teachesSubject = taught.teacherId === user.sub;
     if (!admin && !teachesSubject && section.classTeacherId !== user.sub) {
       throw new ForbiddenException(

@@ -11,10 +11,9 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  administers,
   ATTENDANCE_ROLES,
   campusScope,
-  hasAnyRole,
-  SETUP_ROLES,
   STAFF_ROLES,
 } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
@@ -53,7 +52,8 @@ export class HomeworkController {
     @Query('sectionId') sectionId: string,
     @Query('from', new ZodValidationPipe(isoDate.optional())) from?: string,
   ) {
-    await this.sectionInScope(user, sectionId);
+    const section = await this.sectionInScope(user, sectionId);
+    const admin = administers(user, section.class.campusId);
     const items = await this.prisma.homework.findMany({
       where: { sectionId, dueDate: { gte: dayStart(from ?? daysBefore(localToday(), 7)) } },
       orderBy: [{ dueDate: 'asc' }, { createdAt: 'asc' }],
@@ -62,7 +62,7 @@ export class HomeworkController {
         assignedBy: { select: { id: true, name: true } },
       },
     });
-    return items.map((h) => ({ ...h, canDelete: h.assignedById === user.sub || hasAnyRole(user, SETUP_ROLES) }));
+    return items.map((h) => ({ ...h, canDelete: h.assignedById === user.sub || admin }));
   }
 
   /** Teachers set homework for subjects they teach (class teachers for any subject in their section). */
@@ -75,7 +75,7 @@ export class HomeworkController {
     const section = await this.sectionInScope(user, body.sectionId);
     const teaches = section.subjects.find((s) => s.subjectId === body.subjectId);
     if (!teaches) throw new NotFoundException('This subject is not taught in this section');
-    const isAdmin = hasAnyRole(user, SETUP_ROLES);
+    const isAdmin = administers(user, section.class.campusId);
     if (!isAdmin && teaches.teacherId !== user.sub && section.classTeacherId !== user.sub) {
       throw new ForbiddenException('You do not teach this subject in this section');
     }
@@ -121,8 +121,8 @@ export class HomeworkController {
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     const homework = await this.prisma.homework.findFirst({ where: { id, schoolId: user.schoolId } });
     if (!homework) throw new NotFoundException('Homework not found');
-    await this.sectionInScope(user, homework.sectionId);
-    if (homework.assignedById !== user.sub && !hasAnyRole(user, SETUP_ROLES)) {
+    const section = await this.sectionInScope(user, homework.sectionId);
+    if (homework.assignedById !== user.sub && !administers(user, section.class.campusId)) {
       throw new ForbiddenException('Only the teacher who set it can remove this homework');
     }
     await this.prisma.homework.delete({ where: { id } });
