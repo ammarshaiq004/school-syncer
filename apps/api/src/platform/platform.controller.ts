@@ -431,6 +431,7 @@ export class PlatformController {
         customRoleId,
       })),
       support: { adminId: admin.sub, adminName: admin.name },
+      tv: owner.tokenVersion,
     };
     const expiresAt = new Date(Date.now() + SUPPORT_SESSION_MS);
     await this.prisma.auditLog.create({

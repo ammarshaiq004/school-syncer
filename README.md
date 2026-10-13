@@ -69,14 +69,38 @@ pnpm install
 docker compose up -d
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
-pnpm db:migrate        # create tables
+pnpm db:migrate        # create tables (development only: runs `prisma migrate dev`)
 pnpm db:seed           # optional demo schools (see Demo data)
 pnpm dev               # API on :4000, web on :3000
 ```
 
+## Deploying
+
+`pnpm db:migrate` is for development: it can create new migrations and offers to reset the database. On staging and production apply the committed migrations with:
+
+```bash
+pnpm db:deploy         # prisma migrate deploy
+```
+
+Never run `pnpm db:seed` there: it creates demo logins with the password `password123`, and `--reset` deletes schools by their codes. It refuses to run with `NODE_ENV=production` (set `ALLOW_DEMO_SEED=true` only for a throwaway demo server).
+
+Create the first SchoolSyncer console owner once, after migrating:
+
+```bash
+pnpm --filter api platform:create-admin --email you@yourcompany.pk --name "Your Name"
+# in a built image without dev tools:
+node apps/api/dist/platform/create-admin.js --email you@yourcompany.pk --name "Your Name"
+```
+
+It prints a strong temporary password once; sign in at `/platform/login` and you are asked to choose your own. To set the password yourself, put it in `PLATFORM_ADMIN_PASSWORD` or pipe it in with `--password-stdin`. The command refuses when an active owner already exists (add more staff from the console). `--force` adds another owner anyway, or recovers an existing account with that email: it becomes an active owner with the new password and its open sessions end.
+
+## Passwords and sessions
+
+Every account can change its own password (school app: account menu > **Change password**; console: the same in its menu; mobile app: on first sign-in). A password someone else issued must be replaced at the next sign-in before anything else works: accounts created or reset by a school admin or from the console, generated student logins (login slips), parent logins sent on WhatsApp, new console staff and the first console owner. Changing or resetting a password signs that account out everywhere else; the device it was changed on gets a fresh token. On another API instance this can take up to 30 seconds (the account cache).
+
 ## Demo data
 
-`pnpm db:seed` builds three schools (one hybrid, one physical, one online) with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Rerunning without `--reset` leaves existing demo schools alone, but adds lesson plans and chats to a demo school that has none yet. Every login's password is `password123`.
+`pnpm db:seed` builds three schools (one hybrid, one physical, one online) with a realistic term of activity, dated relative to today so it always looks current. `pnpm db:seed --reset` deletes and rebuilds them; other schools are left alone. Rerunning without `--reset` leaves existing demo schools alone, but adds lesson plans and chats to a demo school that has none yet. Every login's password is `password123`; the seed only creates logins, so a password changed since is kept.
 
 **City Grammar School** (school code `demo-school`, Lahore, mode Hybrid): two campuses (Model Town, with Playgroup to Grade 8, and Johar Town, with Playgroup to Grade 5), about 490 students in 300 families with siblings, 47 staff, and from the start of the academic year:
 
@@ -154,7 +178,8 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET | `/health` | anyone |
 | POST | `/auth/register-school` | anyone |
 | POST | `/auth/login` | anyone |
-| GET | `/auth/me` | signed in |
+| GET | `/auth/me` | signed in (also while a new password is pending) |
+| POST | `/auth/change-password` | signed in, not in a support session; ends other sessions and returns a new token |
 | GET, PATCH | `/school` | signed in; PATCH needs owner, principal or admin |
 | GET, POST, PATCH, DELETE | `/campuses` | signed in; changes need owner, principal or admin |
 | GET, POST | `/academic-years` | same |

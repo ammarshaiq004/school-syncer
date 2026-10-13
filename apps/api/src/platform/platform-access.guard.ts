@@ -9,6 +9,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { PlatformRole } from '@prisma/client';
 import type { PlatformUser } from '../common/auth-user.js';
+import { ALLOW_PENDING_PASSWORD } from '../common/decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export const PLATFORM_OWNER_ONLY = 'platformOwnerOnly';
@@ -20,15 +21,9 @@ export const PLATFORM_OWNER_ONLY = 'platformOwnerOnly';
  */
 export const PlatformOwnerOnly = () => SetMetadata(PLATFORM_OWNER_ONLY, true);
 
-export const ALLOW_PENDING_PASSWORD = 'platformAllowPendingPassword';
-
-/**
- * Marks the routes a staff member may use while they still have to replace
- * a temporary password (who am I, change password). Every other console
- * route answers 403 until they do.
- */
-export const AllowPendingPasswordChange = () =>
-  SetMetadata(ALLOW_PENDING_PASSWORD, true);
+// Shared with school sign-ins: who am I and change password stay open while
+// a temporary password is pending.
+export { AllowPendingPasswordChange } from '../common/decorators.js';
 
 /**
  * Runs after the global JWT guard on every console controller. Platform
@@ -55,9 +50,14 @@ export class PlatformAccessGuard implements CanActivate {
         role: true,
         name: true,
         mustChangePassword: true,
+        tokenVersion: true,
       },
     });
     if (!admin?.isActive) throw new UnauthorizedException();
+    // A password change or reset bumps the version, ending older sessions.
+    if ((user.tv ?? 0) !== admin.tokenVersion) {
+      throw new UnauthorizedException('Your session has ended. Sign in again');
+    }
     request.user = { ...user, role: admin.role, name: admin.name };
     // A temporary password is also known to whoever created it: nothing but
     // changing it works until the staff member has chosen their own.

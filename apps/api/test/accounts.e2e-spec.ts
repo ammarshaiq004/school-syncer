@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module.js';
 import { daysBefore, localToday } from '../src/common/dates.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 // Fees, salaries and other entries meeting in the cash book and reports.
 describe('Accounts and reports (e2e)', () => {
@@ -47,6 +48,7 @@ describe('Accounts and reports (e2e)', () => {
 
   async function loginAs(login: string) {
     const res = await request(server).post('/api/auth/login').send({ schoolSlug, login, password: 'password123' }).expect(200);
+    await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 

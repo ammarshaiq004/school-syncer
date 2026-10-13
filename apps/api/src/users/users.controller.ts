@@ -194,6 +194,8 @@ export class UsersController {
           email: body.email,
           phone: body.phone,
           passwordHash: await bcrypt.hash(body.password ?? generated!, BCRYPT_ROUNDS),
+          // The admin knows this password, so the user replaces it on first sign-in.
+          mustChangePassword: true,
           roles: { create: roles },
         },
         select: userSelect,
@@ -274,8 +276,14 @@ export class UsersController {
     const password = temporaryPassword();
     await this.prisma.user.update({
       where: { id },
-      data: { passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS) },
+      data: {
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+        mustChangePassword: true,
+        // Ends the user's open sessions.
+        tokenVersion: { increment: 1 },
+      },
     });
+    this.userStatus.forget(id);
     await this.audit.record(user, 'user.reset_password', 'User', id);
     return { temporaryPassword: password };
   }

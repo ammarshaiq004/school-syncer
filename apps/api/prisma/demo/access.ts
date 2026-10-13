@@ -295,12 +295,8 @@ export async function seedSupportAdmin(
   await prisma.platformAdmin.upsert({
     where: { email: SUPPORT_ADMIN.email },
     create: { ...SUPPORT_ADMIN, passwordHash, role: PlatformRole.SUPPORT },
-    update: {
-      passwordHash,
-      isActive: true,
-      role: PlatformRole.SUPPORT,
-      mustChangePassword: false,
-    },
+    // Create-only: an existing account (and its password) is left as it is.
+    update: {},
   });
 }
 

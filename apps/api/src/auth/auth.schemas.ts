@@ -20,3 +20,20 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
+
+/**
+ * A password the user picks themselves: at least 8 characters with a letter
+ * and a digit. Temporary passwords (temporaryPassword()) always pass it.
+ */
+export const newPasswordSchema = z
+  .string()
+  .min(8, 'Use at least 8 characters')
+  .max(128)
+  .regex(/[A-Za-z]/, 'Use at least one letter')
+  .regex(/\d/, 'Use at least one number');
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: newPasswordSchema,
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

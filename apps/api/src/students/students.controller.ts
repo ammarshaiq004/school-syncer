@@ -617,6 +617,8 @@ export class StudentsController {
         name: link.guardian.name,
         phone: link.guardian.phone,
         passwordHash: await bcrypt.hash(password, 12),
+        // Sent over WhatsApp, so the parent replaces it on first sign-in.
+        mustChangePassword: true,
         roles: { create: { role: Role.PARENT } },
       },
     });
@@ -659,7 +661,14 @@ export class StudentsController {
     if (student.userId) {
       const existing = await this.prisma.user.update({
         where: { id: student.userId },
-        data: { username, passwordHash, isActive: true },
+        // A new password ends the student's open sessions.
+        data: {
+          username,
+          passwordHash,
+          isActive: true,
+          mustChangePassword: true,
+          tokenVersion: { increment: 1 },
+        },
         include: { roles: true },
       });
       if (!existing.roles.some((r) => r.role === Role.STUDENT)) {
@@ -675,6 +684,7 @@ export class StudentsController {
           name: fullName(student),
           username,
           passwordHash,
+          mustChangePassword: true,
           roles: { create: { role: Role.STUDENT } },
         },
       });

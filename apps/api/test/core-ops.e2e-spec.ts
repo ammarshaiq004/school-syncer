@@ -8,6 +8,7 @@ import { sign } from '../src/fees/payment-webhook.controller.js';
 import { NotificationsService, type OutgoingMessage } from '../src/notifications/notifications.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { deleteSchools } from './cleanup.js';
+import { keepIssuedPassword } from './session.js';
 
 const WEBHOOK_SECRET = 'test-jazzcash-secret';
 
@@ -67,6 +68,7 @@ describe('Core operations (e2e)', () => {
       .post('/api/auth/login')
       .send({ schoolSlug, login, password })
       .expect(200);
+    await keepIssuedPassword(app, res.body);
     return { Authorization: `Bearer ${res.body.accessToken}` };
   }
 
