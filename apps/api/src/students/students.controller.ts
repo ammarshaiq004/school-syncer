@@ -39,6 +39,7 @@ import {
   studentUsername,
   tempPassword,
 } from './student-login.js';
+import { billAdmissionFee } from '../fees/adhoc-vouchers.js';
 import { createStudentRecord, guardianInputSchema } from './student-records.js';
 import {
   directoryQuerySchema,
@@ -297,9 +298,12 @@ export class StudentsController {
     @Body(new ZodValidationPipe(createStudentSchema)) body: CreateStudentInput,
   ) {
     await this.subscriptions.assertStudentRoom(user.schoolId, 1);
-    const student = await this.prisma.$transaction((tx) =>
-      createStudentRecord(tx, { ...body, schoolId: user.schoolId, campuses: adminScope(user) }),
-    );
+    const student = await this.prisma.$transaction(async (tx) => {
+      const created = await createStudentRecord(tx, { ...body, schoolId: user.schoolId, campuses: adminScope(user) });
+      // The school's admission fee, if it bills one, on its own voucher.
+      await billAdmissionFee(tx, user.schoolId, created.id);
+      return created;
+    });
     await this.audit.record(user, 'student.create', 'Student', student.id, { after: student });
     return student;
   }

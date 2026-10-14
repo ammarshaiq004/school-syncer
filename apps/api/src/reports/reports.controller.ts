@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { EntryKind, InvoiceStatus } from '@prisma/client';
+import { EntryKind } from '@prisma/client';
 import { z } from 'zod';
 import { totalsBy } from '../accounts/cashbook.js';
 import { moneyScope } from '../accounts/money-scope.js';
@@ -9,6 +9,7 @@ import { dateRange, nextDay } from '../common/date-range.js';
 import { dayStart, localDate, startOfLocalDay } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { feeOutstanding, OPEN_INVOICE } from '../fees/outstanding.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 interface SectionWithCampus {
@@ -136,7 +137,7 @@ export class ReportsController {
     const invoices = await this.prisma.invoice.findMany({
       where: {
         schoolId: user.schoolId,
-        status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
+        ...OPEN_INVOICE,
         ...this.money(user).invoices,
       },
       select: {
@@ -173,8 +174,10 @@ export class ReportsController {
       byStudent.set(s.id, row);
     }
     const students = [...byStudent.values()].sort((a, b) => b.balance - a.balance);
+    // The same figure as /fees/outstanding and the dashboard.
+    const owed = await feeOutstanding(this.prisma, { schoolId: user.schoolId, ...this.money(user).invoices });
     return {
-      total: invoices.reduce((s, i) => s + balance(i), 0),
+      total: owed.outstanding.amount,
       byClass: totalsBy(students, (s) => s.class, (s) => s.balance),
       students,
     };

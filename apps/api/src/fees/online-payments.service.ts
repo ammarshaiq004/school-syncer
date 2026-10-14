@@ -2,8 +2,9 @@ import { BadRequestException, Injectable, Logger, NotFoundException, type OnModu
 import { CheckoutStatus, InvoiceStatus, PaymentMethod, Prisma, type OnlinePayment } from '@prisma/client';
 import { randomInt } from 'node:crypto';
 import type { AuthUser } from '../common/auth-user.js';
+import { dayStart, localToday } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { lateFine } from './fee-calculator.js';
+import { fineDue, fineRule } from './fee-calculator.js';
 import { enabledProviders, gatewayConfig, type GatewayConfig } from './gateways/gateway-config.js';
 import { onebillAuthorised } from './gateways/onebill.js';
 import {
@@ -109,14 +110,17 @@ export class OnlinePaymentsService implements OnModuleInit {
         schoolId: user.schoolId,
         student: { guardians: { some: { guardian: { userId: user.sub } } } },
       },
-      include: { school: { select: { lateFeePerDay: true, name: true } }, student: true },
+      include: { school: { select: { lateFeePerDay: true, lateFeeMaxDays: true, lateFeeCap: true, name: true } }, student: true },
     });
     if (!invoice) throw new NotFoundException('Invoice not found');
     if (invoice.status === InvoiceStatus.CANCELLED) throw new BadRequestException('This voucher was cancelled.');
+    if (invoice.status === InvoiceStatus.CARRIED_FORWARD) {
+      throw new BadRequestException("This voucher's balance was carried forward to a later voucher. Pay that one instead.");
+    }
     const balance = Math.max(0, invoice.total - invoice.paid);
     if (balance === 0) throw new BadRequestException('This voucher is already paid in full.');
-    // The same fine PaymentsService allows when the payment is recorded.
-    const amount = balance + lateFine(invoice.dueDate, new Date(), invoice.school.lateFeePerDay);
+    // The same fine PaymentsService books onto the voucher when the payment is recorded.
+    const amount = balance + fineDue(invoice, dayStart(localToday()), fineRule(invoice.school));
 
     const now = new Date();
     const expiresAt = new Date(

@@ -5,12 +5,13 @@ import type { AttendanceStatus, InvoiceStatus } from '@prisma/client';
  * and parent attendance history), unit tested on their own.
  */
 
-export type InvoiceDisplayStatus = 'PAID' | 'PENDING' | 'OVERDUE' | 'CANCELLED';
+export type InvoiceDisplayStatus = 'PAID' | 'PENDING' | 'OVERDUE' | 'CANCELLED' | 'CARRIED_FORWARD';
 
 /**
  * The lozenge a parent sees: PAID when settled, OVERDUE when anything is still
  * owed after the due date (a YYYY-MM-DD day, compared with today's local
- * date), PENDING when owed but not yet due. Cancelled stays CANCELLED.
+ * date), PENDING when owed but not yet due. Cancelled stays CANCELLED, and a
+ * voucher whose balance moved onto a later one is CARRIED_FORWARD.
  */
 export function invoiceDisplayStatus(
   invoice: {
@@ -22,6 +23,7 @@ export function invoiceDisplayStatus(
   today: string,
 ): InvoiceDisplayStatus {
   if (invoice.status === 'CANCELLED') return 'CANCELLED';
+  if (invoice.status === 'CARRIED_FORWARD') return 'CARRIED_FORWARD';
   if (invoice.status === 'PAID' || invoice.paid >= invoice.total) return 'PAID';
   return invoice.dueDate.toISOString().slice(0, 10) < today
     ? 'OVERDUE'
@@ -38,7 +40,7 @@ export interface InvoiceBreakdown {
   /** The invoice total as billed (subtotal - discounts). */
   total: number;
   paid: number;
-  /** total - paid, never below 0. */
+  /** total - paid, never below 0; 0 on a voucher that owes nothing (carried forward). */
   balance: number;
   /** balance + lateFine: what to pay today. 0 once paid. */
   totalDue: number;
@@ -48,6 +50,8 @@ export function invoiceBreakdown(
   lines: { amount: number }[],
   invoice: { total: number; paid: number },
   lateFine: number,
+  /** False for a voucher whose balance is owed elsewhere (carried forward). */
+  owing = true,
 ): InvoiceBreakdown {
   const subtotal = lines
     .filter((l) => l.amount > 0)
@@ -55,7 +59,7 @@ export function invoiceBreakdown(
   const discounts = -lines
     .filter((l) => l.amount < 0)
     .reduce((s, l) => s + l.amount, 0);
-  const balance = Math.max(invoice.total - invoice.paid, 0);
+  const balance = owing ? Math.max(invoice.total - invoice.paid, 0) : 0;
   return {
     subtotal,
     discounts,
