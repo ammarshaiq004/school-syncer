@@ -1,4 +1,4 @@
-import { localTime, reconcileAt } from './reconciliation.scheduler.js';
+import { localTime, reconcileAt, reconcileSlot } from './reconciliation.scheduler.js';
 import { parseStatement, statementAmount, statementColumns, statementDate } from './statement.js';
 
 describe('statement columns', () => {
@@ -70,5 +70,11 @@ describe('nightly schedule', () => {
 
   it('compares in school time', () => {
     expect(localTime(new Date('2026-10-05T21:15:00Z'))).toBe('02:15');
+  });
+
+  it('has one run slot per local day, due from the start time', () => {
+    expect(reconcileSlot('02:00', new Date('2026-10-05T20:59:00Z'))).toBeNull();
+    expect(reconcileSlot('02:00', new Date('2026-10-05T21:15:00Z'))).toBe('2026-10-06');
+    expect(reconcileSlot('02:00', new Date('2026-10-06T18:00:00Z'))).toBe('2026-10-06');
   });
 });

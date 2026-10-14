@@ -36,6 +36,7 @@ import { OnlinePaymentsService } from './fees/online-payments.service.js';
 import { ReconciliationController } from './fees/reconciliation/reconciliation.controller.js';
 import { ReconciliationScheduler } from './fees/reconciliation/reconciliation.scheduler.js';
 import { ReconciliationService } from './fees/reconciliation/reconciliation.service.js';
+import { JobsModule } from './jobs/jobs.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { ElearningModule } from './elearning/elearning.module.js';
 import { GradebookModule } from './gradebook/gradebook.module.js';
@@ -89,6 +90,7 @@ import { UsersController } from './users/users.controller.js';
       }),
     }),
     PrismaModule,
+    JobsModule,
     CommonModule,
     AuthModule,
     PlatformModule,

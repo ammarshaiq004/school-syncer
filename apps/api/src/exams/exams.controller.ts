@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -21,8 +22,9 @@ import {
   hasAnyRole,
   STAFF_ROLES,
 } from '../common/admin-roles.js';
-import { AuditService } from '../common/audit.service.js';
+import { AuditService, type AuditEntry } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
+import { withNames } from '../common/change-history.js';
 import { dayStart } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { PermissionService } from '../common/permission.service.js';
@@ -95,6 +97,13 @@ const marksSchema = z.object({
       }),
     )
     .min(1),
+  /** Required to correct marks after results are published; kept in the audit log. */
+  reason: z.string().trim().min(3).max(300).optional(),
+});
+const historySchema = z.object({
+  sectionId: z.string().min(1),
+  subjectId: z.string().min(1),
+  studentId: z.string().min(1).optional(),
 });
 const remarksSchema = z.object({
   teacherRemark: z.string().trim().max(300).optional(),
@@ -103,6 +112,23 @@ const remarksSchema = z.object({
 const publishSchema = z.object({ sendWhatsApp: z.boolean().default(false) });
 
 type ExamInput = z.infer<typeof examSchema>;
+
+/** One student's mark as saved, and as kept in the audit log. */
+interface MarkValue {
+  studentId: string;
+  marks: number | null;
+  isAbsent: boolean;
+}
+type Score = Omit<MarkValue, 'studentId'>;
+interface MarkHistoryRow {
+  at: Date;
+  userId: string | null;
+  studentId: string;
+  kind: 'entered' | 'changed';
+  before: Score | null;
+  after: Score;
+  reason: string | null;
+}
 
 const fullName = (s: { firstName: string; lastName: string | null }) =>
   [s.firstName, s.lastName].filter(Boolean).join(' ');
@@ -391,10 +417,18 @@ export class ExamsController {
       body.sectionId,
       body.subjectId,
     );
-    if (exam.status === ExamStatus.PUBLISHED) {
-      throw new ConflictException(
-        'Results are published; unpublish the exam to change marks',
-      );
+    const published = exam.status === ExamStatus.PUBLISHED;
+    if (published) {
+      if (!(await this.managesExams(user))) {
+        throw new ConflictException(
+          'Results are published; ask whoever runs exams to correct marks',
+        );
+      }
+      if (!body.reason) {
+        throw new BadRequestException(
+          'Give a reason for changing published marks',
+        );
+      }
     }
     const enrolled = new Set(
       (await this.activeEnrollments(section.id, exam.academicYearId)).map(
@@ -416,26 +450,161 @@ export class ExamsController {
         throw new ConflictException('Enter marks or mark the student absent');
       }
     }
-    await this.prisma.$transaction(
-      body.entries.map((entry) => {
-        const data = {
+    const changed = await this.prisma.$transaction(async (tx) => {
+      // Publishing takes the same lock, so marks saved while results are
+      // being frozen wait for them instead of going missing from them.
+      await this.lockExam(
+        tx,
+        exam.id,
+        published ? ExamStatus.PUBLISHED : ExamStatus.DRAFT,
+      );
+      const existing = new Map(
+        (
+          await tx.mark.findMany({
+            where: {
+              paperId: paper.id,
+              studentId: { in: body.entries.map((e) => e.studentId) },
+            },
+          })
+        ).map((m) => [m.studentId, m]),
+      );
+      const entered: MarkValue[] = [];
+      const changes: AuditEntry[] = [];
+      for (const entry of body.entries) {
+        const value: MarkValue = {
+          studentId: entry.studentId,
           marks: entry.isAbsent ? null : entry.marks,
           isAbsent: entry.isAbsent,
-          enteredById: user.sub,
         };
-        return this.prisma.mark.upsert({
-          where: {
-            paperId_studentId: {
-              paperId: paper.id,
-              studentId: entry.studentId,
-            },
-          },
-          update: data,
-          create: { paperId: paper.id, studentId: entry.studentId, ...data },
+        const before = existing.get(entry.studentId);
+        if (!before) {
+          await tx.mark.create({
+            data: { paperId: paper.id, ...value, enteredById: user.sub },
+          });
+          entered.push(value);
+          continue;
+        }
+        // Re-saving a sheet leaves untouched marks (and who entered them) alone.
+        if (before.marks === value.marks && before.isAbsent === value.isAbsent)
+          continue;
+        await tx.mark.update({
+          where: { id: before.id },
+          data: { marks: value.marks, isAbsent: value.isAbsent, enteredById: user.sub },
         });
-      }),
+        changes.push({
+          action: published ? 'marks.correct' : 'marks.change',
+          entity: 'Mark',
+          entityId: before.id,
+          before: { marks: before.marks, isAbsent: before.isAbsent },
+          after: {
+            marks: value.marks,
+            isAbsent: value.isAbsent,
+            studentId: entry.studentId,
+            paperId: paper.id,
+            examId: exam.id,
+            ...(published ? { reason: body.reason } : {}),
+          },
+        });
+      }
+      // First entries are the normal case, so they are one compact record per save.
+      if (entered.length) {
+        changes.push({
+          action: 'marks.enter',
+          entity: 'ExamPaper',
+          entityId: paper.id,
+          after: { examId: exam.id, sectionId: section.id, entries: entered },
+        });
+      }
+      await this.audit.recordMany(user, changes, tx);
+      if (published) await this.refreshResults(tx, exam, section);
+      return changes.length - (entered.length ? 1 : 0);
+    });
+    return { saved: body.entries.length, changed };
+  }
+
+  /**
+   * Change history of a marks sheet (or one student on it): when each mark was
+   * first entered, and every later change with the old and new value, who made
+   * it and, after publishing, why. Newest first.
+   */
+  @Get(':id/marks/history')
+  @Roles(...ATTENDANCE_ROLES)
+  @Permission('exams', 'view')
+  async marksHistory(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query(new ZodValidationPipe(historySchema))
+    query: z.infer<typeof historySchema>,
+  ) {
+    const { exam, section, paper, canEnter } = await this.sheetContext(
+      user,
+      id,
+      query.sectionId,
+      query.subjectId,
     );
-    return { saved: body.entries.length };
+    if (!canEnter && !(await this.managesExams(user))) {
+      throw new ForbiddenException(
+        'You do not teach this subject in this section',
+      );
+    }
+    const marks = await this.prisma.mark.findMany({
+      where: {
+        paperId: paper.id,
+        ...(query.studentId ? { studentId: query.studentId } : {}),
+      },
+      select: { id: true, studentId: true },
+    });
+    const studentOf = new Map(marks.map((m) => [m.id, m.studentId]));
+    const logs = await this.prisma.auditLog.findMany({
+      where: {
+        schoolId: user.schoolId,
+        OR: [
+          { entity: 'Mark', entityId: { in: [...studentOf.keys()] } },
+          {
+            entity: 'ExamPaper',
+            entityId: paper.id,
+            action: 'marks.enter',
+            after: { path: ['sectionId'], equals: section.id },
+          },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    const rows = logs.flatMap((log): MarkHistoryRow[] => {
+      if (log.entity === 'ExamPaper') {
+        const { entries } = log.after as unknown as { entries: MarkValue[] };
+        return entries
+          .filter((e) => !query.studentId || e.studentId === query.studentId)
+          .map((e) => ({
+            at: log.createdAt,
+            userId: log.userId,
+            studentId: e.studentId,
+            kind: 'entered',
+            before: null,
+            after: { marks: e.marks, isAbsent: e.isAbsent },
+            reason: null,
+          }));
+      }
+      const after = log.after as unknown as MarkValue & { reason?: string };
+      return [
+        {
+          at: log.createdAt,
+          userId: log.userId,
+          studentId: studentOf.get(log.entityId!)!,
+          kind: 'changed',
+          before: log.before as unknown as Score,
+          after: { marks: after.marks, isAbsent: after.isAbsent },
+          reason: after.reason ?? null,
+        },
+      ];
+    });
+    return {
+      exam: { id: exam.id, name: exam.name },
+      section: { id: section.id, name: `${section.class.name} ${section.name}` },
+      subject: paper.subject.name,
+      history: await withNames(this.prisma, user.schoolId, rows),
+    };
   }
 
   /** How many marks are still missing, per section and subject, so admins can chase them before publishing. */
@@ -467,7 +636,56 @@ export class ExamsController {
         'Only school-wide administrators can publish results',
       );
     }
-    const progress = await this.missingMarks(user, exam);
+    // The exam row stays locked from the check for missing marks until the
+    // results are written, so marks saved meanwhile wait and are not lost
+    // from the frozen results; a second publish waits and then finds it published.
+    const { rows, sections, school } = await this.prisma.$transaction(
+      async (tx) => {
+        await this.lockExam(tx, exam.id, ExamStatus.DRAFT);
+        return this.freezeResults(tx, user, exam);
+      },
+      { timeout: 60_000 },
+    );
+    await this.audit.record(user, 'publish', 'Exam', exam.id, {
+      after: { results: rows.length },
+    });
+
+    let messagesSent = 0;
+    if (body.sendWhatsApp && rows.length) {
+      const studentIds = rows.map((r) => r.studentId);
+      const phones = await guardianPhones(this.prisma, studentIds);
+      const names = new Map(
+        sections.flatMap((s) =>
+          s.enrollments.map((e) => [e.studentId, fullName(e.student)]),
+        ),
+      );
+      messagesSent = await this.notifications.send(
+        user.schoolId,
+        rows.flatMap((r) =>
+          (phones.get(r.studentId) ?? []).map((to) => ({
+            to,
+            template: 'exam.result' as const,
+            params: {
+              studentName: names.get(r.studentId) ?? '',
+              examName: exam.name,
+              percent: String(r.percent),
+              grade: r.grade,
+              schoolName: school.name,
+            },
+          })),
+        ),
+      );
+    }
+    return { published: rows.length, messagesSent };
+  }
+
+  /** Works out and stores every student's result and marks the exam published. */
+  private async freezeResults(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    exam: { id: string; academicYearId: string },
+  ) {
+    const progress = await this.missingMarks(user, exam, tx);
     const missing = progress.reduce((sum, p) => sum + p.missing, 0);
     if (!progress.length)
       throw new ConflictException('Add papers before publishing');
@@ -478,17 +696,17 @@ export class ExamsController {
     }
 
     const [papers, bands, school] = await Promise.all([
-      this.prisma.examPaper.findMany({
+      tx.examPaper.findMany({
         where: { examId: exam.id },
         include: { subject: { select: { name: true } }, marks: true },
       }),
-      this.bandsFor(user.schoolId),
-      this.prisma.school.findUniqueOrThrow({
+      this.bandsFor(user.schoolId, tx),
+      tx.school.findUniqueOrThrow({
         where: { id: user.schoolId },
         select: { name: true },
       }),
     ]);
-    const sections = await this.prisma.section.findMany({
+    const sections = await tx.section.findMany({
       where: {
         academicYearId: exam.academicYearId,
         classId: { in: papers.map((p) => p.classId) },
@@ -506,7 +724,7 @@ export class ExamsController {
     // Remarks written before an unpublish carry over to the new results.
     const remarks = new Map(
       (
-        await this.prisma.examResult.findMany({
+        await tx.examResult.findMany({
           where: { examId: exam.id },
           select: {
             studentId: true,
@@ -557,45 +775,85 @@ export class ExamsController {
       }
     }
 
-    await this.prisma.$transaction([
-      this.prisma.examResult.deleteMany({ where: { examId: exam.id } }),
-      this.prisma.examResult.createMany({ data: rows }),
-      this.prisma.exam.update({
-        where: { id: exam.id },
-        data: { status: ExamStatus.PUBLISHED, publishedAt: new Date() },
-      }),
-    ]);
-    await this.audit.record(user, 'publish', 'Exam', exam.id, {
-      after: { results: rows.length },
+    await tx.examResult.deleteMany({ where: { examId: exam.id } });
+    await tx.examResult.createMany({ data: rows });
+    await tx.exam.update({
+      where: { id: exam.id },
+      data: { status: ExamStatus.PUBLISHED, publishedAt: new Date() },
     });
+    return { rows, sections, school };
+  }
 
-    let messagesSent = 0;
-    if (body.sendWhatsApp && rows.length) {
-      const studentIds = rows.map((r) => r.studentId);
-      const phones = await guardianPhones(this.prisma, studentIds);
-      const names = new Map(
-        sections.flatMap((s) =>
-          s.enrollments.map((e) => [e.studentId, fullName(e.student)]),
-        ),
-      );
-      messagesSent = await this.notifications.send(
-        user.schoolId,
-        rows.flatMap((r) =>
-          (phones.get(r.studentId) ?? []).map((to) => ({
-            to,
-            template: 'exam.result' as const,
-            params: {
-              studentName: names.get(r.studentId) ?? '',
-              examName: exam.name,
-              percent: String(r.percent),
-              grade: r.grade,
-              schoolName: school.name,
-            },
-          })),
-        ),
+  /**
+   * After a correction to published marks: works the section's published
+   * results out again from the current marks, positions included. The same
+   * students keep their results (and remarks); only the numbers change.
+   */
+  private async refreshResults(
+    tx: Prisma.TransactionClient,
+    exam: { id: string; schoolId: string },
+    section: { id: string; classId: string },
+  ) {
+    const [results, papers, bands] = await Promise.all([
+      tx.examResult.findMany({
+        where: { examId: exam.id, sectionId: section.id },
+        select: { id: true, studentId: true },
+      }),
+      tx.examPaper.findMany({
+        where: { examId: exam.id, classId: section.classId },
+        include: { subject: { select: { name: true } }, marks: true },
+      }),
+      this.bandsFor(exam.schoolId, tx),
+    ]);
+    papers.sort((a, b) => a.subject.name.localeCompare(b.subject.name));
+    const fresh = results.map((r) => ({
+      id: r.id,
+      studentId: r.studentId,
+      ...studentResult(
+        papers.map((p) => ({
+          id: p.id,
+          subject: p.subject.name,
+          maxMarks: p.maxMarks,
+          passMarks: p.passMarks,
+        })),
+        papers.flatMap((p) => p.marks.filter((m) => m.studentId === r.studentId)),
+        bands,
+      ),
+    }));
+    const ranks = positions(
+      fresh.map((r) => ({ id: r.studentId, percent: r.percent })),
+    );
+    for (const r of fresh) {
+      await tx.examResult.update({
+        where: { id: r.id },
+        data: {
+          obtained: r.obtained,
+          maxTotal: r.maxTotal,
+          percent: r.percent,
+          grade: r.grade,
+          position: ranks.get(r.studentId)!,
+          passed: r.passed,
+          subjects: r.subjects as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
+  }
+
+  /** Locks the exam row for the transaction and checks it is still in `status`. */
+  private async lockExam(
+    tx: Prisma.TransactionClient,
+    examId: string,
+    status: ExamStatus,
+  ) {
+    const [current] = await tx.$queryRaw<{ status: ExamStatus }[]>`
+      SELECT status FROM "Exam" WHERE id = ${examId} FOR UPDATE`;
+    if (current?.status !== status) {
+      throw new ConflictException(
+        status === ExamStatus.DRAFT
+          ? 'Results are published; unpublish the exam first'
+          : 'Exam is not published',
       );
     }
-    return { published: rows.length, messagesSent };
   }
 
   /** Takes results down so marks can be corrected. Remarks are kept for the next publish. */
@@ -611,10 +869,12 @@ export class ExamsController {
         'Only school-wide administrators can unpublish results',
       );
     }
-    await this.prisma.exam.update({
-      where: { id: exam.id },
+    // Waits for a correction in progress and cannot undo a second time.
+    const { count } = await this.prisma.exam.updateMany({
+      where: { id: exam.id, status: ExamStatus.PUBLISHED },
       data: { status: ExamStatus.DRAFT, publishedAt: null },
     });
+    if (!count) throw new ConflictException('Exam is not published');
     await this.audit.record(user, 'unpublish', 'Exam', exam.id);
     return { status: ExamStatus.DRAFT };
   }
@@ -813,8 +1073,11 @@ export class ExamsController {
 
   // ---- Helpers -------------------------------------------------------------
 
-  private async bandsFor(schoolId: string) {
-    const bands = await this.prisma.gradeBand.findMany({
+  private async bandsFor(
+    schoolId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const bands = await db.gradeBand.findMany({
       where: { schoolId },
       orderBy: { minPercent: 'desc' },
       select: { grade: true, minPercent: true, remark: true },
@@ -938,9 +1201,10 @@ export class ExamsController {
   private async missingMarks(
     user: AuthUser,
     exam: { id: string; academicYearId: string },
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     const scope = campusScope(user);
-    const papers = await this.prisma.examPaper.findMany({
+    const papers = await db.examPaper.findMany({
       where: { examId: exam.id },
       include: {
         subject: { select: { name: true } },

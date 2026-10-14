@@ -21,3 +21,15 @@ export function phoneSearchDigits(text: string): string | null {
   const digits = text.replace(/\D/g, '').replace(/^(0092|92|0)/, '');
   return digits.length >= 5 ? digits : null;
 }
+
+/** A phone number for server logs: country code and the last two digits only, "92300*****67". */
+export function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 7) return '*'.repeat(digits.length);
+  return `${digits.slice(0, 5)}${'*'.repeat(digits.length - 7)}${digits.slice(-2)}`;
+}
+
+/** Masks every phone-like run of digits (7 or more) in free text, e.g. a provider's error. */
+export function maskPhonesIn(text: string): string {
+  return text.replace(/\+?\d[\d -]{5,}\d/g, (m) => maskPhone(m));
+}

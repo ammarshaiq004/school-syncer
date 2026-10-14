@@ -96,6 +96,9 @@ model School {
   reconciliationIssues ReconciliationIssue[]
   gatewayStatements    GatewayStatement[]
   paymentGateways      SchoolPaymentGateway[]
+
+  messagingSender SchoolMessagingSender?
+  passwordResets  PasswordResetCode[]
 }
 
 model Campus {
@@ -749,22 +752,33 @@ enum Channel {
 }
 
 enum NotificationStatus {
+  /// Waiting for a delivery job (or for its next retry).
   QUEUED
+  /// Accepted by the provider (WhatsApp Cloud API or the SMS gateway).
   SENT
+  /// Only written to the server log: no provider is configured, nothing was delivered.
+  LOGGED
+  /// Every attempt failed; `error` holds the last provider error.
   FAILED
 }
 
 model NotificationLog {
-  id        String             @id @default(cuid())
-  schoolId  String
-  channel   Channel
-  to        String
-  template  String // e.g. "attendance.absent"
-  body      String
-  status    NotificationStatus @default(QUEUED)
-  error     String?
-  createdAt DateTime           @default(now())
-  sentAt    DateTime?
+  id                String             @id @default(cuid())
+  schoolId          String
+  channel           Channel
+  to                String
+  template          String // e.g. "attendance.absent"
+  body              String
+  status            NotificationStatus @default(QUEUED)
+  error             String?
+  /// Delivery attempts so far.
+  attempts          Int                @default(0)
+  /// Who sent it: "school" (the school's own WhatsApp number), "platform" or "log".
+  sender            String?
+  /// The provider's message id once accepted.
+  providerMessageId String?
+  createdAt         DateTime           @default(now())
+  sentAt            DateTime?
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
@@ -1062,9 +1076,12 @@ model PayrollRun {
   id          String        @id @default(cuid())
   schoolId    String
   period      String // "YYYY-MM"
-  status      PayrollStatus @default(DRAFT)
-  createdAt   DateTime      @default(now())
-  finalizedAt DateTime?
+  status        PayrollStatus @default(DRAFT)
+  createdAt     DateTime      @default(now())
+  createdById   String?
+  updatedAt     DateTime      @updatedAt
+  finalizedAt   DateTime?
+  finalizedById String?
 
   school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   payslips Payslip[]
@@ -1085,6 +1102,7 @@ model Payslip {
   // [{ name, type, amount }] as calculated
   lines           Json
   paidAt          DateTime?
+  paidById        String?
   paymentMethod   String?
 
   run  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
@@ -2112,4 +2130,80 @@ model AssistantUsage {
 
   @@index([userId, createdAt])
   @@index([schoolId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Background jobs, shared rate limits, messaging senders, password reset
+// ---------------------------------------------------------------------------
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// A unit of background work, claimed by one worker with FOR UPDATE SKIP LOCKED.
+model Job {
+  id          String    @id @default(cuid())
+  queue       String
+  payload     Json      @default("{}")
+  status      JobStatus @default(PENDING)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  /// Higher runs first among due jobs (a password reset code ahead of a school's fee vouchers).
+  priority    Int       @default(0)
+  /// Not before this time; pushed back exponentially after each failure.
+  runAt       DateTime  @default(now())
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?
+  /// Set for scheduled runs ("schedule:reconcile:2026-10-13") so each slot is enqueued once across all servers.
+  uniqueKey   String?   @unique
+  createdAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@index([status, priority, runAt])
+  @@index([status, lockedAt])
+}
+
+/// Fixed-window counters for rate limits, shared by every API instance.
+model RateLimitCounter {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+/// A school's own WhatsApp Cloud API sender; without one the platform sender (env) is used.
+model SchoolMessagingSender {
+  schoolId      String   @id
+  enabled       Boolean  @default(true)
+  /// WhatsApp Cloud API phone number id (not secret).
+  phoneNumberId String   @default("")
+  /// Encrypted JSON { token } (PAYMENTS_SECRET_KEY, like merchant secrets).
+  secrets       String   @default("")
+  updatedById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+/// A one-time code for "forgot password", sent to a phone number. Only its hash is stored.
+model PasswordResetCode {
+  id        String    @id @default(cuid())
+  schoolId  String
+  /// International format, e.g. 923001234567.
+  phone     String
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, phone, createdAt])
 }

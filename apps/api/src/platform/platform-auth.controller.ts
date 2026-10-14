@@ -49,7 +49,7 @@ export class PlatformAuthController {
     @Ip() ip: string,
   ) {
     const limitKey = LoginRateLimiter.key('platform', body.email, ip);
-    this.limiter.assertAllowed(limitKey);
+    await this.limiter.assertAllowed(limitKey);
     const admin = await this.prisma.platformAdmin.findUnique({
       where: { email: body.email },
     });
@@ -57,10 +57,10 @@ export class PlatformAuthController {
       ? await bcrypt.compare(body.password, admin.passwordHash)
       : await checkNoPassword(body.password);
     if (!admin || !valid) {
-      this.limiter.recordFailure(limitKey);
+      await this.limiter.recordFailure(limitKey);
       throw new UnauthorizedException('Wrong email or password');
     }
-    this.limiter.recordSuccess(limitKey);
+    await this.limiter.recordSuccess(limitKey);
     await this.prisma.platformAdmin.update({
       where: { id: admin.id },
       data: { lastLoginAt: new Date() },

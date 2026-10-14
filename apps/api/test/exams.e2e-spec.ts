@@ -417,4 +417,97 @@ describe('Exams and report cards (e2e)', () => {
       .set(parent)
       .expect(403);
   });
+
+  it('keeps a history of mark changes', async () => {
+    const history = (headers: Record<string, string>, studentId?: string) =>
+      request(server)
+        .get(
+          `/api/exams/${examId}/marks/history?sectionId=${sectionId}&subjectId=${maths}` +
+            (studentId ? `&studentId=${studentId}` : ''),
+        )
+        .set(headers);
+    const ayesha = await history(mathsTeacher, students[0]).expect(200);
+    // Corrected from 45 to 50 between the unpublish and the republish.
+    expect(ayesha.body.history).toEqual([
+      expect.objectContaining({
+        kind: 'changed',
+        by: 'Teacher 1',
+        before: { marks: 45, isAbsent: false },
+        after: { marks: 50, isAbsent: false },
+        reason: null,
+      }),
+      expect.objectContaining({
+        kind: 'entered',
+        by: 'Teacher 1',
+        before: null,
+        after: { marks: 45, isAbsent: false },
+      }),
+    ]);
+    expect((await history(owner).expect(200)).body.history).toHaveLength(4);
+    await history(englishTeacher).expect(403);
+    // The first entries of a sheet are one audit record, not one per student.
+    expect(
+      await prisma.auditLog.count({
+        where: { entity: 'ExamPaper', action: 'marks.enter', after: { path: ['examId'], equals: examId } },
+      }),
+    ).toBe(3);
+  });
+
+  it('lets only whoever runs exams correct published marks, with a reason', async () => {
+    const correct = (
+      headers: Record<string, string>,
+      marks: number,
+      reason?: string,
+    ) =>
+      request(server)
+        .put(`/api/exams/${examId}/marks`)
+        .set(headers)
+        .send({
+          sectionId,
+          subjectId: maths,
+          entries: [{ studentId: students[1], marks }],
+          reason,
+        });
+    await correct(mathsTeacher, 49, 'Paper re-checked').expect(409);
+    await correct(owner, 49).expect(400);
+    const fixed = await correct(owner, 49, 'Paper re-checked').expect(200);
+    expect(fixed.body.changed).toBe(1);
+    // Saving the same value again changes and logs nothing.
+    expect(
+      (await correct(owner, 49, 'Paper re-checked').expect(200)).body.changed,
+    ).toBe(0);
+
+    // The published results follow: Bilal (49 + 92 = 141) now tops the class.
+    const results = await request(server)
+      .get(`/api/exams/${examId}/results?sectionId=${sectionId}`)
+      .set(owner)
+      .expect(200);
+    expect(
+      results.body.results.map(
+        (r: { name: string; position: number; obtained: number; teacherRemark: string | null }) => [
+          r.name,
+          r.position,
+          r.obtained,
+          r.teacherRemark,
+        ],
+      ),
+    ).toEqual([
+      ['Bilal', 1, 141, null],
+      ['Ayesha', 2, 140, 'Well done'],
+      ['Hamza', 3, 30, null],
+    ]);
+
+    const log = await prisma.auditLog.findMany({
+      where: {
+        entity: 'Mark',
+        action: 'marks.correct',
+        after: { path: ['examId'], equals: examId },
+      },
+    });
+    expect(log).toHaveLength(1);
+    expect(log[0]).toMatchObject({
+      before: { marks: 40, isAbsent: false },
+      after: expect.objectContaining({ marks: 49, studentId: students[1], reason: 'Paper re-checked' }),
+    });
+  });
 });

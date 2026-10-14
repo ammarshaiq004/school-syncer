@@ -53,6 +53,7 @@ import {
   useToast,
   type Column,
 } from "@/components/ui";
+import { ChangeHistory, type ChangeLine } from "@/components/change-history";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { day } from "@/lib/format";
@@ -165,6 +166,26 @@ interface Sheet {
   students: { id: string; name: string; admissionNo: string; rollNo: number | null; marks: number | null; isAbsent: boolean }[];
 }
 type Entry = { marks: string; isAbsent: boolean };
+interface MarkHistoryRow {
+  at: string;
+  by: string;
+  studentName: string;
+  kind: "entered" | "changed";
+  before: { marks: number | null; isAbsent: boolean } | null;
+  after: { marks: number | null; isAbsent: boolean };
+  reason: string | null;
+}
+const score = (m: { marks: number | null; isAbsent: boolean }) => (m.isAbsent ? "Absent" : String(m.marks ?? "blank"));
+const markLine = (r: MarkHistoryRow): ChangeLine => ({
+  at: r.at,
+  by: r.by,
+  studentName: r.studentName,
+  label: r.kind === "entered" ? "Entered" : r.reason ? "Corrected" : "Changed",
+  changed: r.kind === "changed",
+  from: r.before && score(r.before),
+  to: score(r.after),
+  reason: r.reason,
+});
 
 const sheetKey = (r: { sectionId: string; subjectId: string }) => `${r.sectionId}-${r.subjectId}`;
 
@@ -262,13 +283,13 @@ function MarksTab({ exam, canManage }: { exam: Exam; canManage: boolean }) {
         />
       </Section>
       <div ref={sheetRef} className="scroll-mt-20">
-        {open && <MarksSheet key={sheetKey(open)} examId={exam.id} row={open} onSaved={progress.reload} />}
+        {open && <MarksSheet key={sheetKey(open)} examId={exam.id} row={open} canManage={canManage} onSaved={progress.reload} />}
       </div>
     </div>
   );
 }
 
-function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow; onSaved: () => Promise<void> }) {
+function MarksSheet({ examId, row, canManage, onSaved }: { examId: string; row: ProgressRow; canManage: boolean; onSaved: () => Promise<void> }) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [error, setError] = useState("");
@@ -276,6 +297,7 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [reason, setReason] = useState("");
   const tableRef = useRef<HTMLTableElement>(null);
   const toast = useToast();
 
@@ -317,17 +339,23 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
     const limit = sheet?.paper.maxMarks ?? 0;
     const bad = filled.filter(([, e]) => !e.isAbsent && (Number(e.marks) < 0 || Number(e.marks) > limit));
     if (bad.length) return setError(`Marks must be between 0 and ${limit}. Fix ${bad.length} mark${bad.length === 1 ? "" : "s"} first.`);
+    if (sheet?.locked && reason.trim().length < 3) return setError("Give a reason for correcting published marks.");
     setSaving(true);
     try {
-      const res = await api<{ saved: number }>(`/exams/${examId}/marks`, {
+      const res = await api<{ saved: number; changed: number }>(`/exams/${examId}/marks`, {
         method: "PUT",
         body: {
           sectionId: row.sectionId,
           subjectId: row.subjectId,
           entries: filled.map(([studentId, e]) => ({ studentId, isAbsent: e.isAbsent, marks: e.isAbsent ? null : Number(e.marks) })),
+          ...(sheet?.locked ? { reason: reason.trim() } : {}),
         },
       });
-      toast.success("Marks saved", `Saved marks for ${res.saved} students.`);
+      toast.success(
+        sheet?.locked ? "Marks corrected" : "Marks saved",
+        sheet?.locked ? `Corrected ${res.changed} marks; the published results were updated.` : `Saved marks for ${res.saved} students.`,
+      );
+      if (sheet?.locked) setReason("");
       setError("");
       setDirty(false);
       await onSaved();
@@ -370,7 +398,9 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
 
   const max = sheet.paper.maxMarks;
   const pass = sheet.paper.passMarks;
-  const readOnly = sheet.locked || !sheet.canEnter;
+  // After publishing, whoever runs exams may still correct a mark, with a reason.
+  const correcting = sheet.locked && canManage && sheet.canEnter;
+  const readOnly = (sheet.locked && !correcting) || !sheet.canEnter;
   const entered = sheet.students
     .map((s) => entries[s.id])
     .filter((e): e is Entry => !!e && !e.isAbsent && e.marks !== "" && !Number.isNaN(Number(e.marks)))
@@ -417,14 +447,34 @@ function MarksSheet({ examId, row, onSaved }: { examId: string; row: ProgressRow
           {dirty && <Badge tone="warning">Unsaved changes</Badge>}
           {sheet.locked && <Badge tone="neutral" icon={<Lock />}>Locked</Badge>}
           {!sheet.locked && !sheet.canEnter && <Badge tone="neutral" icon={<Lock />}>Read-only</Badge>}
+          <ChangeHistory<MarkHistoryRow>
+            title="Marks history"
+            description={`${sheet.section.name}, ${sheet.paper.subject}: who entered or changed each mark, and when.`}
+            path={`/exams/${examId}/marks/history?sectionId=${row.sectionId}&subjectId=${row.subjectId}`}
+            toLine={markLine}
+          />
           {saveButton}
         </div>
       </div>
 
       <div className="flex flex-col gap-4 p-5">
-        {sheet.locked && (
+        {sheet.locked && !correcting && (
           <Alert tone="warning" title="Marks are locked">
-            Results are published, so marks are locked. An administrator can unpublish to correct them.
+            Results are published, so marks are locked. Whoever runs exams can correct a mark, with a reason.
+          </Alert>
+        )}
+
+        {correcting && (
+          <Alert tone="warning" title="Correcting published marks">
+            Results are published. A correction updates this section&apos;s results and positions straight away and is kept in the marks history with your reason.
+            <TextField
+              label="Reason for the correction"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              maxLength={300}
+              placeholder="e.g. Paper re-checked, total added wrongly"
+              wrapperClassName="mt-3 max-w-md"
+            />
           </Alert>
         )}
 

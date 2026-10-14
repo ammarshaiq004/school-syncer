@@ -11,6 +11,7 @@ import { AttendanceStatus, LeaveStatus, LeaveType, PayrollStatus, Prisma, StaffS
 import { z } from 'zod';
 import { assertSchoolWide, campusScopeFor, FEE_ROLES, hasAnyRole, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
+import { retryOnConflict } from '../common/serializable.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { dayStart } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -85,6 +86,7 @@ export class PayrollController {
     @Body(new ZodValidationPipe(runSchema)) body: z.infer<typeof runSchema>,
   ) {
     assertSchoolWide(user, WHOLE_SCHOOL, FEE_ROLES);
+    // A quick answer before the work; checked again under the lock below.
     const existing = await this.prisma.payrollRun.findUnique({
       where: { schoolId_period: { schoolId: user.schoolId, period: body.period } },
     });
@@ -141,15 +143,33 @@ export class PayrollController {
       return { userId: p.userId, ...slip, lines: slip.lines as unknown as Prisma.InputJsonValue };
     });
 
-    const run = await this.prisma.$transaction(async (tx) => {
-      const r =
-        existing ??
-        (await tx.payrollRun.create({ data: { schoolId: user.schoolId, period: body.period } }));
-      await tx.payslip.deleteMany({ where: { runId: r.id } });
-      await tx.payslip.createMany({ data: slips.map((s) => ({ ...s, runId: r.id })) });
-      return r;
-    });
-    await this.audit.record(user, existing ? 'recalculate' : 'create', 'PayrollRun', run.id, {
+    // Two clicks (or two people) generating the same month at once must end
+    // with one run. The month's row is locked while its payslips are replaced,
+    // so finalising waits for the recalculation instead of racing it; a racing
+    // first insert loses on the unique (school, month) key and is retried
+    // against the row the winner made.
+    const { run, created } = await retryOnConflict(
+      () =>
+        this.prisma.$transaction(async (tx) => {
+          const [locked] = await tx.$queryRaw<{ id: string; status: PayrollStatus }[]>`
+            SELECT id, status FROM "PayrollRun"
+            WHERE "schoolId" = ${user.schoolId} AND period = ${body.period}
+            FOR UPDATE`;
+          if (locked?.status === PayrollStatus.FINALIZED) {
+            throw new ConflictException('This month is finalised');
+          }
+          const r =
+            locked ??
+            (await tx.payrollRun.create({
+              data: { schoolId: user.schoolId, period: body.period, createdById: user.sub },
+            }));
+          await tx.payslip.deleteMany({ where: { runId: r.id } });
+          await tx.payslip.createMany({ data: slips.map((s) => ({ ...s, runId: r.id })) });
+          return { run: r, created: !locked };
+        }),
+      { codes: ['P2002', 'P2034'] },
+    );
+    await this.audit.record(user, created ? 'create' : 'recalculate', 'PayrollRun', run.id, {
       after: { period: body.period, staff: slips.length },
     });
     return this.run(user, run.id);
@@ -174,13 +194,17 @@ export class PayrollController {
   @Roles(...FEE_ROLES)
   async finalize(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     assertSchoolWide(user, WHOLE_SCHOOL, FEE_ROLES);
-    const run = await this.prisma.payrollRun.findFirst({ where: { id, schoolId: user.schoolId } });
-    if (!run) throw new NotFoundException('Payroll not found');
-    if (run.status === PayrollStatus.FINALIZED) throw new ConflictException('Already finalised');
-    await this.prisma.payrollRun.update({
-      where: { id },
-      data: { status: PayrollStatus.FINALIZED, finalizedAt: new Date() },
+    // Conditional on still being a draft, so two finalises cannot both win;
+    // it also waits for a recalculation holding the month's row lock.
+    const { count } = await this.prisma.payrollRun.updateMany({
+      where: { id, schoolId: user.schoolId, status: PayrollStatus.DRAFT },
+      data: { status: PayrollStatus.FINALIZED, finalizedAt: new Date(), finalizedById: user.sub },
     });
+    if (!count) {
+      const run = await this.prisma.payrollRun.findFirst({ where: { id, schoolId: user.schoolId } });
+      if (!run) throw new NotFoundException('Payroll not found');
+      throw new ConflictException('Already finalised');
+    }
     await this.audit.record(user, 'finalize', 'PayrollRun', id);
     return this.run(user, id);
   }
@@ -202,12 +226,17 @@ export class PayrollController {
       throw new ConflictException('Finalise the month before paying salaries');
     }
     if (slip.paidAt) throw new ConflictException('Already paid');
-    const paid = await this.prisma.payslip.update({
-      where: { id: slip.id },
-      data: { paidAt: new Date(), paymentMethod: body.method },
+    // Only an unpaid slip is marked paid, so a double click or two people
+    // paying at once record one payment; the other is told it is already paid.
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.payslip.updateMany({
+        where: { id: slip.id, paidAt: null },
+        data: { paidAt: new Date(), paidById: user.sub, paymentMethod: body.method },
+      });
+      if (!count) throw new ConflictException('Already paid');
+      await this.audit.record(user, 'pay', 'Payslip', slip.id, { after: { net: slip.net, method: body.method } }, tx);
+      return tx.payslip.findUniqueOrThrow({ where: { id: slip.id } });
     });
-    await this.audit.record(user, 'pay', 'Payslip', slip.id, { after: { net: slip.net, method: body.method } });
-    return paid;
   }
 
   /** A staff member's own payslips, once the month is finalised. */

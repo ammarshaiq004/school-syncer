@@ -20,3 +20,24 @@ export async function serializable<T>(
     throw e;
   }
 }
+
+/**
+ * Runs `fn` again when Postgres gave up on it because of a concurrent write:
+ * a serialization failure or deadlock (P2034), or, when listed in `codes`, a
+ * racing insert that hit a unique key (P2002). The aborted attempt saved
+ * nothing. The last failure is rethrown as it came; the exception filter
+ * answers both codes with 409.
+ */
+export async function retryOnConflict<T>(
+  fn: () => Promise<T>,
+  { attempts = 4, codes = ['P2034'] }: { attempts?: number; codes?: string[] } = {},
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const retry = e instanceof Prisma.PrismaClientKnownRequestError && codes.includes(e.code);
+      if (!retry || attempt >= attempts) throw e;
+    }
+  }
+}

@@ -17,7 +17,9 @@ import {
   STAFF_ROLES,
   workingSections,
 } from '../common/admin-roles.js';
+import { AuditService, type AuditEntry } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
+import { withNames } from '../common/change-history.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { guardianPhones } from '../notifications/guardian-contacts.js';
@@ -43,6 +45,12 @@ const sheetSchema = z.object({
 });
 type SheetInput = z.infer<typeof sheetSchema>;
 
+const historySchema = z.object({
+  sectionId: z.string().min(1),
+  date: isoDate.optional(),
+  studentId: z.string().min(1).optional(),
+});
+
 const asDate = dayStart;
 
 const monthParam = z
@@ -55,6 +63,7 @@ export class AttendanceController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    private readonly audit: AuditService,
   ) {}
 
   /** Sections this user can take attendance for this year: all of them for admins, otherwise the ones they teach. */
@@ -207,13 +216,45 @@ export class AttendanceController {
         update: { takenById: user.sub, takenAt: new Date() },
         create: { schoolId: user.schoolId, sectionId: body.sectionId, date, takenById: user.sub },
       });
+      // Read under the session row's lock (taken by the upsert above), so two
+      // people saving the same register cannot both log the same old value.
+      const existing = new Map(
+        (await tx.attendanceRecord.findMany({ where: { sessionId: session.id } })).map((r) => [r.studentId, r]),
+      );
+      const taken: { studentId: string; status: AttendanceStatus }[] = [];
+      const changes: AuditEntry[] = [];
       for (const r of body.records) {
-        await tx.attendanceRecord.upsert({
-          where: { sessionId_studentId: { sessionId: session.id, studentId: r.studentId } },
-          update: { status: r.status, note: r.note },
-          create: { sessionId: session.id, studentId: r.studentId, status: r.status, note: r.note },
+        const before = existing.get(r.studentId);
+        // Leaving the note out keeps the one already there.
+        const note = r.note === undefined ? (before?.note ?? null) : r.note;
+        if (!before) {
+          await tx.attendanceRecord.create({
+            data: { sessionId: session.id, studentId: r.studentId, status: r.status, note },
+          });
+          taken.push({ studentId: r.studentId, status: r.status });
+          continue;
+        }
+        // Re-saving the register leaves unchanged students alone and unlogged.
+        if (before.status === r.status && before.note === note) continue;
+        await tx.attendanceRecord.update({ where: { id: before.id }, data: { status: r.status, note } });
+        changes.push({
+          action: 'attendance.change',
+          entity: 'AttendanceRecord',
+          entityId: before.id,
+          before: { status: before.status, note: before.note },
+          after: { status: r.status, note, studentId: r.studentId, sectionId: body.sectionId, date: body.date },
         });
       }
+      // Taking the register is the normal case: one compact record per save.
+      if (taken.length) {
+        changes.push({
+          action: 'attendance.take',
+          entity: 'AttendanceSession',
+          entityId: session.id,
+          after: { sectionId: body.sectionId, date: body.date, records: taken },
+        });
+      }
+      await this.audit.recordMany(user, changes, tx);
     });
 
     const newlyAbsent = body.records
@@ -289,6 +330,72 @@ export class AttendanceController {
           leave: count('LEAVE'),
         };
       });
+  }
+
+  /**
+   * Change history of a section's register, for one day and/or one student:
+   * when the register was taken, and every later change to a student's mark
+   * with the old and new value and who made it. Newest first.
+   */
+  @Get('history')
+  @Roles(...ATTENDANCE_ROLES)
+  async history(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(historySchema)) query: z.infer<typeof historySchema>,
+  ) {
+    const section = await this.assertCanMark(user, query.sectionId);
+    const on = (field: string, value: string | undefined) =>
+      value ? [{ after: { path: [field], equals: value } }] : [];
+    const logs = await this.prisma.auditLog.findMany({
+      where: {
+        schoolId: user.schoolId,
+        OR: [
+          {
+            entity: 'AttendanceRecord',
+            AND: [...on('sectionId', section.id), ...on('date', query.date), ...on('studentId', query.studentId)],
+          },
+          {
+            entity: 'AttendanceSession',
+            action: 'attendance.take',
+            AND: [...on('sectionId', section.id), ...on('date', query.date)],
+          },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    type Mark = { status: AttendanceStatus; note?: string | null };
+    const rows = logs.flatMap((log) => {
+      const after = log.after as unknown as { date: string; studentId?: string; records?: { studentId: string; status: AttendanceStatus }[] } & Mark;
+      if (log.entity === 'AttendanceSession') {
+        return (after.records ?? [])
+          .filter((r) => !query.studentId || r.studentId === query.studentId)
+          .map((r) => ({
+            at: log.createdAt,
+            userId: log.userId,
+            date: after.date,
+            studentId: r.studentId,
+            kind: 'taken' as 'taken' | 'changed',
+            before: null as Mark | null,
+            after: { status: r.status } as Mark,
+          }));
+      }
+      return [
+        {
+          at: log.createdAt,
+          userId: log.userId,
+          date: after.date,
+          studentId: after.studentId!,
+          kind: 'changed' as const,
+          before: log.before as unknown as Mark,
+          after: { status: after.status, note: after.note },
+        },
+      ];
+    });
+    return {
+      section: { id: section.id, name: `${section.class.name} ${section.name}` },
+      history: await withNames(this.prisma, user.schoolId, rows),
+    };
   }
 
   /** One student's attendance for a month (YYYY-MM). */

@@ -37,3 +37,26 @@ export const changePasswordSchema = z.object({
   newPassword: newPasswordSchema,
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+const resetPhone = z
+  .string()
+  .trim()
+  .min(1, 'Enter your mobile number')
+  .max(20)
+  .refine((v) => v.replace(/\D/g, '').length >= 10, 'Enter the mobile number on your account, e.g. 03001234567');
+
+/** Step 1 of "forgot password": where to send the code. */
+export const forgotPasswordSchema = z.object({
+  schoolSlug: z.string().trim().min(1).max(80),
+  phone: resetPhone,
+});
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+/** Step 2: the code from the message and the new password. */
+export const resetPasswordSchema = z.object({
+  schoolSlug: z.string().trim().min(1).max(80),
+  phone: resetPhone,
+  code: z.string().trim().regex(/^\d{6}$/, 'The code is 6 digits'),
+  newPassword: newPasswordSchema,
+});
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
