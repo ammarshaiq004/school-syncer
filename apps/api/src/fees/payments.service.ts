@@ -3,7 +3,9 @@ import { InvoiceStatus, PaymentMethod, Prisma, type Payment } from '@prisma/clie
 import { guardianPhones } from '../notifications/guardian-contacts.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { invoiceStatus, lateFine, paymentRejection } from './fee-calculator.js';
+import { dayStart, localToday } from '../common/dates.js';
+import { fineRule, invoiceStatus, paymentRejection } from './fee-calculator.js';
+import { bookLateFine } from './fine-booking.js';
 import { receiptNo } from './invoice-codes.js';
 
 export interface PaymentInput {
@@ -43,21 +45,28 @@ export class PaymentsService {
     try {
       payment = await this.retrying(() => this.prisma.$transaction(
       async (tx) => {
-        const invoice = await tx.invoice.findFirst({ where: { id: input.invoiceId, schoolId } });
-        if (!invoice) throw new BadRequestException('Invoice not found');
-        if (invoice.status === InvoiceStatus.CANCELLED) {
+        const found = await tx.invoice.findFirst({
+          where: { id: input.invoiceId, schoolId },
+          include: { carriedTo: { select: { voucherNo: true } } },
+        });
+        if (!found) throw new BadRequestException('Invoice not found');
+        if (found.status === InvoiceStatus.CANCELLED) {
           throw new BadRequestException('This invoice was cancelled');
         }
-        // A voucher never takes more than it owes (the late fine may be collected with it).
+        if (found.status === InvoiceStatus.CARRIED_FORWARD) {
+          throw new BadRequestException(
+            `This voucher's balance was carried forward to voucher ${found.carriedTo?.voucherNo ?? 'a later voucher'}. Take the payment there.`,
+          );
+        }
+        // The late fine built up so far goes onto the voucher before the money
+        // is applied, so paying only the balance leaves the fine owing.
         const school = await tx.school.findUniqueOrThrow({
           where: { id: schoolId },
-          select: { lateFeePerDay: true },
+          select: { lateFeePerDay: true, lateFeeMaxDays: true, lateFeeCap: true },
         });
-        const rejection = paymentRejection(
-          input.amount,
-          invoice,
-          lateFine(invoice.dueDate, new Date(), school.lateFeePerDay),
-        );
+        const { invoice } = await bookLateFine(tx, found, dayStart(localToday()), fineRule(school));
+        // A voucher never takes more than it owes.
+        const rejection = paymentRejection(input.amount, invoice);
         if (rejection) throw new BadRequestException(rejection);
         const paid = invoice.paid + input.amount;
         await tx.invoice.update({

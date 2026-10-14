@@ -53,6 +53,13 @@ export class FeeCorrectionsController {
     });
   }
 
+  /** A printable receipt for one payment, reversed ones marked. */
+  @Get('payments/:id/receipt')
+  @Roles(...FEE_ROLES)
+  receipt(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.corrections.receipt(user, id);
+  }
+
   /** Reverses a counter or online payment; the receipt stays on record. */
   @Post('payments/:id/reverse')
   @HttpCode(200)
@@ -75,6 +82,18 @@ export class FeeCorrectionsController {
     @Body(new ZodValidationPipe(reasonSchema)) body: z.infer<typeof reasonSchema>,
   ) {
     return this.corrections.cancelInvoice(user, id, body.reason);
+  }
+
+  /** Waives a voucher's late fine, with the reason; written to the audit log. */
+  @Post('invoices/:id/waive-fine')
+  @HttpCode(200)
+  @Roles(...FEE_ROLES)
+  waiveFine(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(reasonSchema)) body: z.infer<typeof reasonSchema>,
+  ) {
+    return this.corrections.waiveFine(user, id, body.reason);
   }
 
   /** Adds a discount (negative) or extra charge (positive) line to a voucher. */

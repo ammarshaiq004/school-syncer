@@ -5,6 +5,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { dayStart, daysBefore, localToday, startOfLocalDay } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { billedOf, feeOutstanding } from '../fees/outstanding.js';
 
 const TEACHING_ROLES: Role[] = [Role.TEACHER, Role.CLASS_TEACHER];
 
@@ -52,7 +53,7 @@ export class DashboardController {
       invoices,
       collectedToday,
       applications,
-      overdue,
+      owed,
       trend,
       weekRecords,
       payments,
@@ -74,7 +75,7 @@ export class DashboardController {
       }),
       this.prisma.invoice.aggregate({
         where: { schoolId, period, status: { not: InvoiceStatus.CANCELLED }, student: campusFilter },
-        _sum: { total: true, paid: true },
+        _sum: { total: true, paid: true, arrears: true },
         _count: true,
       }),
       this.prisma.payment.aggregate({
@@ -86,20 +87,12 @@ export class DashboardController {
         where: { schoolId, ...campusFilter },
         _count: true,
       }),
-      this.prisma.invoice.aggregate({
-        where: {
-          schoolId,
-          status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] },
-          dueDate: { lt: today },
-          student: campusFilter,
-        },
-        _sum: { total: true, paid: true },
-        _count: true,
-      }),
+      // The shared outstanding calculation, as /fees/outstanding and the defaulters list use.
+      feeOutstanding(this.prisma, { schoolId, student: campusFilter }, todayIso),
       this.prisma.invoice.groupBy({
         by: ['period'],
         where: { schoolId, period: { in: periods }, status: { not: InvoiceStatus.CANCELLED }, student: campusFilter },
-        _sum: { total: true, paid: true },
+        _sum: { total: true, paid: true, arrears: true },
       }),
       this.prisma.attendanceRecord.findMany({
         where: { session: { schoolId, date: { gte: weekFrom, lte: today } }, student: campusFilter },
@@ -203,8 +196,12 @@ export class DashboardController {
       }));
 
     const multiCampus = new Set(classes.map((c) => c.campusId)).size > 1;
-    const billed = invoices._sum.total ?? 0;
+    // Balances carried onto this month's vouchers were billed in their own month.
+    const billed = billedOf(invoices._sum);
     const collected = invoices._sum.paid ?? 0;
+    const monthOwed = canFees
+      ? await feeOutstanding(this.prisma, { schoolId, period, student: campusFilter }, todayIso)
+      : null;
 
     return {
       students,
@@ -226,19 +223,16 @@ export class DashboardController {
         invoices: invoices._count,
         billed,
         collected,
-        outstanding: Math.max(0, billed - collected),
+        // This month's vouchers still owing (all open vouchers are in `outstanding` below).
+        outstanding: monthOwed ? monthOwed.outstanding.amount : Math.max(0, billed - collected),
         collectedToday: collectedToday._sum.amount ?? 0,
       },
-      overdue: canFees
-        ? {
-            invoices: overdue._count,
-            amount: Math.max(0, (overdue._sum.total ?? 0) - (overdue._sum.paid ?? 0)),
-          }
-        : { invoices: 0, amount: 0 },
+      overdue: canFees ? owed.overdue : { invoices: 0, amount: 0 },
+      outstanding: canFees ? owed.outstanding : { invoices: 0, amount: 0 },
       collectionTrend: canFees
         ? periods.map((p) => {
             const row = trend.find((t) => t.period === p);
-            return { period: p, billed: row?._sum.total ?? 0, collected: row?._sum.paid ?? 0 };
+            return { period: p, billed: row ? billedOf(row._sum) : 0, collected: row?._sum.paid ?? 0 };
           })
         : [],
       recentPayments: payments.map((p) => ({

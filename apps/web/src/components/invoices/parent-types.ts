@@ -1,6 +1,7 @@
 /** Shapes of GET /parent/invoices and GET /parent/invoices/:id. */
 
-export type ParentInvoiceDisplay = "PAID" | "PENDING" | "OVERDUE";
+/** CARRIED_FORWARD: the balance moved onto a later voucher and is paid there. */
+export type ParentInvoiceDisplay = "PAID" | "PENDING" | "OVERDUE" | "CARRIED_FORWARD";
 
 export interface ParentInvoiceRow {
   id: string;
@@ -50,5 +51,10 @@ export interface ParentInvoiceDetail {
   }[];
 }
 
-export const PARENT_INVOICE_LABEL: Record<ParentInvoiceDisplay, string> = { PAID: "Paid", PENDING: "Pending", OVERDUE: "Overdue" };
-export const PARENT_INVOICE_TONE = { PAID: "success", PENDING: "warning", OVERDUE: "danger" } as const;
+export const PARENT_INVOICE_LABEL: Record<ParentInvoiceDisplay, string> = {
+  PAID: "Paid",
+  PENDING: "Pending",
+  OVERDUE: "Overdue",
+  CARRIED_FORWARD: "Carried forward",
+};
+export const PARENT_INVOICE_TONE = { PAID: "success", PENDING: "warning", OVERDUE: "danger", CARRIED_FORWARD: "neutral" } as const;

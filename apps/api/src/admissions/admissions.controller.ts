@@ -21,6 +21,7 @@ import { RateLimit } from '../common/rate-limit.guard.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { billAdmissionFee } from '../fees/adhoc-vouchers.js';
 import { createStudentRecord } from '../students/student-records.js';
 
 const enquirySchema = z.object({
@@ -213,6 +214,8 @@ export class AdmissionsController {
         where: { id },
         data: { stage: ApplicationStage.ADMITTED, studentId: created.id },
       });
+      // The school's admission fee, if it bills one, on its own voucher.
+      await billAdmissionFee(tx, user.schoolId, created.id);
       return created;
     });
     await this.audit.record(user, 'application.admit', 'Application', id, {

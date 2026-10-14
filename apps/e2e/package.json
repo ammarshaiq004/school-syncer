@@ -1,0 +1,18 @@
+{
+  "name": "e2e",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Browser end-to-end tests for the web portal against a real API",
+  "type": "module",
+  "scripts": {
+    "e2e:build": "pnpm --filter api build && NEXT_PUBLIC_API_URL=http://localhost:4100/api pnpm --filter web build",
+    "e2e": "playwright test",
+    "e2e:report": "playwright show-report",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}

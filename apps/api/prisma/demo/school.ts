@@ -815,6 +815,7 @@ export async function seedSchool(
         studentId: k.id,
         voucherNo: `${period.replace('-', '')}-${code(6)}`,
         period,
+        monthlyPeriod: period,
         issueDate: day(`${period}-01`),
         dueDate: day(dueDate),
         total,

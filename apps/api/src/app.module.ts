@@ -24,6 +24,7 @@ import { FeeCorrectionsController } from './fees/fee-corrections.controller.js';
 import { FeeCorrectionsService } from './fees/fee-corrections.service.js';
 import { FeeHeadsController } from './fees/fee-heads.controller.js';
 import { FeesController } from './fees/fees.controller.js';
+import { VoucherRunsService } from './fees/voucher-runs.service.js';
 import { PaymentAccountsController } from './fees/payment-accounts.controller.js';
 import { PaymentWebhookController } from './fees/payment-webhook.controller.js';
 import { PaymentsService } from './fees/payments.service.js';
@@ -151,6 +152,7 @@ import { UsersController } from './users/users.controller.js';
     StudentPhotoLinks,
     PaymentsService,
     FeeCorrectionsService,
+    VoucherRunsService,
     OnlinePaymentsService,
     ReconciliationService,
     ReconciliationScheduler,

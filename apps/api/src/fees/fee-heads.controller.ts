@@ -48,18 +48,29 @@ export class FeeHeadsController {
     return after;
   }
 
-  /** Deletes a head no class amount, concession or voucher uses. */
+  /** Deletes a head no class amount, concession, voucher or fee rule uses. */
   @Delete(':id')
   async remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     assertSchoolWide(user, SCHOOL_WIDE, FEE_ROLES);
     const before = await this.find(user, id);
     const where = { feeHeadId: id };
-    const [structures, concessions, lines] = await Promise.all([
+    const [structures, concessions, lines, school] = await Promise.all([
       this.prisma.feeStructure.count({ where }),
       this.prisma.concession.count({ where }),
       this.prisma.invoiceLine.count({ where }),
+      this.prisma.school.findUniqueOrThrow({
+        where: { id: user.schoolId },
+        select: { admissionFeeHeadId: true, siblingFeeHeadIds: true },
+      }),
     ]);
-    assertUnused(before.name, { 'class amount': structures, concession: concessions, 'voucher line': lines });
+    // The admission fee and sibling discount (Fee rules) name heads by id.
+    const rules = Number(school.admissionFeeHeadId === id) + Number(school.siblingFeeHeadIds.includes(id));
+    assertUnused(before.name, {
+      'class amount': structures,
+      concession: concessions,
+      'voucher line': lines,
+      'fee rule': rules,
+    });
     await this.prisma.feeHead.delete({ where: { id } });
     await this.audit.record(user, 'fee_head.delete', 'FeeHead', id, { before });
     return { deleted: true };

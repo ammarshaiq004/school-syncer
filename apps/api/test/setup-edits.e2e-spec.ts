@@ -242,6 +242,11 @@ describe('Setup edits and admissions data (e2e)', () => {
       const refused = await request(server).delete(`/api/fees/heads/${tuition}`).set(owner).expect(409);
       expect(refused.body.message).toMatch(/1 class amount/);
       await request(server).delete(`/api/fees/heads/${lab}`).set(campusAccountant).expect(403);
+      // A head the sibling discount uses stays until the fee rule drops it.
+      await request(server).put('/api/fees/policy').set(owner).send({ siblingFeeHeadIds: [lab] }).expect(200);
+      const inRule = await request(server).delete(`/api/fees/heads/${lab}`).set(owner).expect(409);
+      expect(inRule.body.message).toMatch(/1 fee rule/);
+      await request(server).put('/api/fees/policy').set(owner).send({ siblingFeeHeadIds: [] }).expect(200);
       await request(server).delete(`/api/fees/heads/${lab}`).set(owner).expect(200);
       await request(server).delete(`/api/fees/heads/${lab}`).set(owner).expect(404);
     });

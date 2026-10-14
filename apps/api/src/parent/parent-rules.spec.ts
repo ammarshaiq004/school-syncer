@@ -36,6 +36,12 @@ describe('invoiceDisplayStatus', () => {
       invoiceDisplayStatus({ ...inv, status: 'CANCELLED' }, '2026-12-01'),
     ).toBe('CANCELLED');
   });
+
+  it('says carried forward once the balance moved to a later voucher', () => {
+    expect(
+      invoiceDisplayStatus({ ...inv, status: 'CARRIED_FORWARD', paid: 1000 }, '2026-12-01'),
+    ).toBe('CARRIED_FORWARD');
+  });
 });
 
 describe('invoiceBreakdown', () => {
@@ -51,6 +57,12 @@ describe('invoiceBreakdown', () => {
       balance: 6700,
       totalDue: 7000,
     });
+  });
+
+  it('owes nothing on a voucher whose balance is owed elsewhere', () => {
+    expect(
+      invoiceBreakdown(lines, { total: 8700, paid: 2000 }, 0, false),
+    ).toMatchObject({ balance: 0, totalDue: 0, paid: 2000 });
   });
 
   it('owes nothing once paid', () => {

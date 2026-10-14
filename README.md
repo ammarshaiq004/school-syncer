@@ -35,7 +35,7 @@ Phase 1, core operations:
 - Admissions pipeline (enquiry, test, interview, offer, admit) with a public enquiry page at `/apply/<school-code>`.
 - Student records with guardians (siblings share a guardian), class enrollments and roll numbers.
 - Daily attendance from a phone: one tap per absent child, and a WhatsApp alert to the parent the first time a child is marked absent that day. Teachers can only mark their own sections.
-- Fees: fee heads, class fee structures, concessions, monthly voucher runs, printable three-copy vouchers, counter payments, defaulters with late fines, and WhatsApp reminders. Mistakes are corrected, never deleted: a voucher with no payments can be voided, a payment reversed (its receipt stays on record) and a discount or charge added to a voucher, each with a reason in the audit log; voided vouchers and reversed payments drop out of balances, reports and the cash book.
+- Fees: fee heads, class fee structures, concessions, monthly voucher runs, printable three-copy vouchers, counter payments, defaulters with late fines, and WhatsApp reminders. Mistakes are corrected, never deleted: a voucher with no payments can be voided, a payment reversed (its receipt stays on record) and a discount or charge added to a voucher, each with a reason in the audit log; voided vouchers and reversed payments drop out of balances, reports and the cash book. Concessions per fee head (percent or fixed, for a span of months) are kept on the student's profile, and a school-wide sibling discount (second child, third and later, on chosen heads) is applied by the voucher run on its own line, siblings being found through a shared guardian. The late fine can be capped by days and per voucher, is booked onto the voucher when a payment is taken (so paying only the balance leaves it owing) and can be waived with a reason. One-off vouchers bill admission, registration and other one-time charges, and an admission fee can be billed automatically on admission. Voucher runs commit in batches, never bill a student twice for a month (a second run at the same time is refused), can be re-run to fill gaps, keep a run history, and can carry overdue balances onto the new voucher. Payments print as A5 or A4 receipts with the amount in words. The fees page pages through every voucher on the server, and the defaulters list, dashboard, reports and fees page share one outstanding figure.
 - Online payments: signed webhook endpoint for JazzCash, Easypaisa and 1Bill confirmations, with replay protection.
 - Announcements to the whole school, a campus, a class or a section, with optional WhatsApp delivery.
 - Parent portal: attendance and unpaid fees for each child, with logins sent to parents on WhatsApp.
@@ -229,10 +229,11 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, POST, PATCH | `/applications`, POST `/applications/:id/admit`, GET `/applications/funnel` | owner, principal or admin |
 | POST | `/public/:school/enquiries`, GET `/public/:school/admission-options` | anyone |
 | GET, PUT | `/attendance/sheet`, GET `/attendance/summary`, GET `/attendance/students/:id` | admins, and teachers for their own sections |
-| GET, POST, PUT | `/fees/heads`, `/fees/structures`, `/fees/students/:id/concessions` | owner, principal, admin or accountant |
-| POST, GET | `/fees/invoices/generate`, `/fees/invoices`, `/fees/invoices/:id`, `/fees/invoices/:id/payments` | same |
-| GET, POST | `/fees/defaulters`, `/fees/reminders` | same |
-| GET, POST | `/fees/payments`, `/fees/payments/:id/reverse`, `/fees/invoices/:id/cancel`, `/fees/invoices/:id/adjustments` | same; corrections need fees "manage" and a reason |
+| GET, POST, PUT | `/fees/heads`, `/fees/structures`, `/fees/students/:id/concessions`, `/fees/students/:id/fee-profile`, `/fees/students/:id/vouchers` | owner, principal, admin or accountant |
+| GET, PUT | `/fees/policy` (late fine caps, sibling discount, admission fee, carry forward) | same; changing it needs a school-wide fee role |
+| POST, GET | `/fees/invoices/generate`, `/fees/voucher-runs`, `/fees/invoices`, `/fees/invoices/paged`, `/fees/invoices/:id`, `/fees/invoices/:id/payments` | same |
+| GET, POST | `/fees/defaulters`, `/fees/outstanding`, `/fees/reminders` | same |
+| GET, POST | `/fees/payments`, `/fees/payments/:id/receipt`, `/fees/payments/:id/reverse`, `/fees/invoices/:id/cancel`, `/fees/invoices/:id/adjustments`, `/fees/invoices/:id/waive-fine` | same; corrections need fees "manage" and a reason |
 | POST | `/payments/webhook/:provider` | payment gateways (signed) |
 | GET, POST | `/announcements` | staff; posting needs owner, principal or admin |
 | GET | `/dashboard/summary` | staff |

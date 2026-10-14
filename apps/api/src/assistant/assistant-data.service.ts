@@ -6,6 +6,7 @@ import { dayStart, daysBefore, localToday } from '../common/dates.js';
 import { PermissionService } from '../common/permission.service.js';
 import { moduleLabel, satisfies, type PermissionMatrix, type PermissionModule } from '../common/permissions.js';
 import { studentSearchWhere } from '../common/student-search.js';
+import { billedOf, feeOutstanding } from '../fees/outstanding.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { DraftFacts } from './draft-rules.js';
 import { attendancePercent, riskFlags, riskLevel, riskScore, type RiskFlag, type RiskInput } from './risk-rules.js';
@@ -388,11 +389,13 @@ export class AssistantData {
       student: this.studentWhere(reach),
     };
     const [month, overdue] = await Promise.all([
-      this.prisma.invoice.aggregate({ where: { ...where, period }, _sum: { total: true, paid: true }, _count: true }),
+      this.prisma.invoice.aggregate({ where: { ...where, period }, _sum: { total: true, paid: true, arrears: true }, _count: true }),
       this.overdueFees(null, where),
     ]);
+    const owed = await feeOutstanding(this.prisma, { ...where, period });
     const names = await this.names([...overdue.keys()]);
-    const billed = month._sum.total ?? 0;
+    // Balances carried onto this month's vouchers were billed in their own month.
+    const billed = billedOf(month._sum);
     const collected = month._sum.paid ?? 0;
     const defaulters = [...overdue.entries()]
       .map(([id, f]) => ({ studentId: id, name: names.get(id) ?? 'Unknown', ...f }))
@@ -402,7 +405,7 @@ export class AssistantData {
       vouchers: month._count,
       billed,
       collected,
-      outstanding: billed - collected,
+      outstanding: owed.outstanding.amount,
       collectionRate: billed ? Math.round((collected / billed) * 1000) / 10 : null,
       overdueAllPeriods: {
         students: defaulters.length,
