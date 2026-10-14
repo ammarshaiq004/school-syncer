@@ -47,6 +47,15 @@ export const TEMPLATES = {
     text: (p: Record<string, string>) =>
       `New ${p.subject} homework for ${p.className}: ${p.title}. Due ${p.dueDate}. - ${p.schoolName}`,
   },
+  'password.reset': {
+    // An Authentication-category template with a copy-code button.
+    whatsapp: 'password_reset',
+    params: ['code'],
+    secret: ['code'],
+    button: 'code',
+    text: (p: Record<string, string>) =>
+      `${p.code} is your ${p.schoolName ?? 'SchoolSyncer'} password reset code. It expires in 10 minutes. Do not share it.`,
+  },
   announcement: {
     whatsapp: 'school_announcement',
     params: ['schoolName', 'title', 'body'],
@@ -56,10 +65,16 @@ export const TEMPLATES = {
 
 export type TemplateKey = keyof typeof TEMPLATES;
 
+/** Parameters never stored in plain text or shown in the log (passwords, reset codes). */
+export function secretParams(key: TemplateKey): readonly string[] {
+  const template = TEMPLATES[key];
+  return 'secret' in template ? template.secret : [];
+}
+
 /** The message text with secret parameters (passwords) masked, for the delivery log. */
 export function loggableText(key: TemplateKey, params: Record<string, string>): string {
   const template = TEMPLATES[key];
-  const secret: readonly string[] = 'secret' in template ? template.secret : [];
+  const secret = secretParams(key);
   const masked = Object.fromEntries(
     Object.entries(params).map(([k, v]) => [k, secret.includes(k) ? '********' : v]),
   );

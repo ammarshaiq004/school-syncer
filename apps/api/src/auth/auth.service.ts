@@ -44,7 +44,7 @@ export class AuthService {
       `${input.schoolSlug}/${input.login}`,
       ip,
     );
-    this.limiter.assertAllowed(limitKey);
+    await this.limiter.assertAllowed(limitKey);
     const school = await this.prisma.school.findUnique({
       where: { slug: input.schoolSlug },
     });
@@ -78,10 +78,10 @@ export class AuthService {
     }
     if (!checked) await checkNoPassword(input.password);
     if (!user) {
-      this.limiter.recordFailure(limitKey);
+      await this.limiter.recordFailure(limitKey);
       throw new UnauthorizedException('Wrong school, login or password');
     }
-    this.limiter.recordSuccess(limitKey);
+    await this.limiter.recordSuccess(limitKey);
     const plan = await this.subscriptions.forSchool(user.schoolId);
     if (plan.access === 'blocked') throw new ForbiddenException(plan.reason);
 

@@ -66,4 +66,12 @@ describe('validateEnv', () => {
   it('rejects an unknown payments mode anywhere', () => {
     expect(problemsOf({ PAYMENTS_MODE: 'Live' })).toContain('PAYMENTS_MODE must be one of');
   });
+
+  it('checks the messaging driver and the worker switch', () => {
+    expect(problemsOf({ NOTIFY_DRIVER: 'telegram' })).toContain('NOTIFY_DRIVER must be one of');
+    expect(problemsOf({ NOTIFY_DRIVER: 'sms' })).toContain('NOTIFY_DRIVER=sms needs SMS_GATEWAY_URL');
+    expect(problemsOf({ NOTIFY_DRIVER: 'sms', SMS_GATEWAY_URL: 'https://sms.example.pk/send' })).toBe('');
+    expect(problemsOf({ JOBS_WORKER: 'no' })).toContain('JOBS_WORKER must be');
+    expect(problemsOf({ JOBS_WORKER: 'off' })).toBe('');
+  });
 });

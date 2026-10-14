@@ -12,15 +12,20 @@ import { RateLimit } from '../common/rate-limit.guard.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import {
   changePasswordSchema,
+  forgotPasswordSchema,
   loginSchema,
   registerSchoolSchema,
+  resetPasswordSchema,
   type ChangePasswordInput,
+  type ForgotPasswordInput,
   type LoginInput,
   type RegisterSchoolInput,
+  type ResetPasswordInput,
 } from './auth.schemas.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
 import { AuthService } from './auth.service.js';
+import { PasswordResetService, RESET_PER_IP } from './password-reset.service.js';
 
 @Controller('auth')
 export class AuthController {
@@ -29,6 +34,7 @@ export class AuthController {
     private readonly subscriptions: SubscriptionService,
     private readonly permissions: PermissionService,
     private readonly prisma: PrismaService,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   @Public()
@@ -49,6 +55,28 @@ export class AuthController {
     @Ip() ip: string,
   ) {
     return this.auth.login(body, ip);
+  }
+
+  /**
+   * Forgot password, step 1: texts a 6-digit code to the phone on the
+   * account. Answers "sent" whether or not the number has an account, or
+   * "unavailable" when the school has no way to send messages.
+   */
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(200)
+  @RateLimit('forgot-password', RESET_PER_IP, 60 * 60_000)
+  forgotPassword(@Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordInput) {
+    return this.passwordReset.request(body);
+  }
+
+  /** Forgot password, step 2: the code and a new password. Ends every session of the account. */
+  @Public()
+  @Post('reset-password')
+  @HttpCode(200)
+  @RateLimit('reset-password', 30, 15 * 60_000)
+  resetPassword(@Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordInput) {
+    return this.passwordReset.reset(body);
   }
 
   /** Replaces the user's own password and ends their other sessions; returns a new token. */

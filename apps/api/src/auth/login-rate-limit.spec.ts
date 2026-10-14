@@ -6,11 +6,12 @@ import {
   LoginRateLimiter,
   MAX_FAILED_LOGINS,
 } from './login-rate-limit.js';
+import { MemoryCounterStore } from '../jobs/counter-store.js';
 
 describe('LoginRateLimiter', () => {
   let now = 0;
   const limiter = () => {
-    const l = new LoginRateLimiter();
+    const l = new LoginRateLimiter(new MemoryCounterStore());
     l.now = () => now;
     return l;
   };
@@ -25,15 +26,15 @@ describe('LoginRateLimiter', () => {
     expect(LoginRateLimiter.key('platform', 'a@b.pk')).toBe('platform|a@b.pk|-');
   });
 
-  it('refuses after too many failures, with 429', () => {
+  it('refuses after too many failures, with 429', async () => {
     const l = limiter();
     for (let i = 0; i < MAX_FAILED_LOGINS; i++) {
-      l.assertAllowed(key);
-      l.recordFailure(key);
+      await l.assertAllowed(key);
+      await l.recordFailure(key);
     }
     let error: unknown;
     try {
-      l.assertAllowed(key);
+      await l.assertAllowed(key);
     } catch (e) {
       error = e;
     }
@@ -41,22 +42,22 @@ describe('LoginRateLimiter', () => {
     expect((error as HttpException).getStatus()).toBe(429);
     expect((error as HttpException).message).toMatch(/15 minutes/);
     // Other logins and addresses are unaffected.
-    l.assertAllowed(LoginRateLimiter.key('school', 'owner@demo.pk', '5.6.7.8'));
+    await l.assertAllowed(LoginRateLimiter.key('school', 'owner@demo.pk', '5.6.7.8'));
   });
 
-  it('lets people back in after the window', () => {
+  it('lets people back in after the window', async () => {
     const l = limiter();
-    for (let i = 0; i < MAX_FAILED_LOGINS; i++) l.recordFailure(key);
+    for (let i = 0; i < MAX_FAILED_LOGINS; i++) await l.recordFailure(key);
     now += LOGIN_WINDOW_MS;
-    expect(() => l.assertAllowed(key)).not.toThrow();
+    await expect(l.assertAllowed(key)).resolves.toBeUndefined();
   });
 
-  it('clears the count on a successful sign-in', () => {
+  it('clears the count on a successful sign-in', async () => {
     const l = limiter();
-    for (let i = 0; i < MAX_FAILED_LOGINS - 1; i++) l.recordFailure(key);
-    l.recordSuccess(key);
-    l.recordFailure(key);
-    expect(() => l.assertAllowed(key)).not.toThrow();
+    for (let i = 0; i < MAX_FAILED_LOGINS - 1; i++) await l.recordFailure(key);
+    await l.recordSuccess(key);
+    await l.recordFailure(key);
+    await expect(l.assertAllowed(key)).resolves.toBeUndefined();
   });
 });
 

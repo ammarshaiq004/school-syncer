@@ -39,6 +39,9 @@ export default function Login() {
           <Input label="Password" value={password} onChangeText={setPassword} secureTextEntry onSubmitEditing={submit} />
           <ErrorText>{error}</ErrorText>
           <Button title={busy ? 'Signing in...' : 'Sign in'} onPress={submit} disabled={busy} />
+          <Text onPress={() => router.push('/forgot-password')} accessibilityRole="button" style={styles.link}>
+            Forgot password?
+          </Text>
           <Muted>Parents get their login from the school on WhatsApp.</Muted>
         </Card>
       </KeyboardAvoidingView>
@@ -50,4 +53,5 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   wrap: { flex: 1, justifyContent: 'center', padding: 20, gap: 24, maxWidth: 480, width: '100%', alignSelf: 'center' },
   logo: { fontSize: 30, fontWeight: '800', color: colors.brand },
+  link: { color: colors.brand, textAlign: 'center', paddingVertical: 4 },
 });

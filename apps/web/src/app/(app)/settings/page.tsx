@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { ArrowRight, Building, CreditCard, History, Library, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
+import { ArrowRight, Building, CreditCard, History, Library, MessageCircle, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
 import { Alert, buttonClass, Card, CardHeader, ErrorState, PageHeader, SkeletonRows, TabPanel, Tabs } from "@/components/ui";
 import { AuditLog } from "@/components/settings/audit-log";
+import { MessagingSender } from "@/components/settings/messaging-sender";
 import { PaymentAccounts } from "@/components/settings/payment-accounts";
 import { RolesManager } from "@/components/settings/roles-manager";
 import { FeeSettingsForm, SchoolProfileForm, type School } from "@/components/settings/school-settings";
@@ -14,7 +15,7 @@ import { can, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 import { SchoolModeSettings } from "./school-mode";
 
-type Tab = "profile" | "mode" | "fees" | "payments" | "library" | "roles" | "audit";
+type Tab = "profile" | "mode" | "fees" | "payments" | "messaging" | "library" | "roles" | "audit";
 
 export default function SettingsPage() {
   return (
@@ -42,6 +43,7 @@ function Settings() {
     ...(setup && user.plan?.features.includes("online_payments") !== false
       ? [{ value: "payments", label: "Online payments", icon: <CreditCard /> }]
       : []),
+    ...(setup ? [{ value: "messaging", label: "Messaging", icon: <MessageCircle /> }] : []),
     ...((data?.mode ?? user.school?.mode) !== "ONLINE" ? [{ value: "library", label: "Library", icon: <Library /> }] : []),
     ...(setup && can(user, "users") ? [{ value: "roles", label: "Roles and permissions", icon: <ShieldCheck /> }] : []),
     ...(setup && can(user, "audit") ? [{ value: "audit", label: "Audit log", icon: <History /> }] : []),
@@ -72,7 +74,7 @@ function Settings() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="System settings"
-        description="Your school's details, fee rules, who can do what, and a record of every change."
+        description="Your school's details, fee rules, messaging, who can do what, and a record of every change."
         breadcrumbs={[{ label: "Setup" }, { label: "System settings" }]}
       />
       {!canEditSettings && <Alert tone="info">Your role can view these settings but not change them.</Alert>}
@@ -88,6 +90,9 @@ function Settings() {
         </TabPanel>
         {tabs.some((t) => t.value === "payments") && (
           <TabPanel value="payments">{tab === "payments" && <PaymentAccounts readOnly={!canEditSettings} />}</TabPanel>
+        )}
+        {tabs.some((t) => t.value === "messaging") && (
+          <TabPanel value="messaging">{tab === "messaging" && <MessagingSender readOnly={!canEditSettings} />}</TabPanel>
         )}
         {tabs.some((t) => t.value === "library") && (
           <TabPanel value="library">
