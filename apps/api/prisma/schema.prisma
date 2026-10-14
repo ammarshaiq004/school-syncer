@@ -1058,9 +1058,12 @@ model PayrollRun {
   id          String        @id @default(cuid())
   schoolId    String
   period      String // "YYYY-MM"
-  status      PayrollStatus @default(DRAFT)
-  createdAt   DateTime      @default(now())
-  finalizedAt DateTime?
+  status        PayrollStatus @default(DRAFT)
+  createdAt     DateTime      @default(now())
+  createdById   String?
+  updatedAt     DateTime      @updatedAt
+  finalizedAt   DateTime?
+  finalizedById String?
 
   school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   payslips Payslip[]
@@ -1081,6 +1084,7 @@ model Payslip {
   // [{ name, type, amount }] as calculated
   lines           Json
   paidAt          DateTime?
+  paidById        String?
   paymentMethod   String?
 
   run  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)

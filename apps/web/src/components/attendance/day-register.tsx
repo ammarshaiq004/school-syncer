@@ -21,6 +21,7 @@ import {
   useToast,
   type Column,
 } from "@/components/ui";
+import { ChangeHistory, type ChangeLine } from "@/components/change-history";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { day, todayIso } from "@/lib/format";
@@ -64,6 +65,26 @@ const OPTIONS: { status: Status; short: string; label: string; on: string; hover
 ];
 
 const name = (s: SheetStudent) => [s.firstName, s.lastName].filter(Boolean).join(" ");
+
+interface AttendanceHistoryRow {
+  at: string;
+  by: string;
+  studentName: string;
+  kind: "taken" | "changed";
+  before: { status: Status; note?: string | null } | null;
+  after: { status: Status; note?: string | null };
+}
+const statusLabel = (m: { status: Status; note?: string | null }) =>
+  (OPTIONS.find((o) => o.status === m.status)?.label ?? m.status) + (m.note ? ` (${m.note})` : "");
+const attendanceLine = (r: AttendanceHistoryRow): ChangeLine => ({
+  at: r.at,
+  by: r.by,
+  studentName: r.studentName,
+  label: r.kind === "taken" ? "Taken" : "Changed",
+  changed: r.kind === "changed",
+  from: r.before && statusLabel(r.before),
+  to: statusLabel(r.after),
+});
 
 interface MySection {
   id: string;
@@ -265,6 +286,14 @@ export function DayRegister({ sectionId, onSectionChange: setSectionId, date, on
                 <p className="text-[13px] text-fg-muted">Register for {day(date)}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {sheet.taken && (
+                  <ChangeHistory<AttendanceHistoryRow>
+                    title="Register history"
+                    description={`${sheet.section.className} ${sheet.section.name}, ${day(date)}: when the register was taken and every change since.`}
+                    path={`/attendance/history?sectionId=${sectionId}&date=${date}`}
+                    toLine={attendanceLine}
+                  />
+                )}
                 <SearchInput
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}

@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Gender, Prisma } from '@prisma/client';
 import { z } from 'zod';
 
@@ -30,17 +30,30 @@ export interface NewStudent {
   campuses?: string[] | null;
 }
 
-/** Next admission number for the school, e.g. "2026-0042". */
+/**
+ * Next admission number for the school, e.g. "2026-0042": one more than the
+ * highest numbered one this year (compared as numbers, so "2026-10000" follows
+ * "2026-9999", and hand-typed numbers such as "2026-A1" are ignored).
+ */
 async function nextAdmissionNo(tx: Prisma.TransactionClient, schoolId: string) {
   const year = new Date().getFullYear();
   const prefix = `${year}-`;
-  const last = await tx.student.findFirst({
-    where: { schoolId, admissionNo: { startsWith: prefix } },
-    orderBy: { admissionNo: 'desc' },
-    select: { admissionNo: true },
-  });
-  const seq = last ? Number(last.admissionNo.slice(prefix.length)) + 1 : 1;
+  const [last] = await tx.$queryRaw<{ seq: bigint | null }[]>`
+    SELECT max(substring("admissionNo" from ${prefix.length + 1}::int)::bigint) AS seq
+    FROM "Student"
+    WHERE "schoolId" = ${schoolId} AND "admissionNo" ~ ${`^${prefix}[0-9]{1,15}$`}`;
+  const seq = Number(last?.seq ?? 0) + 1;
   return `${prefix}${String(seq).padStart(4, '0')}`;
+}
+
+/**
+ * Holds the school's admission lock until the transaction ends. Admissions
+ * read the highest admission and roll numbers and then insert the next ones,
+ * so two at once (two office PCs, a double click, an import) would otherwise
+ * pick the same numbers.
+ */
+async function lockAdmissions(tx: Prisma.TransactionClient, schoolId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`admission:${schoolId}`}))`;
 }
 
 /**
@@ -60,6 +73,13 @@ export async function createStudentRecord(
     throw new NotFoundException('Section not found');
   }
 
+  await lockAdmissions(tx, input.schoolId);
+  if (
+    input.admissionNo &&
+    (await tx.student.count({ where: { schoolId: input.schoolId, admissionNo: input.admissionNo } }))
+  ) {
+    throw new ConflictException(`Admission number ${input.admissionNo} is already in use`);
+  }
   const admissionNo =
     input.admissionNo ?? (await nextAdmissionNo(tx, input.schoolId));
   const lastRoll = await tx.enrollment.aggregate({
