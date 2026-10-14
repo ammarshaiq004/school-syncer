@@ -39,8 +39,9 @@ import {
   studentUsername,
   tempPassword,
 } from './student-login.js';
+import { bFormField } from '../common/identity.js';
 import { billAdmissionFee } from '../fees/adhoc-vouchers.js';
-import { createStudentRecord, guardianInputSchema } from './student-records.js';
+import { createStudentRecord, guardianInputSchema, importWarnings } from './student-records.js';
 import {
   directoryQuerySchema,
   studentDirectory,
@@ -56,15 +57,17 @@ const createStudentSchema = z.object({
   lastName: z.string().trim().max(80).optional(),
   gender: z.enum(Gender),
   dateOfBirth: z.coerce.date().optional(),
-  bFormNo: z.string().trim().max(20).optional(),
+  bFormNo: bFormField.optional(),
   address: z.string().trim().max(250).optional(),
   medicalNotes: z.string().trim().max(500).optional(),
   guardians: z.array(guardianInputSchema).min(1).max(4),
+  /** Save despite a guardian name clash or likely duplicate (the 409 NEEDS_CONFIRMATION answer lists them). */
+  confirmed: z.boolean().default(false),
 });
 type CreateStudentInput = z.infer<typeof createStudentSchema>;
 
 const updateStudentSchema = createStudentSchema
-  .omit({ sectionId: true, guardians: true, admissionNo: true })
+  .omit({ sectionId: true, guardians: true, admissionNo: true, confirmed: true })
   .partial()
   .extend({ status: z.enum(StudentStatus).optional() });
 type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
@@ -73,6 +76,8 @@ const importSchema = z.object({
   rows: z.array(importRowSchema).min(1).max(3000),
   // false checks the rows and reports problems without saving anything.
   commit: z.boolean().default(false),
+  /** Import even though some rows have warnings (likely duplicates, guardian name clashes). */
+  confirmWarnings: z.boolean().default(false),
 });
 type ImportInput = z.infer<typeof importSchema>;
 const studentLoginSchema = z.object({
@@ -285,9 +290,27 @@ export class StudentsController {
       where: { studentId: id },
       _count: true,
     });
+    // Section moves during a year change the enrollment in place; the audit log keeps the history.
+    const moves = await this.prisma.auditLog.findMany({
+      where: { schoolId: user.schoolId, entity: 'Student', entityId: id, action: 'student.move' },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true, before: true, after: true, userId: true },
+    });
+    const movers = await this.prisma.user.findMany({
+      where: { id: { in: moves.map((m) => m.userId).filter((u): u is string => !!u) } },
+      select: { id: true, name: true },
+    });
+    const label = (v: unknown) => ((v as { section?: string } | null)?.section ?? null);
     return {
       ...(reach.seesPrivate(student) ? student : withoutPrivate(student)),
       attendanceSummary: Object.fromEntries(attendance.map((a) => [a.status, a._count])),
+      moves: moves.map((m) => ({
+        at: m.createdAt,
+        from: label(m.before),
+        to: label(m.after),
+        reason: (m.after as { reason?: string | null } | null)?.reason ?? null,
+        by: movers.find((u) => u.id === m.userId)?.name ?? null,
+      })),
     };
   }
 
@@ -360,15 +383,25 @@ export class StudentsController {
           ).map((c) => c.name)
         : [],
     );
+    // Likely duplicates of students already on file, and guardian phones saved under another name.
+    const found = await importWarnings(
+      this.prisma,
+      user.schoolId,
+      rows.flatMap((r) => (r.student ? [{ row: r.row, ...r.student }] : [])),
+    );
+    for (const r of rows) r.warnings.push(...(found.get(r.row) ?? []));
     const invalid = rows.filter((r) => r.errors.length).length;
+    const warned = rows.filter((r) => r.warnings.length).length;
     const summary = {
       valid: rows.length - invalid,
       invalid,
-      rows: rows.map(({ row, name, classSection, errors }) => ({ row, name, classSection, errors })),
+      warned,
+      rows: rows.map(({ row, name, classSection, errors, warnings }) => ({ row, name, classSection, errors, warnings })),
     };
     // Once every row is fine, say up front if the plan has no room for them.
     if (!invalid) await this.subscriptions.assertStudentRoom(user.schoolId, summary.valid);
     if (!body.commit || invalid) return { ...summary, imported: 0 };
+    if (warned && !body.confirmWarnings) return { ...summary, imported: 0, needsConfirmation: true };
 
     // Rows with their own admission numbers go first, so a generated number
     // never takes one that a later row asks for.
@@ -377,7 +410,7 @@ export class StudentsController {
       .sort((a, b) => Number(!a.admissionNo) - Number(!b.admissionNo));
     await this.prisma.$transaction(
       async (tx) => {
-        for (const s of students) await createStudentRecord(tx, { ...s, schoolId: user.schoolId });
+        for (const s of students) await createStudentRecord(tx, { ...s, schoolId: user.schoolId, confirmed: true });
       },
       { timeout: 300_000, maxWait: 10_000 },
     );

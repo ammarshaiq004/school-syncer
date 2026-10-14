@@ -24,6 +24,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "platform:create-admin": "tsx src/platform/create-admin.ts",
+    "data:normalise-contacts": "tsx src/students/normalise-contacts.ts",
     "postinstall": "prisma generate",
     "dev": "nest start --watch"
   },

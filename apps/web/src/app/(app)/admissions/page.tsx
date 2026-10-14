@@ -9,6 +9,7 @@ import {
   Avatar,
   Badge,
   Button,
+  ConfirmDialog,
   CountBadge,
   DataTable,
   Drawer,
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { day } from "@/lib/format";
+import { saveWarnings, type SaveWarning } from "@/lib/identity";
 import { useSectionOptions } from "@/lib/sections";
 import { useApi } from "@/lib/use-api";
 
@@ -84,6 +86,8 @@ export default function AdmissionsPage() {
   const [tab, setTab] = useState("pipeline");
   const [search, setSearch] = useState("");
   const [formError, setFormError] = useState("");
+  // An admission the API wants confirmed first (guardian phone saved under another name, likely duplicate).
+  const [toConfirm, setToConfirm] = useState<{ id: string; sectionId: string; name: string; warnings: SaveWarning[] } | null>(null);
 
   const campusOptions: CampusOption[] = (campuses.data ?? []).map((c) => ({
     ...c,
@@ -99,6 +103,22 @@ export default function AdmissionsPage() {
       await applications.reload();
     } catch (e) {
       toast.error("Could not update the application", (e as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function admit(id: string, sectionId: string, name: string, confirmed = false) {
+    setBusy(id);
+    try {
+      await api(`/applications/${id}/admit`, { method: "POST", body: { sectionId, confirmed } });
+      setToConfirm(null);
+      toast.success(`${name} admitted.`);
+      await applications.reload();
+    } catch (e) {
+      const warnings = saveWarnings(e);
+      if (warnings) setToConfirm({ id, sectionId, name, warnings });
+      else toast.error("Could not update the application", (e as Error).message);
     } finally {
       setBusy("");
     }
@@ -284,8 +304,8 @@ export default function AdmissionsPage() {
                                 className="flex gap-2"
                                 onSubmit={(e) => {
                                   e.preventDefault();
-                                  const sectionId = new FormData(e.currentTarget).get("sectionId");
-                                  void run(a.id, () => api(`/applications/${a.id}/admit`, { method: "POST", body: { sectionId } }), `${a.childName} admitted.`);
+                                  const sectionId = String(new FormData(e.currentTarget).get("sectionId") ?? "");
+                                  void admit(a.id, sectionId, a.childName);
                                 }}
                               >
                                 <NativeSelect
@@ -362,6 +382,16 @@ export default function AdmissionsPage() {
           </form>
         )}
       </Drawer>
+
+      <ConfirmDialog
+        open={toConfirm !== null}
+        onOpenChange={(o) => !o && setToConfirm(null)}
+        title={`Admit ${toConfirm?.name ?? ""} anyway?`}
+        description={toConfirm?.warnings.map((w) => w.message).join(" ")}
+        confirmLabel="Admit anyway"
+        loading={busy === toConfirm?.id}
+        onConfirm={() => toConfirm && void admit(toConfirm.id, toConfirm.sectionId, toConfirm.name, true)}
+      />
     </div>
   );
 }

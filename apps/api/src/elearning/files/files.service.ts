@@ -151,7 +151,7 @@ export class FilesService {
     const candidates = [...new Set(ids.filter((id): id is string => !!id))];
     if (!candidates.length) return;
     const orphans = await this.prisma.storedFile.findMany({
-      where: { id: { in: candidates }, lesson: null, assignment: null, submission: null },
+      where: { id: { in: candidates }, lesson: null, assignment: null, submission: null, studentPhoto: null },
     });
     await this.destroy(orphans);
   }
@@ -160,10 +160,15 @@ export class FilesService {
   async removeUnattached(user: AuthUser, id: string) {
     const file = await this.prisma.storedFile.findFirst({
       where: { id, schoolId: user.schoolId, uploadedById: user.sub },
-      include: { lesson: { select: { id: true } }, assignment: { select: { id: true } }, submission: { select: { id: true } } },
+      include: {
+        lesson: { select: { id: true } },
+        assignment: { select: { id: true } },
+        submission: { select: { id: true } },
+        studentPhoto: { select: { id: true } },
+      },
     });
     if (!file) throw new NotFoundException('File not found');
-    if (file.lesson || file.assignment || file.submission) {
+    if (file.lesson || file.assignment || file.submission || file.studentPhoto) {
       throw new ConflictException('Remove the file from its lesson, assignment or submission instead');
     }
     await this.destroy([file]);
@@ -260,6 +265,7 @@ export class FilesService {
         lesson: null,
         assignment: null,
         submission: null,
+        studentPhoto: null,
       },
       take: 50,
     });

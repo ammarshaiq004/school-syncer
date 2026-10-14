@@ -430,8 +430,11 @@ model Student {
   lastName     String?
   gender       Gender
   dateOfBirth  DateTime?     @db.Date
-  bFormNo      String? // NADRA B-Form number
+  bFormNo      String? // NADRA B-Form number, 13 digits
+  /// A stable signed link to the photo (see students/student-photo.ts), for avatars and ID cards.
   photoUrl     String?
+  /// The uploaded photo behind photoUrl; replacing or removing it deletes the old file.
+  photoFileId  String?       @unique
   address      String?
   medicalNotes String?
   status       StudentStatus @default(ACTIVE)
@@ -444,6 +447,7 @@ model Student {
   school      School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   campus      Campus             @relation(fields: [campusId], references: [id], onDelete: Restrict)
   user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  photoFile   StoredFile?        @relation("StudentPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   guardians   StudentGuardian[]
   enrollments Enrollment[]
   attendance  AttendanceRecord[]
@@ -2149,11 +2153,12 @@ enum FilePurpose {
   LESSON
   ASSIGNMENT
   SUBMISSION
+  STUDENT_PHOTO
 }
 
 /// A file uploaded to the school's storage (S3-compatible bucket or local
 /// disk, see src/elearning/files). Counted against the plan's maxStorageMb.
-/// Attached to at most one lesson, assignment or submission; files nothing
+/// Attached to at most one lesson, assignment, submission or student photo; files nothing
 /// points at are removed when replaced, and unattached uploads after a day.
 model StoredFile {
   id           String      @id @default(cuid())
@@ -2166,11 +2171,13 @@ model StoredFile {
   uploadedById String?
   createdAt    DateTime    @default(now())
 
-  school     School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  uploadedBy User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  lesson     Lesson?
-  assignment Assignment? @relation("AssignmentAttachment")
-  submission Submission? @relation("SubmissionFile")
+  school       School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  uploadedBy   User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  lesson       Lesson?
+  assignment   Assignment? @relation("AssignmentAttachment")
+  submission   Submission? @relation("SubmissionFile")
+  /// A student's photo (purpose STUDENT_PHOTO).
+  studentPhoto Student?    @relation("StudentPhoto")
 
   @@index([schoolId])
   @@index([uploadedById])

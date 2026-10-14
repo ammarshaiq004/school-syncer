@@ -8,6 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { AuditService } from '../common/audit.service.js';
+import { normalizePhone } from '../common/identity.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { SubscriptionService } from '../platform/subscription.service.js';
@@ -49,6 +50,9 @@ export class AuthService {
       where: { slug: input.schoolSlug },
     });
     const login = input.login.toLowerCase();
+    // Phones are stored as 03XXXXXXXXX, but parents type +92 300…, 0300-…;
+    // the number as typed is tried too, for rows saved before that rule.
+    const phones = [...new Set([input.login, normalizePhone(input.login)].filter((p): p is string => !!p))];
     // A student's username (admission number) can equal someone else's phone
     // or email, so every match is tried: email first, then phone, then username.
     const matches = school
@@ -56,15 +60,15 @@ export class AuthService {
           where: {
             schoolId: school.id,
             isActive: true,
-            // Email and username are stored lowercased; phone numbers as typed.
-            OR: [{ email: login }, { phone: input.login }, { username: login }],
+            // Email and username are stored lowercased.
+            OR: [{ email: login }, { phone: { in: phones } }, { username: login }],
           },
           include: { roles: true },
           take: 3,
         })
       : [];
     const rank = (u: (typeof matches)[number]) =>
-      u.email === login ? 0 : u.phone === input.login ? 1 : 2;
+      u.email === login ? 0 : u.phone && phones.includes(u.phone) ? 1 : 2;
     matches.sort((a, b) => rank(a) - rank(b));
     let user: (typeof matches)[number] | null = null;
     let checked = false;

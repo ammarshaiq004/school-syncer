@@ -14,6 +14,7 @@ import { ApplicationStage, Gender, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { adminScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
+import { phoneField } from '../common/identity.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Public, RequiresFeature, Roles } from '../common/decorators.js';
 import { RateLimit } from '../common/rate-limit.guard.js';
@@ -31,7 +32,7 @@ const enquirySchema = z.object({
   dateOfBirth: z.coerce.date().optional(),
   previousSchool: z.string().trim().max(120).optional(),
   guardianName: z.string().trim().min(2).max(120),
-  guardianPhone: z.string().trim().min(10).max(20),
+  guardianPhone: phoneField,
   guardianEmail: z.email().toLowerCase().optional(),
   relation: z.string().trim().min(2).max(30).default('Father'),
   source: z.string().trim().max(60).optional(),
@@ -50,6 +51,8 @@ type UpdateInput = z.infer<typeof updateSchema>;
 const admitSchema = z.object({
   sectionId: z.string().min(1),
   admissionNo: z.string().trim().max(30).optional(),
+  /** Admit despite a guardian name clash or likely duplicate (see NeedsConfirmation). */
+  confirmed: z.boolean().default(false),
 });
 type AdmitInput = z.infer<typeof admitSchema>;
 
@@ -192,6 +195,7 @@ export class AdmissionsController {
         sectionId: body.sectionId,
         campuses: adminScope(user),
         admissionNo: body.admissionNo,
+        confirmed: body.confirmed,
         firstName,
         lastName: rest.join(' ') || undefined,
         gender: application.gender,

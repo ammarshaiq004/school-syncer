@@ -13,9 +13,9 @@ test("generates this month's vouchers", async ({ page }) => {
   const month = today().slice(0, 7);
   await page.getByRole('button', { name: 'Generate vouchers' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Generate vouchers' });
-  await dialog.getByLabel('Month').fill(month);
+  await dialog.getByRole('textbox', { name: 'Month' }).fill(month);
   await dialog.getByRole('button', { name: 'Generate vouchers' }).click();
-  await expect(page.getByText('Vouchers generated')).toBeVisible();
+  await expect(page.getByText('Voucher run finished')).toBeVisible();
 
   await page.getByRole('textbox', { name: 'Month' }).fill(month);
   const vouchers = page.getByRole('table', { name: 'Fee vouchers' });

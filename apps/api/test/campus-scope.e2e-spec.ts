@@ -234,14 +234,14 @@ describe('Campus scope (e2e)', () => {
       expect(ids(list.body)).toEqual([kid.own, kid.taught].sort());
       const own = list.body.find((s: { id: string }) => s.id === kid.own);
       const taught = list.body.find((s: { id: string }) => s.id === kid.taught);
-      expect(own).toMatchObject({ bFormNo: '35202-0000001-1', address: 'House 1, Lahore', medicalNotes: 'Asthma' });
+      expect(own).toMatchObject({ bFormNo: '3520200000011', address: 'House 1, Lahore', medicalNotes: 'Asthma' });
       expect(taught).toMatchObject({ bFormNo: null, address: null, medicalNotes: null });
 
       const detail = await request(server).get(`/api/students/${kid.taught}`).set(h.teacher).expect(200);
       expect(detail.body).toMatchObject({ bFormNo: null, address: null, medicalNotes: null });
       expect(detail.body.guardians[0].guardian).toMatchObject({ name: 'Parent 2', cnic: null });
       const mine = await request(server).get(`/api/students/${kid.own}`).set(h.teacher).expect(200);
-      expect(mine.body.guardians[0].guardian.cnic).toBe('35202-1111111-1');
+      expect(mine.body.guardians[0].guardian.cnic).toBe('3520211111111');
       await request(server).get(`/api/students/${kid.other}`).set(h.teacher).expect(403);
     });
 

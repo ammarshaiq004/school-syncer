@@ -181,6 +181,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** The error body, for answers that carry more than a message (e.g. warnings to confirm). */
+    public data: unknown = null,
   ) {
     super(message);
   }
@@ -234,7 +236,7 @@ async function request<T>(path: string, init: RequestInit, token: string | null,
     const message = issues?.length
       ? issues.map((i) => `${i.path}: ${i.message}`).join(", ")
       : (data?.message ?? `Request failed (${res.status})`);
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, data);
   }
   return data as T;
 }
