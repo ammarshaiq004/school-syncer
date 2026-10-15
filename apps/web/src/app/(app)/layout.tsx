@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { GraduationCap, KeyRound, Lock, LogOut, Moon, X } from "lucide-react";
+import { Bug, GraduationCap, KeyRound, Lock, LogOut, Moon, X } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandLockup, BrandMark } from "@/components/brand";
 import { Alert, EmptyState } from "@/components/kit/feedback";
@@ -13,6 +13,7 @@ import { Spinner } from "@/components/kit/feedback";
 import { Sidebar, SidebarNav } from "@/components/shell/sidebar";
 import { TopBar } from "@/components/shell/topbar";
 import { SupportBanner } from "@/components/platform/support-banner";
+import { ProblemReportPanel } from "@/components/problem-report";
 import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
 import { day, fullName } from "@/lib/format";
 import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, viewFromPath, type ViewId } from "@/lib/nav";
@@ -43,6 +44,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [signedInAt, setSignedInAt] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [savedView, setSavedView] = usePersistedState<ViewId | null>("schoolsyncer.view", null);
 
   useEffect(() => {
@@ -116,6 +118,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       ...(user.support
         ? []
         : [{ id: "password", label: "Change password", group: "Actions", icon: KeyRound, keywords: "password security", href: "/change-password" }]),
+      { id: "report", label: "Report a problem", group: "Actions", icon: Bug, keywords: "bug issue help support feedback broken", onSelect: () => setReportOpen(true) },
       { id: "signout", label: "Sign out", group: "Actions", icon: LogOut, keywords: "log out logout", onSelect: signOut },
     ];
     return [...pages, ...views, ...actions];
@@ -201,6 +204,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             onOpenMenu={() => setMenuOpen(true)}
             onOpenPalette={() => setPaletteOpen(true)}
             onSignOut={signOut}
+            onReportProblem={() => setReportOpen(true)}
             // A support session acts as the owner, so it cannot change their password.
             changePasswordHref={user.support ? undefined : "/change-password"}
             showBell={isStaff}
@@ -226,6 +230,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {user.support && <SupportBanner adminName={user.support.adminName} />}
         </div>
       </div>
+      <ProblemReportPanel open={reportOpen} onOpenChange={setReportOpen} />
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}

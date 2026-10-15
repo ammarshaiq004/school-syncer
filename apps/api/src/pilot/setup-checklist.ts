@@ -53,7 +53,7 @@ export function setupChecklist(f: SetupFacts): ChecklistItem[] {
       'fees',
       'Fee heads and structures',
       f.feeHeads > 0 && f.feeStructures > 0,
-      '/fees?tab=setup',
+      '/fees#setup',
       f.feeHeads && f.feeStructures
         ? `${plural(f.feeHeads, 'fee head')}, ${plural(f.feeStructures, 'class amount')}`
         : f.feeHeads

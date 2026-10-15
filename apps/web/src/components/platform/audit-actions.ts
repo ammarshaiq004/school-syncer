@@ -1,5 +1,6 @@
 import {
   Ban,
+  Bug,
   Building,
   CircleCheck,
   CreditCard,
@@ -38,6 +39,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "staff.update": { label: "Changed a staff member", icon: UserCog },
   "staff.reset_password": { label: "Reset a staff password", icon: KeyRound },
   "staff.change_password": { label: "Changed their own password", icon: CircleCheck },
+  "problem_report.status": { label: "Changed a problem report's status", icon: Bug },
 };
 
 export const auditLabel = (action: string) => AUDIT_ACTIONS[action]?.label ?? action;

@@ -294,7 +294,7 @@ describe('Pilot kit (e2e)', () => {
       expect(res.body).toMatchObject({ visible: true, complete: false, total: 9, dismissedAt: null });
       const done = Object.fromEntries(res.body.items.map((i: { key: string; done: boolean }) => [i.key, i.done]));
       expect(done).toMatchObject({ 'academic-year': false, classes: false, students: false, fees: false, staff: false, attendance: false, vouchers: false });
-      expect(res.body.items.find((i: { key: string }) => i.key === 'fees').href).toBe('/fees?tab=setup');
+      expect(res.body.items.find((i: { key: string }) => i.key === 'fees').href).toBe('/fees#setup');
     });
 
     it('ticks off what this school has done, and can be dismissed and brought back', async () => {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
 import {
+  Activity,
   ArrowRight,
   Ban,
   Building,
@@ -52,6 +53,7 @@ import {
   type Tone,
 } from "@/components/ui";
 import { auditIcon, auditLabel, auditReason } from "@/components/platform/audit-actions";
+import { PilotHealthPanel } from "@/components/platform/pilot-health";
 import { LifecycleDialog, type LifecycleAction } from "@/components/platform/lifecycle-dialog";
 import { ReasonDialog } from "@/components/platform/reason-dialog";
 import { SchoolFeatures, type FeatureState } from "@/components/platform/school-features";
@@ -333,6 +335,7 @@ export default function SchoolDetailPage() {
         tabs={[
           { value: "overview", label: "Overview", icon: <Building /> },
           { value: "people", label: "People", icon: <Users /> },
+          { value: "pilot", label: "Pilot health", icon: <Activity /> },
           { value: "features", label: "Plan & features", icon: <SlidersHorizontal />, disabled: !sub },
           { value: "subscription", label: "Subscription", icon: <CreditCard /> },
           { value: "invoices", label: "Invoices", icon: <Receipt />, count: s.invoices.length },
@@ -383,6 +386,10 @@ export default function SchoolDetailPage() {
 
         <TabPanel value="people" className="pt-5">
           <SchoolPeople schoolId={s.id} schoolName={s.name} campuses={s.campuses} />
+        </TabPanel>
+
+        <TabPanel value="pilot" className="pt-5">
+          <PilotHealthPanel schoolId={s.id} />
         </TabPanel>
 
         <TabPanel value="features" className="pt-5">
