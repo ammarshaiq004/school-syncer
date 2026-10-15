@@ -74,6 +74,7 @@ model School {
   invoices          Invoice[]
   voucherRuns       VoucherRun[]
   onlinePayments    OnlinePayment[]
+  gatewayTestRuns   GatewayTestRun[]
   notifications     NotificationLog[]
   announcements     Announcement[]
   gradeBands        GradeBand[]
@@ -1341,7 +1342,8 @@ model PlatformAdmin {
   lastLoginAt        DateTime?
   createdAt          DateTime     @default(now())
 
-  auditLogs PlatformAuditLog[]
+  auditLogs       PlatformAuditLog[]
+  gatewayTestRuns GatewayTestRun[]
 }
 
 model PlatformAuditLog {
@@ -2004,6 +2006,7 @@ model OnlinePayment {
 
   reconciliationIssues ReconciliationIssue[]
   statementLines       GatewayStatementLine[]
+  testRun              GatewayTestRun?
 
   @@index([schoolId, createdAt])
   @@index([invoiceId])
@@ -2284,4 +2287,38 @@ model PasswordResetCode {
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, phone, createdAt])
+}
+
+/// A small real payment made from the console to prove a gateway works end to
+/// end (SCHOOL-149): a test voucher for the school's test student, paid through
+/// the gateway, then reversed so the school's totals are untouched.
+model GatewayTestRun {
+  id          String        @id @default(cuid())
+  schoolId    String
+  provider    PaymentMethod // JAZZCASH, EASYPAISA or ONEBILL
+  /// PAYMENTS_MODE when the run started: mock, sandbox or live.
+  mode        String
+  /// Whose merchant account took the money: "school" or "platform".
+  account     String
+  amount      Int
+  invoiceId   String
+  checkoutId  String?       @unique
+  startedById String?
+  /// The first gateway call about this checkout (return, IPN, 1LINK call or inquiry).
+  callbackAt  DateTime?
+  /// Every gateway call seen, oldest first: [{ at, kind, verified, status }].
+  events      Json          @default("[]")
+  reversedAt  DateTime?
+  /// Set when the run is closed: reversed, or cancelled before money moved.
+  finishedAt  DateTime?
+  /// "reversed", "cancelled" or a short reason it could not finish.
+  outcome     String?
+  createdAt   DateTime      @default(now())
+
+  school    School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  checkout  OnlinePayment? @relation(fields: [checkoutId], references: [id], onDelete: SetNull)
+  startedBy PlatformAdmin? @relation(fields: [startedById], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([schoolId, createdAt])
 }

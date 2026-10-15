@@ -33,3 +33,26 @@ test('SchoolSyncer staff sign in to the platform console', async ({ page, seed }
   await page.getByRole('searchbox').first().fill(seed.run);
   await expect(page.getByRole('link', { name: `Fresh School ${seed.run}` })).toBeVisible();
 });
+
+test('console staff test a gateway connection and run a reversed test payment (mock mode)', async ({ page, seed }) => {
+  await page.goto('/platform/login');
+  await page.getByLabel('Email').fill(seed.consoleAdmin.email);
+  await page.getByLabel('Password').fill(seed.consoleAdmin.password);
+  await page.getByRole('button', { name: /Sign in/ }).click();
+  await expect(page).toHaveURL(/\/platform$/);
+
+  await page.goto('/platform/gateways');
+  await expect(page.getByRole('heading', { level: 1, name: 'Payment gateways' })).toBeVisible();
+  await page.getByRole('button', { name: 'Test connection' }).first().click();
+  await expect(page.getByText('JazzCash: simulated pass')).toBeVisible();
+
+  await page.getByLabel('School').selectOption({ label: seed.school.name });
+  await page.getByRole('button', { name: 'Start test payment' }).click();
+  const drawer = page.getByRole('dialog');
+  await expect(drawer.getByText('Waiting for payment')).toBeVisible();
+  await drawer.getByRole('button', { name: 'Simulate payment' }).click();
+  await expect(drawer.getByText('Paid, not reversed yet')).toBeVisible();
+  await expect(drawer.getByText('Simulated gateway')).toBeVisible();
+  await drawer.getByRole('button', { name: 'Reverse test payment' }).click();
+  await expect(drawer.getByText('Passed and reversed')).toBeVisible();
+});
