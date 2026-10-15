@@ -1,6 +1,7 @@
 import { Stack } from 'expo-router';
 import { useState } from 'react';
 import { Linking, Text, View } from 'react-native';
+import { AppFooter } from '@/components/app-footer';
 import { Badge, Body, Button, Card, colors, ErrorText, H2, Loading, Muted, Row, Screen } from '@/components/ui';
 import { api } from '@/lib/api';
 import { DAYS } from '@/lib/format';
@@ -205,6 +206,7 @@ export default function StudentHome() {
           </View>
         ))}
       </Card>
+      <AppFooter />
     </Screen>
   );
 }

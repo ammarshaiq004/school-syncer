@@ -56,6 +56,8 @@ import { StudentsController } from './students/students.controller.js';
 import { StudentController } from './student/student.controller.js';
 import { AcademicYearsController } from './academic-years/academic-years.controller.js';
 import { AuditController } from './audit/audit.controller.js';
+import { AppVersionGuard } from './app-version/app-version.guard.js';
+import { AppVersionModule } from './app-version/app-version.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CampusesController } from './campuses/campuses.controller.js';
 import { ClassesController } from './classes/classes.controller.js';
@@ -95,6 +97,7 @@ import { UsersController } from './users/users.controller.js';
     CommonModule,
     AuthModule,
     PlatformModule,
+    AppVersionModule,
     NotificationsModule,
     ElearningModule,
     GradebookModule,
@@ -158,6 +161,8 @@ import { UsersController } from './users/users.controller.js';
     ReconciliationScheduler,
     // First, so floods of public requests stop before any database work.
     { provide: APP_GUARD, useClass: RateLimitGuard },
+    // Then outdated mobile builds (426), before they can sign in or load anything.
+    { provide: APP_GUARD, useClass: AppVersionGuard },
     // Order matters: authenticate first, then check roles, then the school's plan.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

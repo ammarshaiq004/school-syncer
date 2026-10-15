@@ -1360,6 +1360,27 @@ model PlatformAuditLog {
   @@index([createdAt])
 }
 
+enum AppPlatform {
+  IOS
+  ANDROID
+}
+
+/// The mobile app's version policy for one store, set in the console. Without
+/// a row the APP_*_IOS / APP_*_ANDROID env defaults apply (see app-version/).
+model AppRelease {
+  platform      AppPlatform @id
+  /// Builds below this are refused (426 APP_UPDATE_REQUIRED) and must update.
+  minVersion    String
+  /// Builds below this are offered an update they can dismiss.
+  latestVersion String
+  /// Empty: the env default store link.
+  storeUrl      String      @default("")
+  /// Shown on the update screen and banner; empty for the standard wording.
+  message       String      @default("")
+  updatedById   String?
+  updatedAt     DateTime    @updatedAt
+}
+
 // ----- Transport -----
 
 enum VehicleType {

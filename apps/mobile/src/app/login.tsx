@@ -1,8 +1,9 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Card, colors, ErrorText, Input, Muted } from '@/components/ui';
+import { PRIVACY_URL } from '@/lib/app-info';
 import { useSession } from '@/lib/session';
 
 export default function Login() {
@@ -44,6 +45,11 @@ export default function Login() {
           </Text>
           <Muted>Parents get their login from the school on WhatsApp.</Muted>
         </Card>
+        {PRIVACY_URL ? (
+          <Text onPress={() => Linking.openURL(PRIVACY_URL)} accessibilityRole="link" style={styles.footerLink}>
+            Privacy policy
+          </Text>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -54,4 +60,5 @@ const styles = StyleSheet.create({
   wrap: { flex: 1, justifyContent: 'center', padding: 20, gap: 24, maxWidth: 480, width: '100%', alignSelf: 'center' },
   logo: { fontSize: 30, fontWeight: '800', color: colors.brand },
   link: { color: colors.brand, textAlign: 'center', paddingVertical: 4 },
+  footerLink: { color: colors.muted, textAlign: 'center', fontSize: 13, paddingVertical: 4 },
 });

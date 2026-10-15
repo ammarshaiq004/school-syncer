@@ -1,5 +1,5 @@
 import { Controller, Get, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import { Public } from '../common/decorators.js';
+import { AllowAnyAppVersion, Public } from '../common/decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 /** How long the database may take to answer before the API counts as down. */
@@ -13,6 +13,7 @@ export class HealthController {
 
   /** For load balancers and uptime checks: 200 when the database answers, 503 when it does not. */
   @Public()
+  @AllowAnyAppVersion()
   @Get()
   async check() {
     let timer: NodeJS.Timeout | undefined;

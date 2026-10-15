@@ -31,6 +31,14 @@ describe('validateEnv', () => {
     expect(problemsOf({ ...production, STORAGE_DRIVER: 's3', FILE_SIGNING_SECRET: undefined })).toBe('');
   });
 
+  it('checks the mobile app version defaults', () => {
+    expect(problemsOf({ APP_MIN_VERSION_IOS: '1.2.0', APP_LATEST_VERSION_IOS: '1.3', APP_MIN_VERSION_ANDROID: '2' })).toBe('');
+    expect(problemsOf({ APP_MIN_VERSION_ANDROID: 'v1.2' })).toContain('APP_MIN_VERSION_ANDROID must be a version like 1.4.0');
+    expect(problemsOf({ APP_MIN_VERSION_IOS: '1.5.0', APP_LATEST_VERSION_IOS: '1.4.9' })).toContain(
+      'APP_LATEST_VERSION_IOS cannot be below APP_MIN_VERSION_IOS',
+    );
+  });
+
   it('refuses mock payments in production', () => {
     expect(problemsOf({ ...production, PAYMENTS_MODE: 'mock' })).toContain('PAYMENTS_MODE=mock is for development only');
   });

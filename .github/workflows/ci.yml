@@ -41,6 +41,7 @@ jobs:
         run: pnpm audit --audit-level=high --prod
       - run: pnpm lint
       - run: pnpm --filter mobile typecheck
+      - run: pnpm --filter mobile test
       - run: pnpm --filter web test
       - name: Apply database migrations
         run: pnpm --filter api prisma:deploy

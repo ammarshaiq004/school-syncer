@@ -2,14 +2,18 @@
   "expo": {
     "name": "SchoolSyncer",
     "slug": "schoolsyncer",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "schoolsyncer",
     "userInterfaceStyle": "light",
+    "description": "Attendance, homework, results, timetables and fee payments from your child's school.",
     "ios": {
       "bundleIdentifier": "pk.schoolsyncer.app",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "pk.schoolsyncer.app",

@@ -1,3 +1,5 @@
+import { appEnvKeys } from '../app-version/app-release.js';
+import { compareVersions, isVersion } from '../app-version/version.js';
 import { secretKey } from '../fees/gateways/school-accounts.js';
 
 type Env = Record<string, unknown>;
@@ -50,6 +52,19 @@ export function validateEnv(env: Env): Env {
   if (notify === 'sms' && !text(env, 'SMS_GATEWAY_URL')) problems.push('NOTIFY_DRIVER=sms needs SMS_GATEWAY_URL');
   const worker = text(env, 'JOBS_WORKER').toLowerCase();
   if (worker && !['on', 'off'].includes(worker)) problems.push(`JOBS_WORKER must be "on" or "off" (got "${worker}")`);
+
+  // Mobile app version defaults (the console can override them).
+  for (const platform of ['IOS', 'ANDROID'] as const) {
+    const keys = appEnvKeys(platform);
+    const min = text(env, keys.minVersion);
+    const latest = text(env, keys.latestVersion);
+    for (const [key, value] of [[keys.minVersion, min], [keys.latestVersion, latest]]) {
+      if (value && !isVersion(value)) problems.push(`${key} must be a version like 1.4.0 (got "${value}")`);
+    }
+    if (isVersion(min) && isVersion(latest) && compareVersions(latest, min) < 0) {
+      problems.push(`${keys.latestVersion} cannot be below ${keys.minVersion}`);
+    }
+  }
 
   if (text(env, 'NODE_ENV') === 'production') {
     if (!text(env, 'DATABASE_URL')) problems.push('DATABASE_URL is required');
