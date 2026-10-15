@@ -22,9 +22,11 @@ import { adminScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Public, Roles } from '../common/decorators.js';
+import { fileSigningSecrets } from '../common/signing-secrets.js';
 import { FilesService, type UploadedTemp } from '../elearning/files/files.service.js';
 import { LocalStorageDriver } from '../elearning/files/storage/local.driver.js';
 import { STORAGE_DRIVER, type StorageDriver } from '../elearning/files/storage/storage-driver.js';
+import { signingEnv } from '../elearning/files/storage/storage.provider.js';
 import { UploadInterceptor } from '../elearning/files/upload.interceptor.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -39,10 +41,14 @@ import { PrismaService } from '../prisma/prisma.service.js';
 @Injectable()
 export class StudentPhotoLinks {
   private readonly secret: string;
+  /** Secrets of a rotation still accepted, so saved photo links keep working until re-signed. */
+  private readonly previous: string[];
   private readonly publicApiUrl: string;
 
   constructor(config: ConfigService) {
-    this.secret = `student-photo:${config.get<string>('FILE_SIGNING_SECRET') || config.getOrThrow<string>('JWT_SECRET')}`;
+    const signing = fileSigningSecrets(signingEnv(config));
+    this.secret = `student-photo:${signing.current}`;
+    this.previous = signing.previous.map((s) => `student-photo:${s}`);
     const port = config.get<string>('PORT') || '4000';
     this.publicApiUrl = (config.get<string>('API_PUBLIC_URL') || `http://localhost:${port}`).replace(/\/+$/, '');
   }
@@ -53,13 +59,15 @@ export class StudentPhotoLinks {
 
   verify(fileId: string, sig: string | undefined): boolean {
     if (!sig) return false;
-    const expected = Buffer.from(this.sign(fileId));
     const given = Buffer.from(sig);
-    return given.length === expected.length && timingSafeEqual(given, expected);
+    return [this.secret, ...this.previous].some((secret) => {
+      const expected = Buffer.from(this.sign(fileId, secret));
+      return given.length === expected.length && timingSafeEqual(given, expected);
+    });
   }
 
-  private sign(fileId: string) {
-    return createHmac('sha256', this.secret).update(fileId).digest('base64url');
+  private sign(fileId: string, secret = this.secret) {
+    return createHmac('sha256', secret).update(fileId).digest('base64url');
   }
 }
 

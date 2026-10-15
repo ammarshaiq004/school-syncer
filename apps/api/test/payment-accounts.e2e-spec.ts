@@ -150,7 +150,7 @@ describe('School payment accounts (e2e)', () => {
     expect(jazz).toMatchObject({ source: 'school', ownAccount: { missing: [], settings: { merchantId: 'SCHOOL42' } } });
     expect(JSON.stringify(res.body)).not.toMatch(/school-pass|school-salt/);
     const row = await prisma.schoolPaymentGateway.findFirstOrThrow({ where: { provider: 'JAZZCASH', school: { slug: schoolSlug } } });
-    expect(row.secrets).toMatch(/^v1:/);
+    expect(row.secrets).toMatch(/^v2:[0-9a-f]{8}:/);
     expect(row.secrets).not.toContain('school-salt');
 
     const start = await request(server).post(`/api/parent/invoices/${voucher.Ali}/checkout`).set(parent).send({ provider: 'JAZZCASH' }).expect(201);

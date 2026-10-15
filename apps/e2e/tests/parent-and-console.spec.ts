@@ -32,4 +32,9 @@ test('SchoolSyncer staff sign in to the platform console', async ({ page, seed }
   await page.goto('/platform/schools');
   await page.getByRole('searchbox').first().fill(seed.run);
   await expect(page.getByRole('link', { name: `Fresh School ${seed.run}` })).toBeVisible();
+
+  await page.getByRole('link', { name: 'System health' }).first().click();
+  await expect(page.getByRole('heading', { level: 1, name: 'System health' })).toBeVisible();
+  await expect(page.getByRole('table', { name: 'Job queues' })).toBeVisible();
+  await expect(page.getByText('Database', { exact: true })).toBeVisible();
 });

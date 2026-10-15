@@ -63,7 +63,7 @@ import { CommonModule } from './common/common.module.js';
 import { validateEnv } from './common/env.validation.js';
 import { JwtAuthGuard } from './common/jwt-auth.guard.js';
 import { PermissionGuard } from './common/permission.guard.js';
-import { PrismaExceptionFilter } from './common/prisma-exception.filter.js';
+import { AppExceptionFilter } from './common/app-exception.filter.js';
 import { RateLimitGuard } from './common/rate-limit.guard.js';
 import { RolesGuard } from './common/roles.guard.js';
 import { RolesController } from './roles/roles.controller.js';
@@ -73,6 +73,8 @@ import { PlatformAuthController } from './platform/platform-auth.controller.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { SubscriptionController } from './platform/subscription.controller.js';
 import { HealthController } from './health/health.controller.js';
+import { MonitoringModule } from './monitoring/monitoring.module.js';
+import { ObservabilityModule } from './observability/observability.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SchoolController } from './school/school.controller.js';
 import { SubjectsController } from './subjects/subjects.controller.js';
@@ -91,6 +93,7 @@ import { UsersController } from './users/users.controller.js';
       }),
     }),
     PrismaModule,
+    ObservabilityModule,
     JobsModule,
     CommonModule,
     AuthModule,
@@ -101,6 +104,7 @@ import { UsersController } from './users/users.controller.js';
     LessonPlansModule,
     ChatModule,
     AssistantModule,
+    MonitoringModule,
   ],
   controllers: [
     HealthController,
@@ -164,7 +168,8 @@ import { UsersController } from './users/users.controller.js';
     { provide: APP_GUARD, useClass: SubscriptionGuard },
     // Last: the school's role matrix (@Permission) narrows what @Roles allowed.
     { provide: APP_GUARD, useClass: PermissionGuard },
-    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
+    // Every error answer: database errors mapped, request id added, crashes reported.
+    { provide: APP_FILTER, useFactory: () => new AppExceptionFilter() },
   ],
 })
 export class AppModule {}

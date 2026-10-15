@@ -1,10 +1,13 @@
+import { randomBytes } from 'node:crypto';
 import { validateEnv } from './env.validation.js';
+
+const random = () => randomBytes(32).toString('hex');
 
 const production = {
   NODE_ENV: 'production',
   DATABASE_URL: 'postgresql://u:p@db:5432/schoolsyncer',
-  JWT_SECRET: 'a'.repeat(64),
-  FILE_SIGNING_SECRET: 'b'.repeat(64),
+  JWT_SECRET: random(),
+  FILE_SIGNING_SECRET: random(),
   API_PUBLIC_URL: 'https://api.schoolsyncer.pk',
   WEB_PUBLIC_URL: 'https://app.schoolsyncer.pk',
   PAYMENTS_MODE: 'off',
@@ -44,6 +47,42 @@ describe('validateEnv', () => {
     expect(problemsOf({ ...production, FILE_SIGNING_SECRET: production.JWT_SECRET })).toContain('FILE_SIGNING_SECRET must differ from JWT_SECRET');
   });
 
+  it('refuses secrets that are a pattern rather than random', () => {
+    expect(problemsOf({ ...production, JWT_SECRET: 'a'.repeat(64) })).toContain('JWT_SECRET is too simple');
+    expect(problemsOf({ ...production, PAYMENTS_SECRET_KEY: 'ab'.repeat(32) })).toContain('PAYMENTS_SECRET_KEY is too simple');
+    expect(problemsOf({ ...production, PAYMENTS_SECRET_KEY: 'not a key' })).toContain('PAYMENTS_SECRET_KEY is not a valid key');
+  });
+
+  it('accepts a rotation in progress and checks its previous secrets', () => {
+    const rotating = {
+      ...production,
+      JWT_SECRET_PREVIOUS: random(),
+      FILE_SIGNING_SECRET_PREVIOUS: `${random()},${random()}`,
+      PAYMENTS_SECRET_KEY: random(),
+      PAYMENTS_SECRET_KEY_PREVIOUS: random(),
+    };
+    expect(problemsOf(rotating)).toBe('');
+    expect(problemsOf({ ...rotating, JWT_SECRET_PREVIOUS: 'short' })).toContain('JWT_SECRET_PREVIOUS must be at least 32 characters');
+    expect(problemsOf({ ...rotating, PAYMENTS_SECRET_KEY_PREVIOUS: 'tiny' })).toContain('PAYMENTS_SECRET_KEY_PREVIOUS has a value that is not a valid key');
+    expect(problemsOf({ ...rotating, PAYMENTS_SECRET_KEY: undefined })).toContain('PAYMENTS_SECRET_KEY_PREVIOUS is set without PAYMENTS_SECRET_KEY');
+  });
+
+  it('refuses a secret reused under another name or as its own previous value', () => {
+    const shared = random();
+    expect(problemsOf({ ...production, JWT_SECRET: shared, JWT_SECRET_PREVIOUS: shared })).toContain('JWT_SECRET_PREVIOUS must differ from JWT_SECRET');
+    expect(problemsOf({ ...production, PAYMENTS_SECRET_KEY: production.JWT_SECRET })).toContain('PAYMENTS_SECRET_KEY must differ from JWT_SECRET');
+    expect(problemsOf({ ...production, FILE_SIGNING_SECRET_PREVIOUS: production.JWT_SECRET })).toContain('FILE_SIGNING_SECRET_PREVIOUS must differ from JWT_SECRET');
+    expect(problemsOf({ ...production, FILE_SIGNING_SECRET_PREVIOUS: `${shared},${shared}` })).toContain('FILE_SIGNING_SECRET_PREVIOUS lists the same value twice');
+  });
+
+  it('checks the error tracker and alert webhook settings', () => {
+    expect(problemsOf({ SENTRY_DSN: 'not a dsn' })).toContain('SENTRY_DSN is not a valid DSN');
+    expect(problemsOf({ SENTRY_DSN: 'https://abc123@glitchtip.example.pk/4' })).toBe('');
+    expect(problemsOf({ ALERT_WEBHOOK_URL: 'nope' })).toContain('ALERT_WEBHOOK_URL is not a valid URL');
+    expect(problemsOf({ ALERT_WEBHOOK_URL: 'http://hooks.example.pk/x' })).toBe('');
+    expect(problemsOf({ ...production, ALERT_WEBHOOK_URL: 'http://hooks.example.pk/x' })).toContain('ALERT_WEBHOOK_URL must use https');
+  });
+
   it('needs https public addresses and a database in production', () => {
     expect(problemsOf({ ...production, API_PUBLIC_URL: 'http://api.schoolsyncer.pk' })).toContain('API_PUBLIC_URL must use https');
     expect(problemsOf({ ...production, WEB_PUBLIC_URL: 'https://localhost:3000' })).toContain('WEB_PUBLIC_URL must not point at localhost');
@@ -54,7 +93,7 @@ describe('validateEnv', () => {
   it('needs PAYMENTS_SECRET_KEY for real gateways', () => {
     expect(problemsOf({ ...production, PAYMENTS_MODE: 'live' })).toContain('PAYMENTS_SECRET_KEY is required when PAYMENTS_MODE=live');
     expect(problemsOf({ ...production, PAYMENTS_MODE: 'sandbox', PAYMENTS_SECRET_KEY: 'too short' })).toContain('PAYMENTS_SECRET_KEY');
-    expect(problemsOf({ ...production, PAYMENTS_MODE: 'live', PAYMENTS_SECRET_KEY: 'c'.repeat(64) })).toBe('');
+    expect(problemsOf({ ...production, PAYMENTS_MODE: 'live', PAYMENTS_SECRET_KEY: random() })).toBe('');
   });
 
   it('lists every problem at once', () => {

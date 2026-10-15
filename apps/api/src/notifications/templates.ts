@@ -61,6 +61,12 @@ export const TEMPLATES = {
     params: ['schoolName', 'title', 'body'],
     text: (p: Record<string, string>) => `${p.schoolName}: ${p.title}\n${p.body}`,
   },
+  // To SchoolSyncer's own staff (monitoring), never to a school.
+  'platform.alert': {
+    whatsapp: 'platform_alert',
+    params: ['summary'],
+    text: (p: Record<string, string>) => `SchoolSyncer alert: ${p.summary}`,
+  },
 } as const;
 
 export type TemplateKey = keyof typeof TEMPLATES;

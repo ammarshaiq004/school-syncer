@@ -1,34 +1,36 @@
-import { Controller, Get, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
 import { Public } from '../common/decorators.js';
-import { PrismaService } from '../prisma/prisma.service.js';
-
-/** How long the database may take to answer before the API counts as down. */
-const DB_TIMEOUT_MS = 3000;
+import { SystemHealthService } from '../monitoring/system-health.service.js';
 
 @Controller('health')
 export class HealthController {
-  private readonly logger = new Logger(HealthController.name);
+  constructor(private readonly health: SystemHealthService) {}
 
-  constructor(private readonly prisma: PrismaService) {}
-
-  /** For load balancers and uptime checks: 200 when the database answers, 503 when it does not. */
+  /**
+   * Liveness, for load balancers and uptime checks: 200 when the database
+   * answers, 503 when it does not.
+   */
   @Public()
   @Get()
   async check() {
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      await Promise.race([
-        this.prisma.$queryRaw`SELECT 1`,
-        new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`no answer in ${DB_TIMEOUT_MS} ms`)), DB_TIMEOUT_MS);
-        }),
-      ]);
-    } catch (error) {
-      this.logger.error(`Database check failed: ${(error as Error).message}`);
+    if (!(await this.health.database()).ok) {
       throw new HttpException({ status: 'error', database: 'down' }, HttpStatus.SERVICE_UNAVAILABLE);
-    } finally {
-      clearTimeout(timer);
     }
     return { status: 'ok' };
+  }
+
+  /**
+   * Readiness, for deploy gates and monitors: the database, the job queue
+   * (backlog and how long the oldest due job has waited) and the age of the
+   * last successful nightly reconciliation. 503 with the failing check when
+   * any is wrong. Load balancers should keep using /health, so a stale
+   * reconciliation does not take the API out of rotation.
+   */
+  @Public()
+  @Get('ready')
+  async ready() {
+    const readiness = await this.health.readiness();
+    if (readiness.status !== 'ok') throw new HttpException(readiness, HttpStatus.SERVICE_UNAVAILABLE);
+    return readiness;
   }
 }

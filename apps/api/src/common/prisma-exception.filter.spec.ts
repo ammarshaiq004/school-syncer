@@ -1,6 +1,5 @@
-import type { ArgumentsHost } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { mapPrismaError, PrismaExceptionFilter } from './prisma-exception.filter.js';
+import { mapPrismaError } from './prisma-exception.filter.js';
 
 const known = (code: string) =>
   new Prisma.PrismaClientKnownRequestError(`Invalid \`prisma.student.create()\` invocation: SELECT * FROM "Student"`, {
@@ -40,17 +39,5 @@ describe('mapPrismaError', () => {
       status: 500,
       body: { statusCode: 500, message: 'Internal server error', error: 'Internal Server Error' },
     });
-  });
-});
-
-describe('PrismaExceptionFilter', () => {
-  it('sends the mapped answer without the query, values or stack', () => {
-    const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
-    const host = { switchToHttp: () => ({ getResponse: () => res }) } as unknown as ArgumentsHost;
-    new PrismaExceptionFilter().catch(known('P2002'), host);
-    expect(res.status).toHaveBeenCalledWith(409);
-    const body = res.json.mock.calls[0][0];
-    expect(body).toEqual({ statusCode: 409, message: 'A record with these details already exists', error: 'Conflict' });
-    expect(JSON.stringify(body)).not.toMatch(/SELECT|prisma|admissionNo|at /);
   });
 });

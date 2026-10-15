@@ -16,6 +16,8 @@ export class LocalStorageDriver implements StorageDriver {
     root: string,
     private readonly secret: string,
     private readonly publicApiUrl: string,
+    /** Earlier secrets whose links are still accepted during a rotation. */
+    private readonly previousSecrets: string[] = [],
   ) {
     this.root = resolve(root);
   }
@@ -47,12 +49,14 @@ export class LocalStorageDriver implements StorageDriver {
   verify(fileId: string, exp: string | undefined, sig: string | undefined): boolean {
     if (!exp || !sig || !/^\d+$/.test(exp)) return false;
     if (Number(exp) < Math.floor(Date.now() / 1000)) return false;
-    const expected = Buffer.from(this.sign(fileId, Number(exp)));
     const given = Buffer.from(sig);
-    return given.length === expected.length && timingSafeEqual(given, expected);
+    return [this.secret, ...this.previousSecrets].some((secret) => {
+      const expected = Buffer.from(this.sign(fileId, Number(exp), secret));
+      return given.length === expected.length && timingSafeEqual(given, expected);
+    });
   }
 
-  private sign(fileId: string, exp: number) {
-    return createHmac('sha256', this.secret).update(`file:${fileId}:${exp}`).digest('base64url');
+  private sign(fileId: string, exp: number, secret = this.secret) {
+    return createHmac('sha256', secret).update(`file:${fileId}:${exp}`).digest('base64url');
   }
 }
