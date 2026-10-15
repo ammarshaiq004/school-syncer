@@ -97,8 +97,8 @@ register too before comparing. Campus-limited staff only see their own campus: t
 whole-school sheets.
 
 Every mismatch gets a line in the check-in notes with its cause. A mismatch is either a **data entry slip** (fix the
-entry, note who and why), a **process difference** (agree which one is right) or a **bug** (file a problem report and
-mark it data-loss if money or attendance went missing).
+entry, note who and why), a **process difference** (agree which one is right) or a **bug** (file a problem report; if money or attendance went missing, start its internal note with
+"DATA LOSS" so it stands out in the inbox).
 
 ## 5. Success criteria for the month
 
