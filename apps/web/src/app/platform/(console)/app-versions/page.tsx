@@ -75,7 +75,7 @@ function ReleaseEditor({ release, canEdit, onSaved }: { release: PlatformRelease
   }
 
   return (
-    <Card className="flex flex-col">
+    <Card className="flex flex-col" role="region" aria-label={PLATFORM_LABEL[release.platform]}>
       <CardHeader
         icon={<Smartphone />}
         title={PLATFORM_LABEL[release.platform]}
