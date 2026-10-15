@@ -251,6 +251,15 @@ describe('Pilot kit (e2e)', () => {
       expect(found.body.items.map((r: { id: string }) => r.id)).toEqual([reportId]);
       await request(server).get('/api/platform/problem-reports?status=DONE').set(h.support).expect(400);
       await request(server).get('/api/platform/problem-reports/nope').set(h.support).expect(404);
+      const detail = await request(server).get(`/api/platform/problem-reports/${reportId}`).set(h.support).expect(200);
+      expect(detail.body).toMatchObject({
+        id: reportId,
+        school: { id: schoolId, slug: schoolSlug },
+        reporter: { name: 'User 1', isActive: true },
+        browser: 'PilotBrowser/1.0',
+        activity: [],
+      });
+      expect(detail.body.screenshot).toMatchObject({ id: screenshotId, kind: 'image' });
     });
 
     it('moves a report through its statuses with internal notes the school never sees', async () => {
