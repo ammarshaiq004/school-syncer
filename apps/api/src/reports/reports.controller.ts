@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { EntryKind } from '@prisma/client';
 import { z } from 'zod';
 import { totalsBy } from '../accounts/cashbook.js';
@@ -11,6 +11,29 @@ import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decor
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { feeOutstanding, OPEN_INVOICE } from '../fees/outstanding.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import {
+  ADJUSTMENTS,
+  ARREARS,
+  attendanceGrid,
+  feeTotals,
+  LATE_FINE,
+  splitPayments,
+  UNMATCHED,
+  voucherBuckets,
+  voucherTotals,
+  type FeeRow,
+} from './parallel-run.js';
+
+/** The parallel-run reports cover a pilot month; a quarter is the most one page shows. */
+const MAX_PARALLEL_DAYS = 93;
+
+function parallelRange(from?: string, to?: string) {
+  const r = dateRange(from, to);
+  if ((dayStart(r.to).getTime() - dayStart(r.from).getTime()) / 86_400_000 >= MAX_PARALLEL_DAYS) {
+    throw new BadRequestException(`Choose at most ${MAX_PARALLEL_DAYS} days`);
+  }
+  return r;
+}
 
 interface SectionWithCampus {
   name: string;
@@ -262,6 +285,147 @@ export class ReportsController {
         .map((s) => ({ ...s, percent: pct(s.present, s.days) }))
         .filter((s) => s.percent < limit)
         .sort((a, b) => a.percent - b.percent),
+    };
+  }
+
+  /**
+   * Parallel run (SCHOOL-150): fees collected per day and payment method, per
+   * method and per fee head, to tick off against the old fee register.
+   * Reversed payments are left out. Each payment is split across its
+   * voucher's heads in the order they are settled (see voucherBuckets).
+   */
+  @Get('parallel-run/fees')
+  @Roles(...FEE_ROLES)
+  async parallelFees(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
+    const r = parallelRange(from, to);
+    const payments = await this.prisma.payment.findMany({
+      where: {
+        schoolId: user.schoolId,
+        receivedAt: { gte: startOfLocalDay(r.from), lt: startOfLocalDay(nextDay(r.to)) },
+        reversedAt: null,
+        ...this.money(user).payments,
+      },
+      select: { id: true, amount: true, method: true, receivedAt: true, invoiceId: true },
+      orderBy: [{ receivedAt: 'asc' }, { id: 'asc' }],
+    });
+    const invoices = await this.prisma.invoice.findMany({
+      where: { schoolId: user.schoolId, id: { in: [...new Set(payments.map((p) => p.invoiceId))] } },
+      select: {
+        id: true,
+        lines: {
+          select: { feeHeadId: true, description: true, amount: true, kind: true, feeHead: { select: { name: true } } },
+          orderBy: { id: 'asc' },
+        },
+        // Every counted payment on the voucher, also those before the range: a
+        // payment's split depends on what was paid before it.
+        payments: {
+          where: { reversedAt: null },
+          select: { id: true, amount: true },
+          orderBy: [{ receivedAt: 'asc' }, { id: 'asc' }],
+        },
+      },
+    });
+    const names = new Map<string, string>(
+      [ARREARS, LATE_FINE, ADJUSTMENTS, UNMATCHED].map((b) => [b.key, b.name]),
+    );
+    const splits = new Map<string, Map<string, number>>();
+    for (const inv of invoices) {
+      const buckets = voucherBuckets(
+        inv.lines.map((l) => ({ ...l, feeHeadName: l.feeHead?.name ?? null })),
+      );
+      for (const b of buckets) names.set(b.key, b.name);
+      for (const [paymentId, split] of splitPayments(buckets, inv.payments)) splits.set(paymentId, split);
+    }
+    const rows: FeeRow[] = payments.map((p) => ({
+      date: localDate(p.receivedAt),
+      method: p.method,
+      amount: p.amount,
+      heads: splits.get(p.id) ?? new Map([[UNMATCHED.key, p.amount]]),
+    }));
+    return { ...r, ...feeTotals(rows, names) };
+  }
+
+  /** Parallel run: vouchers issued in the dates (by issue date) against how many are paid. */
+  @Get('parallel-run/vouchers')
+  @Roles(...FEE_ROLES)
+  async parallelVouchers(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
+    const r = parallelRange(from, to);
+    const withCampus = await this.hasCampuses(user.schoolId);
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        schoolId: user.schoolId,
+        issueDate: { gte: dayStart(r.from), lte: dayStart(r.to) },
+        ...this.money(user).invoices,
+      },
+      select: {
+        status: true,
+        total: true,
+        paid: true,
+        period: true,
+        student: {
+          select: { enrollments: { where: { status: 'ACTIVE' }, select: { section: sectionSelect } } },
+        },
+      },
+    });
+    return {
+      ...r,
+      ...voucherTotals(
+        invoices.map((i) => ({ ...i, className: className(withCampus, i.student.enrollments[0]) })),
+      ),
+    };
+  }
+
+  /**
+   * Parallel run: attendance marked per section per day, with the share
+   * present, to compare with the class registers. Admins limited to some
+   * campuses see only those.
+   */
+  @Get('parallel-run/attendance')
+  @Roles(...SETUP_ROLES)
+  async parallelAttendance(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
+    const r = parallelRange(from, to);
+    const scope = adminScope(user);
+    const withCampus = (scope?.length ?? 2) > 1 && (await this.hasCampuses(user.schoolId));
+    const where = {
+      schoolId: user.schoolId,
+      date: { gte: dayStart(r.from), lte: dayStart(r.to) },
+      ...(scope ? { section: { class: { campusId: { in: scope } } } } : {}),
+    };
+    const [sessions, counts] = await Promise.all([
+      this.prisma.attendanceSession.findMany({
+        where,
+        select: {
+          id: true,
+          date: true,
+          section: {
+            select: {
+              id: true,
+              name: true,
+              class: { select: { name: true, sortOrder: true, campus: { select: { name: true } } } },
+            },
+          },
+        },
+      }),
+      this.prisma.attendanceRecord.groupBy({ by: ['sessionId', 'status'], where: { session: where }, _count: true }),
+    ]);
+    const tally = new Map<string, { present: number; marked: number }>();
+    for (const c of counts) {
+      const t = tally.get(c.sessionId) ?? { present: 0, marked: 0 };
+      t.marked += c._count;
+      if (c.status === 'PRESENT' || c.status === 'LATE') t.present += c._count;
+      tally.set(c.sessionId, t);
+    }
+    return {
+      ...r,
+      ...attendanceGrid(
+        sessions.map((s) => ({
+          sectionId: s.section.id,
+          name: sectionName(s.section, withCampus),
+          sort: s.section.class.sortOrder,
+          date: s.date.toISOString().slice(0, 10),
+          ...(tally.get(s.id) ?? { present: 0, marked: 0 }),
+        })),
+      ),
     };
   }
 }

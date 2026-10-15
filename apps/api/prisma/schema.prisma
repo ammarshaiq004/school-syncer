@@ -44,28 +44,28 @@ model School {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  campuses      Campus[]
-  academicYears AcademicYear[]
-  classes       Class[]
-  subjects      Subject[]
-  users         User[]
-  auditLogs     AuditLog[]
-  lateFeePerDay Int            @default(0)
-  feeDueDay     Int            @default(10)
+  campuses             Campus[]
+  academicYears        AcademicYear[]
+  classes              Class[]
+  subjects             Subject[]
+  users                User[]
+  auditLogs            AuditLog[]
+  lateFeePerDay        Int            @default(0)
+  feeDueDay            Int            @default(10)
   /// Late fine caps: at most this many days are charged, and at most this many
   /// rupees on one voucher. Null means no cap.
-  lateFeeMaxDays Int?
-  lateFeeCap     Int?
+  lateFeeMaxDays       Int?
+  lateFeeCap           Int?
   /// Sibling discount (SCHOOL-140): percent off the listed fee heads for the
   /// second child of a family, and for the third and later children.
-  siblingSecondPercent Int      @default(0)
-  siblingThirdPercent  Int      @default(0)
-  siblingFeeHeadIds    String[] @default([])
+  siblingSecondPercent Int            @default(0)
+  siblingThirdPercent  Int            @default(0)
+  siblingFeeHeadIds    String[]       @default([])
   /// A one-time fee head billed on its own voucher when a student is admitted,
   /// at the amount the fee setup gives the student's class. Null = none.
   admissionFeeHeadId   String?
   /// Monthly runs move an earlier voucher's unpaid balance onto the new voucher.
-  carryForwardArrears  Boolean  @default(false)
+  carryForwardArrears  Boolean        @default(false)
 
   students          Student[]
   guardians         Guardian[]
@@ -114,6 +114,11 @@ model School {
 
   messagingSender SchoolMessagingSender?
   passwordResets  PasswordResetCode[]
+
+  /// The owner hid the setup checklist on the dashboard before finishing it.
+  setupChecklistDismissedAt DateTime?
+  problemReports            ProblemReport[]
+  activityDays              UserActivityDay[]
 }
 
 model Campus {
@@ -312,6 +317,9 @@ model User {
   chatThreadsAsParent ChatThread[]  @relation("ChatThreadGuardian")
   chatThreadsAsStaff  ChatThread[]  @relation("ChatThreadStaff")
   chatMessagesSent    ChatMessage[]
+
+  problemReports ProblemReport[]
+  activityDays   UserActivityDay[]
 
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
@@ -685,33 +693,33 @@ enum InvoiceKind {
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  schoolId      String
-  studentId     String
-  voucherNo     String        @unique
-  period        String // "2026-10" for monthly fees
-  issueDate     DateTime      @default(now()) @db.Date
-  dueDate       DateTime      @db.Date
-  total         Int
-  paid          Int           @default(0)
-  status        InvoiceStatus @default(UNPAID)
-  kind          InvoiceKind   @default(MONTHLY)
+  id               String        @id @default(cuid())
+  schoolId         String
+  studentId        String
+  voucherNo        String        @unique
+  period           String // "2026-10" for monthly fees
+  issueDate        DateTime      @default(now()) @db.Date
+  dueDate          DateTime      @db.Date
+  total            Int
+  paid             Int           @default(0)
+  status           InvoiceStatus @default(UNPAID)
+  kind             InvoiceKind   @default(MONTHLY)
   /// The billing month on a MONTHLY voucher, null on ad-hoc ones: one monthly
   /// voucher per student per month, however often a run is repeated.
-  monthlyPeriod String?
-  createdAt     DateTime      @default(now())
+  monthlyPeriod    String?
+  createdAt        DateTime      @default(now())
   /// Set when the voucher is voided (status CANCELLED); the reason is required.
-  cancelledAt   DateTime?
-  cancelledById String?
-  cancelReason  String?
+  cancelledAt      DateTime?
+  cancelledById    String?
+  cancelReason     String?
   /// Late fine already added to `total` as LATE_FINE lines (net of waivers).
-  fineBooked       Int       @default(0)
+  fineBooked       Int           @default(0)
   /// Set when the fee office waives the late fine; no more fine builds up.
   fineWaivedAt     DateTime?
   fineWaivedById   String?
   fineWaiverReason String?
   /// Earlier balances carried onto this voucher as ARREARS lines (part of `total`).
-  arrears          Int       @default(0)
+  arrears          Int           @default(0)
   carriedToId      String?
   runId            String?
 
@@ -1151,9 +1159,9 @@ enum PayrollStatus {
 }
 
 model PayrollRun {
-  id          String        @id @default(cuid())
-  schoolId    String
-  period      String // "YYYY-MM"
+  id            String        @id @default(cuid())
+  schoolId      String
+  period        String // "YYYY-MM"
   status        PayrollStatus @default(DRAFT)
   createdAt     DateTime      @default(now())
   createdById   String?
@@ -1342,6 +1350,8 @@ model PlatformAdmin {
   createdAt          DateTime     @default(now())
 
   auditLogs PlatformAuditLog[]
+
+  problemReportActivity ProblemReportActivity[]
 }
 
 model PlatformAuditLog {
@@ -2154,6 +2164,7 @@ enum FilePurpose {
   ASSIGNMENT
   SUBMISSION
   STUDENT_PHOTO
+  PROBLEM_REPORT
 }
 
 /// A file uploaded to the school's storage (S3-compatible bucket or local
@@ -2171,13 +2182,15 @@ model StoredFile {
   uploadedById String?
   createdAt    DateTime    @default(now())
 
-  school       School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  uploadedBy   User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  lesson       Lesson?
-  assignment   Assignment? @relation("AssignmentAttachment")
-  submission   Submission? @relation("SubmissionFile")
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  uploadedBy    User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  lesson        Lesson?
+  assignment    Assignment?    @relation("AssignmentAttachment")
+  submission    Submission?    @relation("SubmissionFile")
   /// A student's photo (purpose STUDENT_PHOTO).
-  studentPhoto Student?    @relation("StudentPhoto")
+  studentPhoto  Student?       @relation("StudentPhoto")
+  /// A screenshot sent with a problem report (purpose PROBLEM_REPORT).
+  problemReport ProblemReport? @relation("ProblemReportScreenshot")
 
   @@index([schoolId])
   @@index([uploadedById])
@@ -2284,4 +2297,85 @@ model PasswordResetCode {
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, phone, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Pilot kit (SCHOOL-150): problem reports and daily activity
+// ---------------------------------------------------------------------------
+
+enum ProblemReportStatus {
+  NEW
+  IN_PROGRESS
+  FIXED
+  WONT_FIX
+}
+
+enum ProblemReportSource {
+  WEB
+  MOBILE
+}
+
+/// "Report a problem" from the web or mobile app, triaged in the platform console.
+model ProblemReport {
+  id              String              @id @default(cuid())
+  schoolId        String
+  reporterId      String?
+  /// Kept as sent, so the report still reads right if the account is removed.
+  reporterName    String
+  roles           Role[]
+  source          ProblemReportSource
+  message         String
+  /// The web path (with its query) or the mobile screen the user was on.
+  page            String
+  appVersion      String?
+  /// The browser's user agent, or the phone's platform and OS version.
+  browser         String?
+  screenshotId    String?             @unique
+  status          ProblemReportStatus @default(NEW)
+  statusChangedAt DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  school     School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  reporter   User?                   @relation(fields: [reporterId], references: [id], onDelete: SetNull)
+  screenshot StoredFile?             @relation("ProblemReportScreenshot", fields: [screenshotId], references: [id], onDelete: SetNull)
+  activity   ProblemReportActivity[]
+
+  @@index([schoolId, createdAt])
+  @@index([status, createdAt])
+  @@index([reporterId, createdAt])
+}
+
+/// A status change (shown to the school) or an internal note (console only) on a problem report.
+model ProblemReportActivity {
+  id         String               @id @default(cuid())
+  reportId   String
+  adminId    String?
+  adminName  String
+  /// Set on a status change: the new status.
+  status     ProblemReportStatus?
+  fromStatus ProblemReportStatus?
+  /// Set on an internal note. Never sent to the school.
+  note       String?
+  createdAt  DateTime             @default(now())
+
+  report ProblemReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  admin  PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([reportId, createdAt])
+}
+
+/// One row per school user per day they used the API, with the roles they
+/// held, for the console's daily active users. Support sessions do not count.
+model UserActivityDay {
+  userId   String
+  date     DateTime @db.Date
+  schoolId String
+  roles    Role[]
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([userId, date])
+  @@index([schoolId, date])
 }
