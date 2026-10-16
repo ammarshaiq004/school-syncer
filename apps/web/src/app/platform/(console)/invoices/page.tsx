@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { Ban, CircleCheck, FilePlus, Receipt } from "lucide-react";
+import { Ban, Banknote, FilePlus, FileText, Receipt } from "lucide-react";
 import {
   Alert,
   Button,
@@ -16,29 +16,18 @@ import {
   useToast,
   type Column,
 } from "@/components/ui";
+import { BillStatePill } from "@/components/billing/platform-documents";
 import { ReasonDialog } from "@/components/platform/reason-dialog";
 import { isOwner, useConsoleAdmin } from "@/components/platform/session";
 import { platformApi } from "@/lib/api";
-import { day, rupees, thisMonth } from "@/lib/format";
+import { day, rupees, thisMonth, todayIso } from "@/lib/format";
+import { billOwed, PAYMENT_METHODS, totalOwed, type PlatformBill } from "@/lib/platform-billing";
 import { usePlatformApi } from "@/lib/use-api";
-import { monthName, StatusBadge } from "../status";
+import { monthName } from "../status";
 
-interface Bill {
-  id: string;
-  number: string;
-  period: string;
-  planName: string;
-  students: number;
-  amount: number;
-  status: string;
-  dueDate: string;
-  paidAt: string | null;
-  method: string | null;
-  reference: string | null;
-  school: { id: string; name: string };
-}
+type Bill = PlatformBill & { school: { id: string; name: string } };
 
-const METHODS = ["Bank transfer", "JazzCash", "Easypaisa", "Cheque", "Cash"];
+const METHOD_OPTIONS = PAYMENT_METHODS.map((m) => ({ value: m, label: m }));
 const BILL_STATUSES = [
   { value: "UNPAID", label: "Unpaid" },
   { value: "PAID", label: "Paid" },
@@ -55,8 +44,9 @@ export default function BillsPage() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [period, setPeriod] = useState(thisMonth());
   const [paying, setPaying] = useState<Bill | null>(null);
-  const [method, setMethod] = useState(METHODS[0]);
+  const [method, setMethod] = useState<string>(PAYMENT_METHODS[0]);
   const [reference, setReference] = useState("");
+  const [paidOn, setPaidOn] = useState(todayIso());
   const [voiding, setVoiding] = useState<Bill | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState("");
@@ -95,8 +85,11 @@ export default function BillsPage() {
     const bill = paying;
     if (!bill) return;
     const failed = await run(async () => {
-      await platformApi(`/invoices/${bill.id}/pay`, { method: "POST", body: { method, reference: reference || undefined } });
-      return `${bill.number} from ${bill.school.name} marked paid.`;
+      await platformApi(`/invoices/${bill.id}/pay`, {
+        method: "POST",
+        body: { method, reference: reference.trim() || undefined, paidAt: paidOn || undefined },
+      });
+      return `${rupees(billOwed(bill))} from ${bill.school.name} recorded; ${bill.number} is paid.`;
     });
     if (!failed) {
       setPaying(null);
@@ -114,13 +107,14 @@ export default function BillsPage() {
 
   function openPay(b: Bill) {
     setDialogError("");
-    setMethod(METHODS[0]);
+    setMethod(PAYMENT_METHODS[0]);
     setReference("");
+    setPaidOn(todayIso());
     setPaying(b);
   }
 
   const unpaidShown = bills.data?.filter((b) => b.status === "UNPAID") ?? [];
-  const unpaidTotal = unpaidShown.reduce((a, b) => a + b.amount, 0);
+  const unpaidTotal = totalOwed(unpaidShown);
 
   const columns: Column<Bill>[] = [
     { id: "number", header: "Bill", sortValue: (b) => b.number, cell: (b) => <span className="font-mono text-xs">{b.number}</span> },
@@ -137,20 +131,42 @@ export default function BillsPage() {
     { id: "period", header: "Month", sortValue: (b) => b.period, cell: (b) => monthName(b.period) },
     { id: "plan", header: "Plan", sortValue: (b) => b.planName, cell: (b) => b.planName, hideBelow: "lg" },
     { id: "students", header: "Students", align: "right", sortValue: (b) => b.students, cell: (b) => b.students, hideBelow: "md" },
-    { id: "amount", header: "Amount", align: "right", sortValue: (b) => b.amount, cell: (b) => rupees(b.amount) },
+    {
+      id: "amount",
+      header: "Amount",
+      align: "right",
+      sortValue: (b) => b.amount,
+      cell: (b) => (b.status === "VOID" ? <span className="text-fg-muted line-through">{rupees(b.amount)}</span> : rupees(b.amount)),
+    },
+    {
+      id: "paid",
+      header: "Paid so far",
+      align: "right",
+      sortValue: (b) => b.amountPaid,
+      cell: (b) => (b.amountPaid ? rupees(b.amountPaid) : <span className="text-fg-muted">–</span>),
+      hideBelow: "md",
+    },
+    {
+      id: "owed",
+      header: "Still owed",
+      align: "right",
+      sortValue: (b) => billOwed(b),
+      cell: (b) => (billOwed(b) ? <span className="font-medium text-fg">{rupees(billOwed(b))}</span> : <span className="text-fg-muted">–</span>),
+    },
     { id: "due", header: "Due", sortValue: (b) => b.dueDate, cell: (b) => day(b.dueDate), hideBelow: "md" },
     {
       id: "status",
       header: "Status",
       sortValue: (b) => b.status,
       cell: (b) => (
-        <span className="flex flex-col items-start gap-0.5">
-          <StatusBadge status={b.status} />
+        <span className="flex max-w-56 flex-col items-start gap-0.5">
+          <BillStatePill bill={b} />
           {b.paidAt && (
             <span className="text-xs text-fg-muted">
               {day(b.paidAt)}, {b.method}
             </span>
           )}
+          {b.status === "VOID" && b.voidReason && <span className="text-xs text-fg-muted">{b.voidReason}</span>}
         </span>
       ),
     },
@@ -158,30 +174,48 @@ export default function BillsPage() {
       id: "actions",
       header: <span className="sr-only">Actions</span>,
       align: "right",
-      cell: (b) =>
-        b.status === "UNPAID" ? (
-          <span className="flex justify-end gap-1.5 whitespace-nowrap">
-            <Button size="sm" variant="secondary" type="button" icon={<CircleCheck />} onClick={() => openPay(b)} aria-label={`Mark ${b.number} paid`}>
-              Mark paid
-            </Button>
-            <Tooltip content="Only a SchoolSyncer owner can void a bill" disabled={canVoid}>
-              {/* A disabled button gets no hover, so the wrapper carries the tooltip. */}
-              <span tabIndex={canVoid ? undefined : 0}>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  type="button"
-                  icon={<Ban />}
-                  disabled={!canVoid}
-                  onClick={() => setVoiding(b)}
-                  aria-label={`Void ${b.number}`}
-                >
-                  Void
-                </Button>
-              </span>
-            </Tooltip>
-          </span>
-        ) : null,
+      cell: (b) => (
+        <span className="flex justify-end gap-1.5 whitespace-nowrap">
+          <Link
+            href={`/platform/bills/${b.id}`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-fg-secondary hover:bg-surface-3 hover:text-fg [&_svg]:size-4"
+            aria-label={`View or print ${b.number}`}
+          >
+            <FileText aria-hidden />
+            View
+          </Link>
+          {b.status === "UNPAID" && (
+            <>
+              <Button
+                size="sm"
+                variant="secondary"
+                type="button"
+                icon={<Banknote />}
+                onClick={() => openPay(b)}
+                aria-label={`Record payment for ${b.number}`}
+              >
+                Record payment
+              </Button>
+              <Tooltip content="Only a SchoolSyncer owner can void a bill" disabled={canVoid}>
+                {/* A disabled button gets no hover, so the wrapper carries the tooltip. */}
+                <span tabIndex={canVoid ? undefined : 0}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    type="button"
+                    icon={<Ban />}
+                    disabled={!canVoid}
+                    onClick={() => setVoiding(b)}
+                    aria-label={`Void ${b.number}`}
+                  >
+                    Void
+                  </Button>
+                </span>
+              </Tooltip>
+            </>
+          )}
+        </span>
+      ),
     },
   ];
 
@@ -189,7 +223,7 @@ export default function BillsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Bills"
-        description="Monthly bills for every paying school. Record payments and void bills here."
+        description="Monthly bills for every paying school. A bill stays unpaid until it is paid in full; part-paid bills show what is still owed."
         actions={
           <Button
             icon={<FilePlus />}
@@ -267,21 +301,26 @@ export default function BillsPage() {
         open={!!paying}
         onOpenChange={(open) => !open && setPaying(null)}
         title={paying ? `Record payment for ${paying.number}` : "Record payment"}
-        description={paying ? `${paying.school.name}, ${rupees(paying.amount)} for ${monthName(paying.period)}` : undefined}
+        description={
+          paying
+            ? `${paying.school.name} pays the ${rupees(billOwed(paying))} still owed on the ${monthName(paying.period)} bill${paying.amountPaid ? ` (${rupees(paying.amountPaid)} of ${rupees(paying.amount)} already paid)` : ""}. To record a different amount, use Record payment on the school's Billing tab.`
+            : undefined
+        }
         size="sm"
         footer={
           <>
             <Button type="button" variant="secondary" onClick={() => setPaying(null)}>
               Cancel
             </Button>
-            <Button type="submit" form="pay-bill" loading={busy}>
-              Mark paid
+            <Button type="submit" form="pay-bill" loading={busy} icon={<Banknote />}>
+              Record {paying ? rupees(billOwed(paying)) : "payment"}
             </Button>
           </>
         }
       >
         <form id="pay-bill" onSubmit={pay} className="flex flex-col gap-4">
-          <SelectField label="Method" options={METHODS.map((m) => ({ value: m, label: m }))} value={method} onChange={(e) => setMethod(e.target.value)} />
+          <SelectField label="Method" options={METHOD_OPTIONS} value={method} onChange={(e) => setMethod(e.target.value)} />
+          <TextField label="Received on" type="date" required max={todayIso()} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />
           <TextField
             label="Reference"
             hint="Optional, for example the bank transaction ID."
@@ -296,7 +335,11 @@ export default function BillsPage() {
         open={!!voiding}
         onOpenChange={(open) => !open && setVoiding(null)}
         title={voiding ? `Void ${voiding.number}?` : "Void bill?"}
-        description={voiding ? `${voiding.school.name} will no longer owe ${rupees(voiding.amount)} for this bill.` : ""}
+        description={
+          voiding
+            ? `${voiding.school.name} will no longer owe ${rupees(billOwed(voiding))} for this bill.${voiding.amountPaid ? ` The ${rupees(voiding.amountPaid)} already paid towards it becomes credit for their next bill.` : ""}`
+            : ""
+        }
         confirmLabel="Void bill"
         destructive
         reasonLabel="Why is this bill being voided?"

@@ -12,12 +12,13 @@ import { CommandPalette, type PaletteCommand } from "@/components/kit/command-pa
 import { Spinner } from "@/components/kit/feedback";
 import { Sidebar, SidebarNav } from "@/components/shell/sidebar";
 import { TopBar } from "@/components/shell/topbar";
+import { BillingNoticeBanner } from "@/components/billing/notice-banner";
 import { SupportBanner } from "@/components/platform/support-banner";
 import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
 import { day, fullName } from "@/lib/format";
 import { allNavItems, availableViews, blockedNavItem, navForView, resolveView, VIEWS, viewDef, viewFromPath, type ViewId } from "@/lib/nav";
 import { usePersistedState } from "@/lib/persisted";
-import { FEES, hasRole, SessionContext, STAFF } from "@/lib/session";
+import { can, FEES, hasRole, SessionContext, STAFF } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
 
 /** The parts of GET /students the command palette shows. */
@@ -158,6 +159,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const home = viewDef(view).home;
   const isStaff = hasRole(user, STAFF);
   const blocked = blockedNavItem(user, pathname);
+  // The same people the sidebar shows Plan and billing to (roles and the billing permission).
+  const canBill = hasRole(user, FEES) && can(user, "billing");
 
   return (
     <SessionContext.Provider value={user}>
@@ -206,7 +209,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             showBell={isStaff}
             searchLabel={canFindStudents ? "Search students and pages" : undefined}
           />
-          {user.plan && isStaff && <PlanBanner plan={user.plan} canBill={hasRole(user, FEES)} now={signedInAt} />}
+          {user.plan && isStaff && <PlanBanner plan={user.plan} canBill={canBill} now={signedInAt} />}
+          {canBill && <BillingNoticeBanner pathname={pathname} />}
           <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-5 focus:outline-none md:px-6 md:py-6 print:max-w-none print:p-0">
             {blocked ? (
               <EmptyState

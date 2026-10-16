@@ -29,7 +29,6 @@ import {
   Button,
   Card,
   CardHeader,
-  DataTable,
   DescriptionList,
   DropdownItem,
   DropdownMenu,
@@ -48,20 +47,20 @@ import {
   TextareaField,
   TextField,
   useToast,
-  type Column,
   type Tone,
 } from "@/components/ui";
 import { auditIcon, auditLabel, auditReason } from "@/components/platform/audit-actions";
 import { LifecycleDialog, type LifecycleAction } from "@/components/platform/lifecycle-dialog";
 import { ReasonDialog } from "@/components/platform/reason-dialog";
 import { SchoolFeatures, type FeatureState } from "@/components/platform/school-features";
+import { SchoolBilling } from "@/components/platform/school-billing";
 import { SchoolPeople } from "@/components/platform/school-people";
 import { isOwner, useConsoleAdmin, when } from "@/components/platform/session";
 import { platformApi } from "@/lib/api";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
 import { whatsappNumber } from "@/components/students/directory-types";
-import { monthName, StatusBadge, STATUS_OPTIONS, trialEnded } from "../../status";
+import { StatusBadge, STATUS_OPTIONS, trialEnded } from "../../status";
 
 interface Detail {
   id: string;
@@ -91,6 +90,7 @@ interface Detail {
     period: string;
     students: number;
     amount: number;
+    amountPaid: number;
     status: string;
     dueDate: string;
     paidAt: string | null;
@@ -98,8 +98,6 @@ interface Detail {
   }[];
   history: { id: string; action: string; createdAt: string; details: unknown; admin: { name: string } | null }[];
 }
-
-type Invoice = Detail["invoices"][number];
 
 const DAY = 86_400_000;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -128,7 +126,7 @@ function AtAGlance({ s }: { s: Detail }) {
   }
   const unpaid = s.invoices.filter((i) => i.status === "UNPAID");
   if (unpaid.length) {
-    const owed = unpaid.reduce((a, i) => a + i.amount, 0);
+    const owed = unpaid.reduce((a, i) => a + i.amount - i.amountPaid, 0);
     const oldest = unpaid.reduce((a, i) => (i.dueDate < a.dueDate ? i : a));
     const late = Math.floor((now - +new Date(oldest.dueDate)) / DAY);
     parts.push(
@@ -181,29 +179,6 @@ const ACCESS: Record<string, { tone: Tone; label: string }> = {
   read_only: { tone: "warning", label: "Read-only" },
   blocked: { tone: "danger", label: "Blocked" },
 };
-
-const invoiceColumns: Column<Invoice>[] = [
-  { id: "number", header: "Bill", sortValue: (i) => i.number, cell: (i) => <span className="font-mono text-xs">{i.number}</span> },
-  { id: "period", header: "Month", sortValue: (i) => i.period, cell: (i) => monthName(i.period) },
-  { id: "students", header: "Students", align: "right", sortValue: (i) => i.students, cell: (i) => i.students, hideBelow: "sm" },
-  { id: "amount", header: "Amount", align: "right", sortValue: (i) => i.amount, cell: (i) => rupees(i.amount) },
-  { id: "due", header: "Due", sortValue: (i) => i.dueDate, cell: (i) => day(i.dueDate), hideBelow: "md" },
-  {
-    id: "status",
-    header: "Status",
-    sortValue: (i) => i.status,
-    cell: (i) => (
-      <span className="flex flex-col items-start gap-0.5">
-        <StatusBadge status={i.status} />
-        {i.paidAt && (
-          <span className="text-xs text-fg-muted">
-            {day(i.paidAt)}, {i.method}
-          </span>
-        )}
-      </span>
-    ),
-  },
-];
 
 export default function SchoolDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -335,7 +310,7 @@ export default function SchoolDetailPage() {
           { value: "people", label: "People", icon: <Users /> },
           { value: "features", label: "Plan & features", icon: <SlidersHorizontal />, disabled: !sub },
           { value: "subscription", label: "Subscription", icon: <CreditCard /> },
-          { value: "invoices", label: "Invoices", icon: <Receipt />, count: s.invoices.length },
+          { value: "billing", label: "Billing", icon: <Receipt />, count: s.invoices.length },
           { value: "audit", label: "Audit", icon: <History />, count: s.history.length },
         ]}
       >
@@ -416,21 +391,8 @@ export default function SchoolDetailPage() {
           </Card>
         </TabPanel>
 
-        <TabPanel value="invoices" className="pt-5">
-          <div className="flex flex-col gap-3">
-            <DataTable
-              label="Bills"
-              columns={invoiceColumns}
-              data={s.invoices}
-              getRowId={(i) => i.id}
-              pageSize={10}
-              empty={{ icon: <Receipt />, title: "No bills yet", description: "Bills appear once this school is billed for a month." }}
-            />
-            <Link href="/platform/invoices" className="inline-flex w-fit items-center gap-1 text-sm font-medium text-brand hover:underline">
-              Record a payment on the Bills page
-              <ArrowRight className="size-3.5" aria-hidden />
-            </Link>
-          </div>
+        <TabPanel value="billing" className="pt-5">
+          <SchoolBilling schoolId={s.id} schoolName={s.name} onChanged={school.reload} />
         </TabPanel>
 
         <TabPanel value="audit" className="pt-5">
