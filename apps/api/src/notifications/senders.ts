@@ -74,6 +74,11 @@ export class MessagingSenders {
     return value;
   }
 
+  /** SchoolSyncer's own sender (platform WhatsApp or SMS gateway), for messages from SchoolSyncer to schools. */
+  forPlatform(): Sender {
+    return chooseSender(process.env, null);
+  }
+
   /** After a school changes its sender. */
   forget(schoolId: string) {
     this.cache.delete(schoolId);

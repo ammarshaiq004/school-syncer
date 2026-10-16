@@ -166,7 +166,7 @@ export async function seedBilling(
     });
     const number = nextInvoiceNumber(period, last?.number ?? null);
     const due = dueDate(period);
-    await prisma.platformInvoice.upsert({
+    const invoice = await prisma.platformInvoice.upsert({
       where: { schoolId_period: { schoolId, period } },
       update: {},
       create: {
@@ -185,9 +185,49 @@ export async function seedBilling(
         reference: paid
           ? `TRX${period.replace('-', '')}${schoolId.slice(-3).toUpperCase()}`
           : null,
+        amountPaid: paid ? monthlyAmount(plan, count) : 0,
       },
     });
+    // Each paid bill was settled by one payment, with its own receipt.
+    if (paid && invoice.paidAt) {
+      const receipt = `SR-${invoice.number.slice(3)}`;
+      const payment = await prisma.platformPayment.upsert({
+        where: { number: receipt },
+        update: {},
+        create: {
+          number: receipt,
+          schoolId,
+          amount: invoice.amount,
+          method: invoice.method ?? 'Bank transfer',
+          reference: invoice.reference,
+          receivedOn: new Date(invoice.paidAt.toISOString().slice(0, 10)),
+          recordedBy: 'Hira Baig',
+        },
+      });
+      await prisma.platformPaymentAllocation.upsert({
+        where: { paymentId_invoiceId: { paymentId: payment.id, invoiceId: invoice.id } },
+        update: {},
+        create: { paymentId: payment.id, invoiceId: invoice.id, amount: invoice.amount },
+      });
+    }
   }
+}
+
+/** SchoolSyncer's details printed on bills and receipts. */
+export async function seedPlatformSettings(prisma: PrismaClient) {
+  const details = {
+    businessName: 'SchoolSyncer',
+    address: 'Office 4, 2nd Floor, Gulberg Arcade, Main Boulevard, Lahore',
+    phone: '0300 1112233',
+    email: 'billing@schoolsyncer.pk',
+    paymentInstructions:
+      'Bank transfer to SchoolSyncer, Meezan Bank, account 0123-0101234567 (IBAN PK00MEZN0001230101234567), or JazzCash to 0300 1112233. Put your bill number in the transfer description.',
+  };
+  await prisma.platformSettings.upsert({
+    where: { id: 'default' },
+    create: details,
+    update: details,
+  });
 }
 
 /**

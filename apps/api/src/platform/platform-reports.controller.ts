@@ -120,9 +120,10 @@ export class PlatformReportsController {
           where: { status: StudentStatus.ACTIVE },
           _count: true,
         }),
-        this.prisma.platformInvoice.findMany({
-          where: { status: PlatformInvoiceStatus.PAID, paidAt: { gte: since } },
-          select: { paidAt: true, amount: true },
+        // Money received, by the day it arrived (part payments included).
+        this.prisma.platformPayment.findMany({
+          where: { status: 'RECORDED', receivedOn: { gte: since } },
+          select: { receivedOn: true, amount: true },
         }),
         this.prisma.school.findMany({
           where: { createdAt: { gte: since } },
@@ -234,7 +235,7 @@ export class PlatformReportsController {
       schools: subs.length,
       revenueByMonth: byMonth(
         months,
-        paid.map((p) => ({ at: p.paidAt!, value: p.amount })),
+        paid.map((p) => ({ at: p.receivedOn, value: p.amount })),
       ).map(({ month, value }) => ({ month, amount: value })),
       newSchoolsByMonth: byMonth(
         months,

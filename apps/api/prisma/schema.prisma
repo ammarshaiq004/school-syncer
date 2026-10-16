@@ -44,28 +44,28 @@ model School {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  campuses      Campus[]
-  academicYears AcademicYear[]
-  classes       Class[]
-  subjects      Subject[]
-  users         User[]
-  auditLogs     AuditLog[]
-  lateFeePerDay Int            @default(0)
-  feeDueDay     Int            @default(10)
+  campuses             Campus[]
+  academicYears        AcademicYear[]
+  classes              Class[]
+  subjects             Subject[]
+  users                User[]
+  auditLogs            AuditLog[]
+  lateFeePerDay        Int            @default(0)
+  feeDueDay            Int            @default(10)
   /// Late fine caps: at most this many days are charged, and at most this many
   /// rupees on one voucher. Null means no cap.
-  lateFeeMaxDays Int?
-  lateFeeCap     Int?
+  lateFeeMaxDays       Int?
+  lateFeeCap           Int?
   /// Sibling discount (SCHOOL-140): percent off the listed fee heads for the
   /// second child of a family, and for the third and later children.
-  siblingSecondPercent Int      @default(0)
-  siblingThirdPercent  Int      @default(0)
-  siblingFeeHeadIds    String[] @default([])
+  siblingSecondPercent Int            @default(0)
+  siblingThirdPercent  Int            @default(0)
+  siblingFeeHeadIds    String[]       @default([])
   /// A one-time fee head billed on its own voucher when a student is admitted,
   /// at the amount the fee setup gives the student's class. Null = none.
   admissionFeeHeadId   String?
   /// Monthly runs move an earlier voucher's unpaid balance onto the new voucher.
-  carryForwardArrears  Boolean  @default(false)
+  carryForwardArrears  Boolean        @default(false)
 
   students          Student[]
   guardians         Guardian[]
@@ -84,6 +84,8 @@ model School {
 
   subscription      Subscription?
   platformInvoices  PlatformInvoice[]
+  platformPayments  PlatformPayment[]
+  platformNotices   PlatformNotice[]
   vehicles          Vehicle[]
   transportRoutes   TransportRoute[]
   books             Book[]
@@ -685,33 +687,33 @@ enum InvoiceKind {
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  schoolId      String
-  studentId     String
-  voucherNo     String        @unique
-  period        String // "2026-10" for monthly fees
-  issueDate     DateTime      @default(now()) @db.Date
-  dueDate       DateTime      @db.Date
-  total         Int
-  paid          Int           @default(0)
-  status        InvoiceStatus @default(UNPAID)
-  kind          InvoiceKind   @default(MONTHLY)
+  id               String        @id @default(cuid())
+  schoolId         String
+  studentId        String
+  voucherNo        String        @unique
+  period           String // "2026-10" for monthly fees
+  issueDate        DateTime      @default(now()) @db.Date
+  dueDate          DateTime      @db.Date
+  total            Int
+  paid             Int           @default(0)
+  status           InvoiceStatus @default(UNPAID)
+  kind             InvoiceKind   @default(MONTHLY)
   /// The billing month on a MONTHLY voucher, null on ad-hoc ones: one monthly
   /// voucher per student per month, however often a run is repeated.
-  monthlyPeriod String?
-  createdAt     DateTime      @default(now())
+  monthlyPeriod    String?
+  createdAt        DateTime      @default(now())
   /// Set when the voucher is voided (status CANCELLED); the reason is required.
-  cancelledAt   DateTime?
-  cancelledById String?
-  cancelReason  String?
+  cancelledAt      DateTime?
+  cancelledById    String?
+  cancelReason     String?
   /// Late fine already added to `total` as LATE_FINE lines (net of waivers).
-  fineBooked       Int       @default(0)
+  fineBooked       Int           @default(0)
   /// Set when the fee office waives the late fine; no more fine builds up.
   fineWaivedAt     DateTime?
   fineWaivedById   String?
   fineWaiverReason String?
   /// Earlier balances carried onto this voucher as ARREARS lines (part of `total`).
-  arrears          Int       @default(0)
+  arrears          Int           @default(0)
   carriedToId      String?
   runId            String?
 
@@ -1151,9 +1153,9 @@ enum PayrollStatus {
 }
 
 model PayrollRun {
-  id          String        @id @default(cuid())
-  schoolId    String
-  period      String // "YYYY-MM"
+  id            String        @id @default(cuid())
+  schoolId      String
+  period        String // "YYYY-MM"
   status        PayrollStatus @default(DRAFT)
   createdAt     DateTime      @default(now())
   createdById   String?
@@ -1284,6 +1286,9 @@ model Subscription {
   // Effective features = plan.features + featuresAdded - featuresRemoved.
   featuresAdded   String[]           @default([])
   featuresRemoved String[]           @default([])
+  // First month ("YYYY-MM") the nightly bill run charges; null = any month.
+  // A school that leaves its trial starts paying from the next month.
+  billedFrom      String?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
@@ -1297,26 +1302,120 @@ enum PlatformInvoiceStatus {
   VOID
 }
 
-// What SchoolSyncer bills a school for a month.
+// What SchoolSyncer bills a school for a month. A bill stays UNPAID until
+// payments cover it in full; amountPaid shows how much has been applied.
 model PlatformInvoice {
-  id        String                @id @default(cuid())
-  number    String                @unique // "SS-202610-0007"
-  schoolId  String
-  period    String // "YYYY-MM"
-  planName  String
-  students  Int
-  amount    Int
-  status    PlatformInvoiceStatus @default(UNPAID)
-  dueDate   DateTime              @db.Date
-  paidAt    DateTime?
-  method    String?
-  reference String?
-  createdAt DateTime              @default(now())
+  id         String                @id @default(cuid())
+  number     String                @unique // "SS-202610-0007"
+  schoolId   String
+  period     String // "YYYY-MM"
+  planName   String
+  students   Int
+  // Total due, tax included.
+  amount     Int
+  // Sales tax inside `amount`, at taxPercent; 0 while tax is switched off.
+  taxPercent Int                   @default(0)
+  taxAmount  Int                   @default(0)
+  // Paid so far, from PlatformPaymentAllocation; rebuilt after every payment change.
+  amountPaid Int                   @default(0)
+  status     PlatformInvoiceStatus @default(UNPAID)
+  dueDate    DateTime              @db.Date
+  // When the last of it was paid, and how (from the payment that settled it).
+  paidAt     DateTime?
+  method     String?
+  reference  String?
+  voidReason String?
+  createdAt  DateTime              @default(now())
 
-  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  school      School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  allocations PlatformPaymentAllocation[]
 
   @@unique([schoolId, period])
   @@index([status])
+}
+
+enum PlatformPaymentStatus {
+  RECORDED
+  VOID
+}
+
+// Money a school paid SchoolSyncer. It is applied to the oldest unpaid bills
+// first; whatever is left over is the school's credit.
+model PlatformPayment {
+  id         String                @id @default(cuid())
+  number     String                @unique // receipt "SR-202610-0003"
+  schoolId   String
+  amount     Int
+  method     String // "Bank transfer", "JazzCash"...
+  reference  String?
+  receivedOn DateTime              @db.Date
+  note       String?
+  status     PlatformPaymentStatus @default(RECORDED)
+  voidReason String?
+  voidedAt   DateTime?
+  recordedBy String? // PlatformAdmin name, or null for a migrated bill
+  createdAt  DateTime              @default(now())
+
+  school      School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  allocations PlatformPaymentAllocation[]
+
+  @@index([schoolId, receivedOn])
+}
+
+model PlatformPaymentAllocation {
+  id        String @id @default(cuid())
+  paymentId String
+  invoiceId String
+  amount    Int
+
+  payment PlatformPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice PlatformInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
+}
+
+enum PlatformNoticeSeverity {
+  INFO
+  WARNING
+  URGENT
+}
+
+// A message from SchoolSyncer to a school's owners: shown in the app and,
+// when sent, also by SMS and email. dedupeKey stops the nightly run from
+// sending the same reminder twice.
+model PlatformNotice {
+  id        String                 @id @default(cuid())
+  schoolId  String
+  kind      String // "bill.issued", "bill.due_soon", "payment.received"...
+  severity  PlatformNoticeSeverity @default(INFO)
+  title     String
+  body      String
+  invoiceId String?
+  paymentId String?
+  dedupeKey String                 @unique
+  readAt    DateTime?
+  createdAt DateTime               @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+}
+
+// SchoolSyncer's own details printed on bills and receipts. One row (id "default").
+model PlatformSettings {
+  id                  String   @id @default("default")
+  businessName        String   @default("SchoolSyncer")
+  address             String?
+  phone               String?
+  email               String?
+  ntn                 String?
+  strn                String?
+  // Sales tax added to new bills; null keeps tax off.
+  salesTaxPercent     Int?
+  // How to pay, shown on bills and the school's Plan and billing page.
+  paymentInstructions String?
+  updatedAt           DateTime @updatedAt
 }
 
 // OWNER can edit plans, platform staff, feature overrides and close schools;

@@ -156,7 +156,10 @@ SchoolSyncer is sold to schools as a monthly subscription. SchoolSyncer staff ru
 
 - **Plans.** Starter, Growth and Enterprise, each priced per active student per month with a minimum, a student and campus limit, and a set of modules (admissions, fees, exams, homework, timetable, HR and payroll, accounts, reports). Student records, attendance, announcements, users and the parent portal come with every plan. Staff can change prices, limits and modules in the console.
 - **Trial.** A school that registers gets 30 days of Growth free. When it ends, the school can still look everything up but can't change anything until the owner picks a plan.
-- **Bills.** Staff create each month's bills from the console; every active or past-due school is billed for its active students that day. A bill unpaid 15 days after its due date makes the school read-only until it is paid. Suspended and cancelled schools can't sign in.
+- **Bills.** Every morning (`BILLING_AT`, 06:00 school time by default, or `off`) a job bills each active or past-due school for the month on the 1st, at its active student count that day, due on the 10th. A school that leaves its trial is billed from the next month. Staff can also bill all schools for any month, or one school now, from the console. Once a bill passes its due date the school is marked past due; 15 days after it the school is read-only until it is paid. Suspension stays a manual decision: the schools list flags anything 30 or more days overdue. Suspended and cancelled schools can't sign in.
+- **Payments.** Staff record what a school paid (any amount, by bank transfer, JazzCash and so on). Payments go to the oldest unpaid bill first, a bill stays unpaid until it is covered in full, and anything over becomes credit for the next bill. Each payment gets a receipt number. Owners can void a payment or a bill with a reason; the money is re-applied automatically.
+- **Messages to owners.** A new bill, each payment and reminders (3 days before the due date, on it, 7 days after and the day before read-only) appear on the school's Plan and billing page and go to every owner by SMS or WhatsApp (the platform sender, never the school's own number) and email (`EMAIL_SMTP_URL`, `EMAIL_FROM`; without them emails are only logged). On WhatsApp the `schoolsyncer_billing` template (parameters: title, body) must be approved first.
+- **Bills and receipts** print from the console and from Plan and billing (Print, or Save as PDF). SchoolSyncer's name, address, NTN/STRN and payment instructions come from the console's Settings page; sales tax is off until an owner sets a rate there, and then applies to new bills only.
 - **Limits and modules** are enforced by the API: a module outside the plan returns 403 and its menu item is hidden, and adding students or campuses past the limit is refused with a message to upgrade.
 - **Support.** Staff can sign in to a school as its owner for an hour to help; it's recorded in the school's audit log and the console's history.
 
@@ -254,12 +257,14 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, DELETE | `/files/:id` (a fresh link; delete only while unattached), GET `/files/rules` | whoever may see the lesson, assignment or submission the file belongs to |
 | GET | `/files/:id/content?exp=&sig=` | signed link (local storage only) |
 | GET, POST, PUT | `/promotions`, `/promotions/next-year`, `/promotions/sections/:sectionId`, `/promotions/start-year` | owner, principal or admin; setting up and starting a year need a school-wide role |
-| GET, POST | `/subscription`, POST `/subscription/plan` | owner, principal, admin or accountant; choosing a plan needs the owner |
+| GET, POST | `/subscription`, POST `/subscription/plan`, `/subscription/invoices/:id`, `/subscription/payments/:id`, `/subscription/notices/unread`, `/subscription/notices/:id/read` | owner, principal, admin or accountant; choosing a plan needs the owner |
 | POST, GET | `/platform/auth/login`, `/platform/auth/me` | SchoolSyncer staff (separate login) |
 | GET | `/platform/overview`, `/platform/schools`, `/platform/schools/:id` | SchoolSyncer staff |
 | PATCH, POST | `/platform/schools/:id/subscription`, `/platform/schools/:id/support-login` | SchoolSyncer staff |
 | GET, PATCH | `/platform/plans`, `/platform/plans/:id` | SchoolSyncer staff |
-| GET, POST | `/platform/invoices`, `/platform/invoices/generate`, `/platform/invoices/:id/pay`, `/platform/invoices/:id/void` | SchoolSyncer staff |
+| GET, POST | `/platform/invoices`, `/platform/invoices/:id`, `/platform/invoices/generate`, `/platform/invoices/:id/pay`, `/platform/invoices/:id/void` | SchoolSyncer staff (void: owner) |
+| GET, POST | `/platform/payments`, `/platform/payments/:id`, `/platform/payments/:id/void`, `/platform/schools/:id/payments`, `/platform/schools/:id/statement`, `/platform/schools/:id/bill-now` | SchoolSyncer staff (void: owner) |
+| GET, PATCH | `/platform/settings` | SchoolSyncer staff (edit: owner) |
 
 ## AI assistant setup
 

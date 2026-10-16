@@ -25,6 +25,7 @@ import { z } from 'zod';
 import type { AuthUser, PlatformUser } from '../common/auth-user.js';
 import { CurrentAdmin, PlatformOnly } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { dayStart, localDate } from '../common/dates.js';
 import { phoneSearchDigits } from '../notifications/phone.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PlatformAccessGuard, PlatformOwnerOnly } from './platform-access.guard.js';
@@ -35,8 +36,8 @@ import {
   FEATURES,
   isFeature,
   monthlyAmount,
-  nextInvoiceNumber,
 } from './plans.js';
+import { BillingService, nextPeriod } from './billing/billing.service.js';
 import { SubscriptionService } from './subscription.service.js';
 
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
@@ -67,10 +68,32 @@ const supportSchema = z.object({
 
 const SUPPORT_SESSION_MS = 60 * 60_000;
 
+/** The console flags schools this many days past a bill's due date. */
+export const OVERDUE_FLAG_DAYS = 30;
+
 const paySchema = z.object({
   method: z.string().trim().min(2).max(30),
   reference: z.string().trim().max(60).optional(),
   paidAt: z.coerce.date().optional(),
+});
+
+const paymentSchema = z.object({
+  amount: z.number().int().min(1).max(100_000_000),
+  method: z.string().trim().min(2).max(30),
+  reference: z.string().trim().max(60).optional(),
+  receivedOn: z.coerce.date().optional(),
+  note: z.string().trim().max(300).optional(),
+});
+
+const settingsSchema = z.object({
+  businessName: z.string().trim().min(2).max(100).optional(),
+  address: z.string().trim().max(300).nullable().optional(),
+  phone: z.string().trim().max(40).nullable().optional(),
+  email: z.string().trim().max(120).nullable().optional(),
+  ntn: z.string().trim().max(30).nullable().optional(),
+  strn: z.string().trim().max(30).nullable().optional(),
+  salesTaxPercent: z.number().int().min(1).max(50).nullable().optional(),
+  paymentInstructions: z.string().trim().max(1000).nullable().optional(),
 });
 
 /** The SchoolSyncer console: every school, its plan, usage and bills. */
@@ -82,6 +105,7 @@ export class PlatformController {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly subscriptions: SubscriptionService,
+    private readonly billing: BillingService,
   ) {}
 
   // ----- Overview -----
@@ -99,7 +123,7 @@ export class PlatformController {
       this.studentCounts(),
       this.prisma.platformInvoice.aggregate({
         where: { status: PlatformInvoiceStatus.UNPAID },
-        _sum: { amount: true },
+        _sum: { amount: true, amountPaid: true },
         _count: true,
       }),
       this.prisma.school.findMany({
@@ -133,7 +157,10 @@ export class PlatformController {
       byStatus,
       students: [...students.values()].reduce((a, b) => a + b, 0),
       mrr,
-      unpaid: { amount: unpaid._sum.amount ?? 0, count: unpaid._count },
+      unpaid: {
+        amount: (unpaid._sum.amount ?? 0) - (unpaid._sum.amountPaid ?? 0),
+        count: unpaid._count,
+      },
       trialsEnding: subs
         .filter(
           (s) =>
@@ -225,14 +252,30 @@ export class PlatformController {
       this.prisma.platformInvoice.groupBy({
         by: ['schoolId'],
         where: { status: PlatformInvoiceStatus.UNPAID },
-        _sum: { amount: true },
+        _sum: { amount: true, amountPaid: true },
+        _min: { dueDate: true },
       }),
     ]);
     const lastLogin = new Map(
       lastLogins.map((l) => [l.schoolId, l._max.lastLoginAt]),
     );
-    const due = new Map(unpaid.map((u) => [u.schoolId, u._sum.amount ?? 0]));
-    return schools.map((s) => ({
+    const due = new Map(
+      unpaid.map((u) => [
+        u.schoolId,
+        {
+          amount: (u._sum.amount ?? 0) - (u._sum.amountPaid ?? 0),
+          oldest: u._min.dueDate,
+        },
+      ]),
+    );
+    const today = dayStart(localDate(now));
+    const daysOverdue = (id: string) => {
+      const oldest = due.get(id)?.oldest;
+      return oldest && oldest < today
+        ? Math.round((+today - +oldest) / 86_400_000)
+        : 0;
+    };
+    const rows = schools.map((s) => ({
       id: s.id,
       name: s.name,
       slug: s.slug,
@@ -246,9 +289,14 @@ export class PlatformController {
       monthly: s.subscription
         ? monthlyAmount(s.subscription.plan, students.get(s.id) ?? 0)
         : 0,
-      balanceDue: due.get(s.id) ?? 0,
+      balanceDue: due.get(s.id)?.amount ?? 0,
+      daysOverdue: daysOverdue(s.id),
       lastLoginAt: lastLogin.get(s.id) ?? null,
     }));
+    // Schools to consider suspending: a bill unpaid 30 days or more past its due date.
+    return status === 'OVERDUE_30'
+      ? rows.filter((r) => r.daysOverdue >= OVERDUE_FLAG_DAYS)
+      : rows;
   }
 
   @Get('schools/:id')
@@ -377,6 +425,11 @@ export class PlatformController {
         status: body.status,
         trialEndsAt: body.trialEndsAt,
         notes: body.notes,
+        // Out of the trial: the nightly bill run starts with next month.
+        ...(before.status === SubscriptionStatus.TRIAL &&
+        body.status === SubscriptionStatus.ACTIVE
+          ? { billedFrom: nextPeriod(localDate(new Date()).slice(0, 7)) }
+          : {}),
       },
       include: { plan: true },
     });
@@ -515,111 +568,62 @@ export class PlatformController {
   }
 
   /**
-   * Bills every paying school for a month at its current student count.
-   * Schools on trial, suspended or cancelled are skipped, as are schools
-   * already billed for the month, so it is safe to run again.
+   * Bills every paying school for a month at its current student count. The
+   * nightly run does this on the 1st; staff can run it for any month. Schools
+   * on trial, suspended, closed or already billed for the month are skipped.
    */
   @Post('invoices/generate')
   async generate(
     @CurrentAdmin() admin: PlatformUser,
     @Body(new ZodValidationPipe(z.object({ period }))) body: { period: string },
   ) {
-    const subs = await this.prisma.subscription.findMany({
-      where: {
-        status: {
-          in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
-        },
-        school: { platformInvoices: { none: { period: body.period } } },
-      },
-      include: { plan: true },
-    });
-    const students = await this.studentCounts();
-    const last = await this.prisma.platformInvoice.findFirst({
-      where: { period: body.period },
-      orderBy: { number: 'desc' },
-    });
-    let number = last?.number ?? null;
-    const [y, m] = body.period.split('-').map(Number);
-    const dueDate = new Date(Date.UTC(y, m - 1, 10));
-    const created = [];
-    for (const s of subs) {
-      const count = students.get(s.schoolId) ?? 0;
-      created.push(
-        await this.prisma.platformInvoice.create({
-          data: {
-            number: (number = nextInvoiceNumber(body.period, number)),
-            schoolId: s.schoolId,
-            period: body.period,
-            planName: s.plan.name,
-            students: count,
-            amount: monthlyAmount(s.plan, count),
-            dueDate,
-          },
-        }),
-      );
-      this.subscriptions.forget(s.schoolId);
-    }
+    const result = await this.billing.issueBills(body.period);
     await this.log(admin, 'invoices.generate', null, {
       period: body.period,
-      count: created.length,
+      count: result.created,
     });
-    return {
-      created: created.length,
-      total: created.reduce((sum, i) => sum + i.amount, 0),
-    };
+    return { created: result.created, total: result.total };
   }
 
+  /** One bill with what has been paid towards it, for the printable bill. */
+  @Get('invoices/:id')
+  async invoice(@Param('id') id: string) {
+    const invoice = await this.prisma.platformInvoice.findUnique({
+      where: { id },
+      include: {
+        school: { select: { id: true, name: true, slug: true, city: true, phone: true, email: true } },
+        allocations: { include: { payment: { select: { id: true, number: true, receivedOn: true, method: true, status: true } } } },
+      },
+    });
+    if (!invoice) throw new NotFoundException('Bill not found');
+    return { invoice, settings: await this.billing.settings() };
+  }
+
+  /** Records a payment for whatever is still owed on one bill. */
   @Post('invoices/:id/pay')
   async pay(
     @CurrentAdmin() admin: PlatformUser,
     @Param('id') id: string,
     @Body(new ZodValidationPipe(paySchema)) body: z.infer<typeof paySchema>,
   ) {
-    const invoice = await this.prisma.platformInvoice.findUnique({
-      where: { id },
-    });
-    if (!invoice) throw new NotFoundException('Invoice not found');
-    if (invoice.status !== PlatformInvoiceStatus.UNPAID)
-      throw new ConflictException(
-        `This invoice is already ${invoice.status.toLowerCase()}`,
-      );
-    const after = await this.prisma.platformInvoice.update({
-      where: { id },
-      data: {
-        status: PlatformInvoiceStatus.PAID,
-        paidAt: body.paidAt ?? new Date(),
-        method: body.method,
-        reference: body.reference,
-      },
-    });
-    // A past-due school that has cleared everything is back in good standing.
-    const stillUnpaid = await this.prisma.platformInvoice.count({
-      where: {
-        schoolId: invoice.schoolId,
-        status: PlatformInvoiceStatus.UNPAID,
-      },
-    });
-    if (!stillUnpaid) {
-      await this.prisma.subscription.updateMany({
-        where: {
-          schoolId: invoice.schoolId,
-          status: SubscriptionStatus.PAST_DUE,
-        },
-        data: { status: SubscriptionStatus.ACTIVE },
-      });
-    }
-    this.subscriptions.forget(invoice.schoolId);
+    const { payment, invoice } = await this.billing.payInvoice(
+      id,
+      { method: body.method, reference: body.reference, receivedOn: body.paidAt },
+      admin.name,
+    );
     await this.log(admin, 'invoice.pay', invoice.schoolId, {
       number: invoice.number,
-      amount: invoice.amount,
+      receipt: payment.number,
+      amount: payment.amount,
       method: body.method,
     });
-    return after;
+    return invoice;
   }
 
   /**
    * Writes off an unpaid bill (and may lift a past-due block), so only an
-   * owner can do it and the reason is kept in the audit log.
+   * owner can do it and the reason is kept on the bill and in the audit log.
+   * Anything already paid towards it becomes credit.
    */
   @Post('invoices/:id/void')
   @PlatformOwnerOnly()
@@ -628,21 +632,115 @@ export class PlatformController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(supportSchema)) body: { reason: string },
   ) {
-    const invoice = await this.prisma.platformInvoice.findUnique({
-      where: { id },
-    });
-    if (!invoice) throw new NotFoundException('Invoice not found');
-    if (invoice.status !== PlatformInvoiceStatus.UNPAID)
-      throw new ConflictException('Only unpaid invoices can be voided');
-    const after = await this.prisma.platformInvoice.update({
-      where: { id },
-      data: { status: PlatformInvoiceStatus.VOID },
-    });
-    this.subscriptions.forget(invoice.schoolId);
-    await this.log(admin, 'invoice.void', invoice.schoolId, {
-      number: invoice.number,
-      amount: invoice.amount,
+    const after = await this.billing.voidInvoice(id, body.reason);
+    await this.log(admin, 'invoice.void', after.schoolId, {
+      number: after.number,
+      amount: after.amount,
       reason: body.reason,
+    });
+    return after;
+  }
+
+  // ----- Payments and statements -----
+
+  @Get('payments')
+  payments(@Query('status') status?: string) {
+    return this.prisma.platformPayment.findMany({
+      where: status === 'VOID' || status === 'RECORDED' ? { status } : {},
+      orderBy: [{ receivedOn: 'desc' }, { createdAt: 'desc' }],
+      take: 500,
+      include: {
+        school: { select: { id: true, name: true, slug: true } },
+        allocations: { include: { invoice: { select: { id: true, number: true } } } },
+      },
+    });
+  }
+
+  /** One payment, for the printable receipt. */
+  @Get('payments/:id')
+  async payment(@Param('id') id: string) {
+    const payment = await this.prisma.platformPayment.findUnique({
+      where: { id },
+      include: {
+        school: { select: { id: true, name: true, slug: true, city: true, phone: true, email: true } },
+        allocations: { include: { invoice: { select: { id: true, number: true, period: true, amount: true } } } },
+      },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    return { payment, settings: await this.billing.settings() };
+  }
+
+  /** Money received from a school: applied to its oldest unpaid bills, the rest kept as credit. */
+  @Post('schools/:id/payments')
+  async recordPayment(
+    @CurrentAdmin() admin: PlatformUser,
+    @Param('id') schoolId: string,
+    @Body(new ZodValidationPipe(paymentSchema)) body: z.infer<typeof paymentSchema>,
+  ) {
+    const payment = await this.billing.recordPayment(schoolId, body, admin.name);
+    await this.log(admin, 'payment.record', schoolId, {
+      receipt: payment.number,
+      amount: payment.amount,
+      method: payment.method,
+      reference: payment.reference,
+    });
+    return payment;
+  }
+
+  /** Undoes a payment recorded by mistake; the bills it paid are owed again. */
+  @Post('payments/:id/void')
+  @PlatformOwnerOnly()
+  async voidPayment(
+    @CurrentAdmin() admin: PlatformUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(supportSchema)) body: { reason: string },
+  ) {
+    const payment = await this.billing.voidPayment(id, body.reason);
+    await this.log(admin, 'payment.void', payment.schoolId, {
+      receipt: payment.number,
+      amount: payment.amount,
+      reason: body.reason,
+    });
+    return payment;
+  }
+
+  @Get('schools/:id/statement')
+  async statement(@Param('id') schoolId: string) {
+    const school = await this.prisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+    if (!school) throw new NotFoundException('School not found');
+    return this.billing.statement(schoolId);
+  }
+
+  /** Issues this month's bill for one school now instead of waiting for the nightly run. */
+  @Post('schools/:id/bill-now')
+  async billNow(@CurrentAdmin() admin: PlatformUser, @Param('id') schoolId: string) {
+    const forPeriod = localDate(new Date()).slice(0, 7);
+    const result = await this.billing.issueBills(forPeriod, { schoolId });
+    if (!result.created)
+      throw new ConflictException(
+        'Nothing to bill: the school is already billed for this month, on trial, suspended, closed, or starts paying next month.',
+      );
+    await this.log(admin, 'invoices.generate', schoolId, { period: forPeriod, count: 1 });
+    return result.invoices[0];
+  }
+
+  // ----- SchoolSyncer's business details -----
+
+  @Get('settings')
+  settings() {
+    return this.billing.settings();
+  }
+
+  @Patch('settings')
+  @PlatformOwnerOnly()
+  async updateSettings(
+    @CurrentAdmin() admin: PlatformUser,
+    @Body(new ZodValidationPipe(settingsSchema)) body: z.infer<typeof settingsSchema>,
+  ) {
+    const before = await this.billing.settings();
+    const after = await this.prisma.platformSettings.update({ where: { id: 'default' }, data: body });
+    await this.log(admin, 'settings.update', null, {
+      changed: Object.keys(body).filter((k) => (before as Record<string, unknown>)[k] !== (after as Record<string, unknown>)[k]),
     });
     return after;
   }
