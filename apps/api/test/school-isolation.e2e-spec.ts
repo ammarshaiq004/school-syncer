@@ -272,6 +272,13 @@ describe('School isolation (e2e)', () => {
     ids.invoice = (await prisma.invoice.findFirstOrThrow({ where: { studentId: ids.student } })).id;
     ids.payment = (await create(ownerA, `/api/fees/invoices/${ids.invoice}/payments`, { amount: 1000, method: 'CASH' }))
       .payment.id;
+    // A console gateway test run on school A's voucher (SCHOOL-149).
+    const school = await prisma.school.findFirstOrThrow({ where: { slug: a.slug } });
+    ids.gatewayRun = (
+      await prisma.gatewayTestRun.create({
+        data: { schoolId: school.id, provider: 'JAZZCASH', mode: 'mock', account: 'platform', amount: 10, invoiceId: ids.invoice },
+      })
+    ).id;
     const category = (await create(ownerA, '/api/accounts/categories', { name: 'Repairs', kind: 'EXPENSE' })).id;
     ids.entry = (await create(ownerA, '/api/accounts/entries', { categoryId: category, amount: 700, date: today })).id;
 
@@ -369,6 +376,23 @@ describe('School isolation (e2e)', () => {
       expect([403, 404], `${res.status} ${JSON.stringify(res.body)}`).toContain(res.status);
     },
   );
+
+  // Console gateway test runs belong to SchoolSyncer staff: no school sign-in
+  // reaches them, not even the school's own owner, so they cannot sit in the
+  // table above (whose GET rows must answer school A's owner).
+  it.each([
+    ['get', ''],
+    ['post', '/refresh'],
+    ['post', '/simulate'],
+    ['post', '/reverse'],
+    ['post', '/cancel'],
+  ] as const)('keeps console gateway test runs from school sign-ins: %s /api/platform/gateways/runs/:id%s', async (method, suffix) => {
+    for (const as of [ownerA, ownerB]) {
+      const res = await request(server)[method](`/api/platform/gateways/runs/${ids.gatewayRun}${suffix}`).set(as).send({ approve: true });
+      expect(res.status).toBe(401);
+    }
+    expect(await prisma.gatewayTestRun.findUniqueOrThrow({ where: { id: ids.gatewayRun } })).toMatchObject({ finishedAt: null, reversedAt: null });
+  });
 
   it("still answers school A's owner on every GET route", async () => {
     for (const route of routes.filter((r) => r.method === 'get')) {

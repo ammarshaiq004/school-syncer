@@ -162,11 +162,21 @@ export class FeeCorrectionsService {
    * back to owed, so the next voucher (or the library desk) collects them.
    */
   async cancelInvoice(user: AuthUser, invoiceId: string, reason: string) {
-    const { before, after } = await serializable(this.prisma, async (tx) => {
-      const invoice = await tx.invoice.findFirst({
-        where: { id: invoiceId, schoolId: user.schoolId, student: this.studentScope(user) },
-      });
+    const { before, after } = await this.cancel(
+      { id: invoiceId, schoolId: user.schoolId, student: this.studentScope(user) },
+      user.sub,
+      reason,
+    );
+    await this.audit.record(user, 'invoice.cancel', 'Invoice', invoiceId, { before, after });
+    return after;
+  }
+
+  /** The void itself, for callers that audit it their own way (console gateway tests). */
+  async cancel(where: Prisma.InvoiceWhereInput, cancelledById: string | null, reason: string) {
+    return serializable(this.prisma, async (tx) => {
+      const invoice = await tx.invoice.findFirst({ where });
       if (!invoice) throw new NotFoundException('Invoice not found');
+      const invoiceId = invoice.id;
       if (invoice.status === InvoiceStatus.CANCELLED) throw new BadRequestException('This voucher is already cancelled.');
       assertNotCarried(invoice);
       const live = await tx.payment.count({ where: { invoiceId, ...LIVE_PAYMENT } });
@@ -190,14 +200,12 @@ export class FeeCorrectionsService {
         data: {
           status: InvoiceStatus.CANCELLED,
           cancelledAt: new Date(),
-          cancelledById: user.sub,
+          cancelledById,
           cancelReason: reason,
         },
       });
       return { before: invoice, after: updated };
     });
-    await this.audit.record(user, 'invoice.cancel', 'Invoice', invoiceId, { before, after });
-    return after;
   }
 
   /**
@@ -206,24 +214,31 @@ export class FeeCorrectionsService {
    * worked out again from the payments still standing.
    */
   async reversePayment(user: AuthUser, paymentId: string, reason: string) {
-    const { before, payment, invoice } = await serializable(this.prisma, async (tx) => {
-      const found = await tx.payment.findFirst({
-        where: { id: paymentId, schoolId: user.schoolId, invoice: { student: this.studentScope(user) } },
-      });
-      if (!found) throw new NotFoundException('Payment not found');
-      if (found.reversedAt) throw new BadRequestException('This payment was already reversed.');
-      assertNotCarried(await tx.invoice.findUniqueOrThrow({ where: { id: found.invoiceId } }));
-      const reversed = await tx.payment.update({
-        where: { id: paymentId },
-        data: { reversedAt: new Date(), reversedById: user.sub, reversalReason: reason },
-      });
-      return { before: found, payment: reversed, invoice: await this.settle(tx, found.invoiceId) };
-    });
+    const { before, payment, invoice } = await this.reverse(
+      { id: paymentId, schoolId: user.schoolId, invoice: { student: this.studentScope(user) } },
+      user.sub,
+      reason,
+    );
     await this.audit.record(user, 'payment.reverse', 'Payment', paymentId, {
       before,
       after: { ...payment, invoice: { id: invoice.id, paid: invoice.paid, status: invoice.status } },
     });
     return { payment, invoice };
+  }
+
+  /** The reversal itself, for callers that audit it their own way (console gateway tests). */
+  async reverse(where: Prisma.PaymentWhereInput, reversedById: string | null, reason: string) {
+    return serializable(this.prisma, async (tx) => {
+      const found = await tx.payment.findFirst({ where });
+      if (!found) throw new NotFoundException('Payment not found');
+      if (found.reversedAt) throw new BadRequestException('This payment was already reversed.');
+      assertNotCarried(await tx.invoice.findUniqueOrThrow({ where: { id: found.invoiceId } }));
+      const reversed = await tx.payment.update({
+        where: { id: found.id },
+        data: { reversedAt: new Date(), reversedById, reversalReason: reason },
+      });
+      return { before: found, payment: reversed, invoice: await this.settle(tx, found.invoiceId) };
+    });
   }
 
   /** Adds a discount or extra charge line to a voucher and updates its total. */

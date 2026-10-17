@@ -55,13 +55,19 @@ consumer number. Each school needs its own 1Bill biller prefix.
 
 ## Going live
 
+The step-by-step runbook per gateway (what to ask each provider for, the addresses to register, **Test connection**,
+the console's **Small live test** that pays a few rupees and reverses them, and rollback) is
+[gateway-go-live.md](gateway-go-live.md). In short:
+
 1. Set `PAYMENTS_SECRET_KEY` (32+ characters; `openssl rand -hex 32`). Keep it safe: changing it makes saved school
    secrets unreadable, and those gateways switch off until they are entered again.
 2. Host the API at a public https address and set `API_PUBLIC_URL` and `WEB_PUBLIC_URL`. Gateways cannot reach
    localhost. The API logs what is still missing at start-up, and Settings > Online payments shows it to schools.
-3. Run with `PAYMENTS_MODE=sandbox` and the providers' test credentials; pay one voucher with each gateway.
+3. Run with `PAYMENTS_MODE=sandbox` and the providers' test credentials. Use **Test connection** on each account, then
+   a small live test from the console (**Payment gateways**) with each gateway.
 4. Switch to `PAYMENTS_MODE=live` with the live credentials. Give each gateway the addresses shown under
-   **Addresses to give ...** in Settings > Online payments (return, IPN and 1LINK bill inquiry/payment URLs).
+   **Addresses to give ...** in Settings > Online payments (return, IPN and 1LINK bill inquiry/payment URLs), and
+   repeat Test connection and one small live test per gateway.
 
 Override hosts only if a provider gives you different ones: `JAZZCASH_CHECKOUT_URL`, `JAZZCASH_INQUIRY_URL`,
 `EASYPAISA_BASE_URL`.

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Copy, KeyRound } from "lucide-react";
 import { PROVIDER_LABEL, type OnlineProvider } from "@/components/invoices/online-payment";
+import { ConnectionCheckButton, type ConnectionCheck } from "@/components/payments/connection-check";
 import { Alert, Badge, Button, Card, CardHeader, ErrorState, SkeletonRows, Switch, TextField, useToast, type Tone } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
@@ -109,6 +110,7 @@ export function PaymentAccounts({ readOnly }: { readOnly: boolean }) {
           gateway={g}
           urls={data.urls[g.provider]}
           readOnly={readOnly || !data.canSaveSecrets}
+          canTest={!readOnly}
           onSaved={setSaved}
         />
       ))}
@@ -123,11 +125,14 @@ function GatewayCard({
   gateway: g,
   urls,
   readOnly,
+  canTest,
   onSaved,
 }: {
   gateway: Gateway;
   urls: Record<string, string>;
   readOnly: boolean;
+  /** Test connection needs only a saved account, not the right to save secrets. */
+  canTest: boolean;
   onSaved: (a: Accounts) => void;
 }) {
   const toast = useToast();
@@ -219,6 +224,12 @@ function GatewayCard({
           </dl>
         </details>
         {error && <Alert tone="danger">{error}</Alert>}
+        {canTest && g.ownAccount && (
+          <ConnectionCheckButton
+            provider={g.provider}
+            run={() => api<ConnectionCheck>(`/school/payment-accounts/${g.provider.toLowerCase()}/check`, { method: "POST" })}
+          />
+        )}
         {!readOnly && (
           <div className="flex flex-wrap justify-end gap-2">
             {g.ownAccount && (

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Param, Put } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
 import { PaymentMethod } from '@prisma/client';
 import { z } from 'zod';
 import { assertSchoolWide, SETUP_ROLES } from '../common/admin-roles.js';
@@ -16,6 +16,7 @@ import {
   secretKey,
   type AccountProvider,
 } from './gateways/school-accounts.js';
+import { GatewayChecksService } from './gateway-checks.service.js';
 import { OnlinePaymentsService } from './online-payments.service.js';
 
 const text = (max: number, pattern?: RegExp, message?: string) => {
@@ -74,6 +75,7 @@ export class PaymentAccountsController {
     private readonly prisma: PrismaService,
     private readonly online: OnlinePaymentsService,
     private readonly audit: AuditService,
+    private readonly checks: GatewayChecksService,
   ) {}
 
   @Get()
@@ -154,6 +156,21 @@ export class PaymentAccountsController {
       after: { enabled: input.enabled, settings, secretsChanged: newSecrets.map(([k]) => k) },
     });
     return this.list(user);
+  }
+
+  /**
+   * "Test connection": one harmless call to the gateway with the saved
+   * account (no money moves), rate-limited per school and audited.
+   */
+  @Post(':provider/check')
+  @HttpCode(200)
+  async check(@CurrentUser() user: AuthUser, @Param('provider') raw: string) {
+    assertSchoolWide(user, 'Only school-wide administrators can test where fees are paid');
+    const result = await this.checks.checkSchool(user.schoolId, provider(raw));
+    await this.audit.record(user, 'payments.account.check', 'SchoolPaymentGateway', result.provider, {
+      after: { mode: result.mode, ok: result.ok, code: result.code },
+    });
+    return result;
   }
 
   /** Removes the school's own account; the server's account (if any) takes over. */

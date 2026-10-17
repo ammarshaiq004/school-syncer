@@ -1,0 +1,55 @@
+{
+  "_source": "Easypay hosted checkout (Index.jsf / Confirm.jsf) and the Inquire Transaction REST API v4, field names, encryption and response codes as given in Easypaisa's merchant integration guide. Test credentials are made up. Re-check against the guide Easypaisa sends with the account (docs/gateway-go-live.md).",
+  "credentials": { "storeId": "12345", "hashKey": "ABCDEFGHIJKLMNOP", "username": "schoolapi", "password": "secret", "accountNum": "654321" },
+  "checkout": {
+    "params": { "txnRef": "T1EXAMPLE0000000002", "amount": 10, "expiresAt": "2026-10-15T06:10:10Z", "mobile": "03001234567" },
+    "url": "https://easypaystg.easypaisa.com.pk/easypay/Index.jsf",
+    "fields": {
+      "storeId": "12345",
+      "amount": "10.0",
+      "postBackURL": "https://api.example.pk/api/payments/return/easypaisa",
+      "orderRefNum": "T1EXAMPLE0000000002",
+      "expiryDate": "20261015 111010",
+      "autoRedirect": "1",
+      "paymentMethod": "MA_PAYMENT_METHOD",
+      "emailAddr": "",
+      "mobileNum": "03001234567"
+    },
+    "_hashInput": "key=value pairs of the non-empty fields in name order, joined with &, then AES-128-ECB (PKCS#5) with the hash key, base64",
+    "hashInput": "amount=10.0&autoRedirect=1&expiryDate=20261015 111010&mobileNum=03001234567&orderRefNum=T1EXAMPLE0000000002&paymentMethod=MA_PAYMENT_METHOD&postBackURL=https://api.example.pk/api/payments/return/easypaisa&storeId=12345",
+    "merchantHashedReq": "KF1v5+zEuWD4gjNV6Jog6b+tXkmq+LpcZMaaIwLRAHHinLlwl/mIzqkoTIG9pddUQAuS0Z+Rl4SBcL2pAPdgMkvCIplZGKhBfGR1BuA2lTpQe7eZWhOL47XtgnxdIrbi0S/MnUte2NzV6btl57tgdic0ekfqgJre5PapIjricwa5VKTnHhs3Z7WkFmm5L+Ai6pvYbQ5PEhaZhzzuRl49tF2OoTCZ3g4LTrQbYa1osnynJKbUaH0FbaMUxzAoHsZ+G7j7yL16rwsy7NpeXwrVEdBGB+h/UVfGeq3gaYZ31bI="
+  },
+  "confirm": {
+    "url": "https://easypaystg.easypaisa.com.pk/easypay/Confirm.jsf",
+    "fields": { "auth_token": "dummy-auth-token", "postBackURL": "https://api.example.pk/api/payments/return/easypaisa/done" }
+  },
+  "inquiry": {
+    "url": "https://easypaystg.easypaisa.com.pk/easypay-service/rest/v4/inquire-transaction",
+    "headers": { "Content-Type": "application/json", "Credentials": "c2Nob29sYXBpOnNlY3JldA==" },
+    "body": { "orderId": "T1EXAMPLE0000000002", "storeId": "12345", "accountNum": "654321" },
+    "responses": {
+      "paid": {
+        "responseCode": "0000",
+        "responseDesc": "SUCCESS",
+        "orderId": "T1EXAMPLE0000000002",
+        "storeId": 12345,
+        "storeName": "School Store",
+        "accountNum": "654321",
+        "transactionId": "20261015000123",
+        "transactionStatus": "PAID",
+        "transactionAmount": 10.0,
+        "transactionDateTime": "15/10/2026 10:12 AM",
+        "msisdn": "03001234567",
+        "paymentMode": "MA"
+      },
+      "pending": { "responseCode": "0000", "responseDesc": "SUCCESS", "orderId": "T1EXAMPLE0000000002", "storeId": 12345, "transactionStatus": "PENDING" },
+      "failed": { "responseCode": "0000", "responseDesc": "SUCCESS", "orderId": "T1EXAMPLE0000000002", "storeId": 12345, "transactionStatus": "FAILED" },
+      "reversed": { "responseCode": "0000", "responseDesc": "SUCCESS", "orderId": "T1EXAMPLE0000000002", "storeId": 12345, "transactionStatus": "REVERSED" },
+      "expired": { "responseCode": "0000", "responseDesc": "SUCCESS", "orderId": "T1EXAMPLE0000000002", "storeId": 12345, "transactionStatus": "EXPIRED" },
+      "otherStore": { "responseCode": "0000", "responseDesc": "SUCCESS", "orderId": "T1EXAMPLE0000000002", "storeId": 99999, "transactionStatus": "PAID", "transactionAmount": 10.0 },
+      "orderNotFound": { "responseCode": "0003", "responseDesc": "INVALID ORDER ID" },
+      "systemError": { "responseCode": "0001", "responseDesc": "SYSTEM ERROR" },
+      "storeNotFound": { "responseCode": "0006", "responseDesc": "STORE DOES NOT EXIST" }
+    }
+  }
+}

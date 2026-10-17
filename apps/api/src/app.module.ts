@@ -34,6 +34,8 @@ import {
   PaymentGatewayController,
 } from './fees/online-payments.controller.js';
 import { OnlinePaymentsService } from './fees/online-payments.service.js';
+import { GatewayChecksService } from './fees/gateway-checks.service.js';
+import { GatewayTestsService } from './fees/gateway-tests.service.js';
 import { ReconciliationController } from './fees/reconciliation/reconciliation.controller.js';
 import { ReconciliationScheduler } from './fees/reconciliation/reconciliation.scheduler.js';
 import { ReconciliationService } from './fees/reconciliation/reconciliation.service.js';
@@ -72,6 +74,7 @@ import { BillingScheduler } from './platform/billing/billing.scheduler.js';
 import { BillingService } from './platform/billing/billing.service.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
+import { PlatformGatewaysController } from './platform/platform-gateways.controller.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { SubscriptionController } from './platform/subscription.controller.js';
 import { HealthController } from './health/health.controller.js';
@@ -149,6 +152,7 @@ import { UsersController } from './users/users.controller.js';
     SubscriptionController,
     PlatformAuthController,
     PlatformController,
+    PlatformGatewaysController,
   ],
   providers: [
     StudentPhotoLinks,
@@ -156,6 +160,8 @@ import { UsersController } from './users/users.controller.js';
     FeeCorrectionsService,
     VoucherRunsService,
     OnlinePaymentsService,
+    GatewayChecksService,
+    GatewayTestsService,
     ReconciliationService,
     ReconciliationScheduler,
     BillingService,

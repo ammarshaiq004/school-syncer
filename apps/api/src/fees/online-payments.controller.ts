@@ -106,19 +106,14 @@ export function autoPostPage(action: CheckoutAction & { kind: 'form' }, title: s
 export class PaymentGatewayController {
   constructor(private readonly online: OnlinePaymentsService) {}
 
-  private landing(res: Response, invoiceId?: string, checkoutId?: string) {
-    const web = this.online.config.webUrl;
-    res.redirect(
-      303,
-      invoiceId ? `${web}/parent/invoices/${invoiceId}?payment=${checkoutId}` : `${web}/parent/invoices?payment=unverified`,
-    );
+  private async landing(res: Response, checkout?: { id: string; invoiceId: string } | null) {
+    res.redirect(303, await this.online.landingUrl(checkout));
   }
 
   /** The parent's browser coming back from JazzCash, carrying the signed result. */
   @Post('return/jazzcash')
   async jazzcash(@Body() body: Record<string, unknown>, @Res() res: Response) {
-    const checkout = await this.online.jazzcashReturn(body ?? {});
-    this.landing(res, checkout?.invoiceId, checkout?.id);
+    await this.landing(res, await this.online.jazzcashReturn(body ?? {}));
   }
 
   /**
@@ -145,8 +140,7 @@ export class PaymentGatewayController {
   async easypaisaDone(@Req() req: Request, @Res() res: Response) {
     const params = { ...(req.body as Record<string, unknown> | undefined), ...req.query };
     const ref = String(params.orderRefNumber ?? params.orderRefNum ?? '');
-    const checkout = ref ? await this.online.easypaisaCheck(ref) : null;
-    this.landing(res, checkout?.invoiceId, checkout?.id);
+    await this.landing(res, ref ? await this.online.easypaisaCheck(ref) : null);
   }
 
   /**
@@ -160,7 +154,7 @@ export class PaymentGatewayController {
     const params = { ...(req.body as Record<string, unknown> | undefined), ...req.query };
     let ref = String(params.orderRefNumber ?? params.orderRefNum ?? params.orderId ?? '');
     if (!ref && typeof params.url === 'string') ref = params.url.split('?')[0].split('/').filter(Boolean).pop() ?? '';
-    const checkout = /^[A-Z0-9]{6,30}$/.test(ref) ? await this.online.easypaisaCheck(ref) : null;
+    const checkout = /^[A-Z0-9]{6,30}$/.test(ref) ? await this.online.easypaisaCheck(ref, 'ipn') : null;
     return { received: Boolean(checkout), status: checkout?.status ?? null };
   }
 
@@ -171,7 +165,7 @@ export class PaymentGatewayController {
     @Headers('password') password: string | undefined,
     @Body() body: { consumer_number?: string } | undefined,
   ) {
-    if (!(await this.online.onebillAuthorised(body?.consumer_number, username, password))) {
+    if (!(await this.online.onebillAuthorised(body?.consumer_number, username, password, '1link-inquiry'))) {
       return onebillInquiryResponse(null, ONEBILL.SERVICE_FAIL);
     }
     return this.online.onebillInquiry(body?.consumer_number);
@@ -184,7 +178,7 @@ export class PaymentGatewayController {
     @Headers('password') password: string | undefined,
     @Body() body: OnebillPaymentRequest | undefined,
   ) {
-    if (!(await this.online.onebillAuthorised(body?.consumer_number, username, password))) {
+    if (!(await this.online.onebillAuthorised(body?.consumer_number, username, password, '1link-payment'))) {
       return { response_Code: ONEBILL.SERVICE_FAIL, Identification_parameter: '', reserved: '' };
     }
     return this.online.onebillPayment(body ?? {});
