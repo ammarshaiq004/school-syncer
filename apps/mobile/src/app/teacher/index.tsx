@@ -1,6 +1,8 @@
 import { router, Stack } from 'expo-router';
+import { AccountLink } from '@/components/account-link';
 import { Text, View } from 'react-native';
-import { Badge, Card, colors, ErrorText, H2, Muted, Row, Screen } from '@/components/ui';
+import { AppFooter } from '@/components/app-footer';
+import { Badge, Card, ErrorText, H2, Muted, Row, Screen } from '@/components/ui';
 import { DAYS, isoWeekday } from '@/lib/format';
 import { hasRole, TEACHING, useSession } from '@/lib/session';
 import type { Slot } from '@/lib/types';
@@ -9,7 +11,7 @@ import { useApi } from '@/lib/use-api';
 interface MySection { id: string; name: string; students: number; isClassTeacher: boolean; mySubjects: { id: string; name: string }[] }
 
 export default function TeacherHome() {
-  const { user, signOut } = useSession();
+  const { user } = useSession();
   const teaches = hasRole(user, TEACHING);
   const slots = useApi<Slot[]>(teaches ? '/timetable/me' : null);
   const sections = useApi<MySection[]>(teaches ? '/attendance/sections' : null);
@@ -19,7 +21,7 @@ export default function TeacherHome() {
 
   return (
     <Screen onRefresh={refresh} refreshing={slots.refreshing || sections.refreshing}>
-      <Stack.Screen options={{ title: DAYS[today], headerRight: () => <Text onPress={signOut} accessibilityRole="button" style={{ color: colors.brand, paddingHorizontal: 12 }}>Sign out</Text> }} />
+      <Stack.Screen options={{ title: DAYS[today], headerRight: () => <AccountLink /> }} />
       <Muted>Assalam-o-alaikum, {user?.name}</Muted>
       {!teaches && (
         <Card>
@@ -61,6 +63,7 @@ export default function TeacherHome() {
           </Card>
         </>
       )}
+      <AppFooter />
     </Screen>
   );
 }

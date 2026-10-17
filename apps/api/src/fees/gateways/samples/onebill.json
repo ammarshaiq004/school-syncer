@@ -1,0 +1,45 @@
+{
+  "_source": "1LINK 1Bill biller integration (BillInquiry and BillPayment JSON over https, username and password headers), field names, amount formats and response codes as given in 1LINK's biller specification. Test credentials are made up. Re-check against the specification 1LINK sends with the biller account (docs/gateway-go-live.md).",
+  "credentials": { "billerPrefix": "91234", "username": "onelink-user", "password": "onelink-pass" },
+  "codes": {
+    "00": "Success",
+    "01": "Consumer number does not exist",
+    "02": "Bill blocked, expired or already paid with another transaction",
+    "03": "Unknown error",
+    "04": "Invalid data",
+    "05": "Processing failed (credentials refused or service unavailable)"
+  },
+  "billInquiry": {
+    "headers": { "username": "onelink-user", "password": "onelink-pass", "Content-Type": "application/json" },
+    "request": { "consumer_number": "912340000000001", "bank_mnemonic": "ABL", "reserved": "" },
+    "unpaid": {
+      "response_Code": "00",
+      "consumer_Detail": "Gateway Test                  ",
+      "bill_status": "U",
+      "due_date": "20261018",
+      "amount_within_dueDate": "+0000000001000",
+      "amount_after_dueDate": "+0000000001000",
+      "billing_month": "2610",
+      "date_paid": "",
+      "amount_paid": "",
+      "tran_auth_Id": "",
+      "reserved": ""
+    },
+    "notFound": { "response_Code": "01", "reserved": "" },
+    "refused": { "response_Code": "05", "reserved": "" }
+  },
+  "billPayment": {
+    "request": {
+      "consumer_number": "912340000000001",
+      "tran_auth_id": "123456",
+      "transaction_amount": "000000001000",
+      "tran_date": "20261015",
+      "tran_time": "101500",
+      "bank_mnemonic": "ABL",
+      "reserved": ""
+    },
+    "ok": { "response_Code": "00", "Identification_parameter": "<receipt number>", "reserved": "" },
+    "duplicateOtherAuthId": { "response_Code": "02", "Identification_parameter": "", "reserved": "" },
+    "wrongAmount": { "response_Code": "04", "Identification_parameter": "", "reserved": "" }
+  }
+}

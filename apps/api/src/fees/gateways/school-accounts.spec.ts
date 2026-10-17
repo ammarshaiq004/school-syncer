@@ -1,6 +1,25 @@
-import { randomBytes } from 'node:crypto';
+import { createCipheriv, randomBytes } from 'node:crypto';
 import { enabledProviders, gatewayConfig } from './gateway-config.js';
-import { goLiveProblems, missingFields, openSecrets, sealSecrets, secretKey, withSchoolAccounts, type SchoolAccount } from './school-accounts.js';
+import {
+  goLiveProblems,
+  keyId,
+  missingFields,
+  openSecrets,
+  sealedWith,
+  sealSecrets,
+  secretKey,
+  secretKeys,
+  withSchoolAccounts,
+  type SchoolAccount,
+} from './school-accounts.js';
+
+/** What sealSecrets wrote before key ids (v1). */
+function sealV1(secrets: Record<string, string>, key: Buffer) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([cipher.update(JSON.stringify(secrets), 'utf8'), cipher.final()]);
+  return `v1:${Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64')}`;
+}
 
 const platform = gatewayConfig({
   PAYMENTS_MODE: 'live',
@@ -29,12 +48,53 @@ describe('PAYMENTS_SECRET_KEY', () => {
   it('seals secrets so only the same key opens them', () => {
     const key = randomBytes(32);
     const sealed = sealSecrets({ password: 'p@ss' }, key);
-    expect(sealed).toMatch(/^v1:/);
+    // Versioned, with the sealing key's id.
+    expect(sealed).toMatch(new RegExp(`^v2:${keyId(key)}:`));
     expect(sealed).not.toContain('p@ss');
     expect(openSecrets(sealed, key)).toEqual({ password: 'p@ss' });
-    expect(() => openSecrets(sealed, randomBytes(32))).toThrow();
-    const tampered = `v1:${Buffer.from(sealed.slice(3), 'base64').map((b, i) => (i === 40 ? b ^ 1 : b)).toString('base64')}`;
+    expect(() => openSecrets(sealed, randomBytes(32))).toThrow(/No key/);
+    const [, id, body] = sealed.split(':');
+    const tampered = `v2:${id}:${Buffer.from(Buffer.from(body, 'base64').map((b, i) => (i === 40 ? b ^ 1 : b))).toString('base64')}`;
     expect(() => openSecrets(tampered, key)).toThrow();
+    expect(() => openSecrets('v9:nope', key)).toThrow(/Unknown secret format/);
+    expect(openSecrets('', key)).toEqual({});
+  });
+});
+
+describe('PAYMENTS_SECRET_KEY rotation', () => {
+  const oldKey = randomBytes(32).toString('hex');
+  const newKey = randomBytes(32).toString('hex');
+  const during = secretKeys({ PAYMENTS_SECRET_KEY: newKey, PAYMENTS_SECRET_KEY_PREVIOUS: oldKey });
+
+  it('seals with the current key and opens with current or previous', () => {
+    expect(during.current).toEqual(Buffer.from(newKey, 'hex'));
+    expect(during.all).toHaveLength(2);
+    const before = sealSecrets({ token: 'old' }, Buffer.from(oldKey, 'hex'));
+    expect(openSecrets(before, during.all)).toEqual({ token: 'old' });
+    // Without the previous key, secrets sealed with it can no longer be read.
+    expect(() => openSecrets(before, secretKeys({ PAYMENTS_SECRET_KEY: newKey }).all)).toThrow(/PAYMENTS_SECRET_KEY_PREVIOUS/);
+  });
+
+  it('opens unversioned v1 values with any key in the ring', () => {
+    const legacy = sealV1({ password: 'p' }, Buffer.from(oldKey, 'hex'));
+    expect(openSecrets(legacy, during.all)).toEqual({ password: 'p' });
+    expect(() => openSecrets(legacy, [randomBytes(32)])).toThrow();
+  });
+
+  it('tells which values still need re-encrypting', () => {
+    const current = during.current!;
+    expect(sealedWith(sealSecrets({ a: '1' }, current), current)).toBe(true);
+    expect(sealedWith(sealSecrets({ a: '1' }, Buffer.from(oldKey, 'hex')), current)).toBe(false);
+    expect(sealedWith(sealV1({ a: '1' }, current), current)).toBe(false);
+    expect(sealedWith('', current)).toBe(true);
+  });
+
+  it('accepts several previous keys, ignoring bad and repeated ones', () => {
+    const third = randomBytes(32).toString('hex');
+    const ring = secretKeys({ PAYMENTS_SECRET_KEY: newKey, PAYMENTS_SECRET_KEY_PREVIOUS: `${oldKey}, short, ${third}, ${newKey}` });
+    expect(ring.all.map(keyId)).toEqual([newKey, oldKey, third].map((k) => keyId(Buffer.from(k, 'hex'))));
+    // Only previous keys: secrets can be read but nothing new can be sealed.
+    expect(secretKeys({ PAYMENTS_SECRET_KEY_PREVIOUS: oldKey })).toMatchObject({ current: null, all: [Buffer.from(oldKey, 'hex')] });
   });
 });
 

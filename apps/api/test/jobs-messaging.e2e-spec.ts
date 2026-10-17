@@ -178,7 +178,7 @@ describe('Jobs and message delivery (e2e)', () => {
       expect(saved.body).toMatchObject({ active: { source: 'school', channel: 'WHATSAPP' }, ownSender: { phoneNumberId: '1234567890', tokenSet: true } });
       expect(JSON.stringify(saved.body)).not.toContain('school-secret-token');
       const row = await prisma.schoolMessagingSender.findUniqueOrThrow({ where: { schoolId } });
-      expect(row.secrets).toMatch(/^v1:/);
+      expect(row.secrets).toMatch(/^v2:[0-9a-f]{8}:/);
       expect(row.secrets).not.toContain('school-secret-token');
 
       const fetchMock = vi

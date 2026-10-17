@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { BCRYPT_ROUNDS } from '../auth/school-setup.service.js';
 import type { PlatformUser } from '../common/auth-user.js';
 import { CurrentAdmin, PlatformOnly } from '../common/decorators.js';
+import { phoneField } from '../common/identity.js';
 import { serializable } from '../common/serializable.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -28,10 +29,14 @@ import {
 import { logPlatform } from './platform-audit.js';
 import { temporaryPassword } from './temp-password.js';
 
+/** Where system alerts reach the member; blank clears it. */
+const alertPhone = z.union([z.literal('').transform(() => null), z.null(), phoneField]).optional();
+
 const createStaffSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.email().toLowerCase(),
   role: z.enum(PlatformRole).default(PlatformRole.SUPPORT),
+  phone: alertPhone,
 });
 
 const updateStaffSchema = z
@@ -39,6 +44,7 @@ const updateStaffSchema = z
     name: z.string().trim().min(2).max(120).optional(),
     role: z.enum(PlatformRole).optional(),
     isActive: z.boolean().optional(),
+    phone: alertPhone,
   })
   .refine((b) => Object.keys(b).length > 0, 'Nothing to change');
 
@@ -48,6 +54,7 @@ const staffSelect = {
   email: true,
   role: true,
   isActive: true,
+  phone: true,
   mustChangePassword: true,
   lastLoginAt: true,
   createdAt: true,
@@ -86,6 +93,7 @@ export class PlatformStaffController {
           name: body.name,
           email: body.email,
           role: body.role,
+          phone: body.phone ?? null,
           mustChangePassword: true,
           passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
         },
@@ -138,8 +146,8 @@ export class PlatformStaffController {
     this.userStatus.forgetAdmin(id);
     await logPlatform(this.prisma, admin, 'staff.update', null, {
       staffId: id,
-      before: { name: before.name, role: before.role, isActive: before.isActive },
-      after: { name: after.name, role: after.role, isActive: after.isActive },
+      before: { name: before.name, role: before.role, isActive: before.isActive, alertPhone: Boolean(before.phone) },
+      after: { name: after.name, role: after.role, isActive: after.isActive, alertPhone: Boolean(after.phone) },
     });
     return after;
   }

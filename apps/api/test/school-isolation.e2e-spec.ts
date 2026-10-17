@@ -148,6 +148,8 @@ const routes: { method: Method; path: (i: Ids) => string; body?: (i: Ids) => obj
   { method: 'delete', path: (i) => `/api/elearning/live/${i.live}` },
   { method: 'post', path: (i) => `/api/elearning/live/${i.live}/cancel` },
   { method: 'get', path: (i) => `/api/elearning/live/${i.live}/attendance` },
+  // Pilot kit
+  { method: 'get', path: (i) => `/api/problem-reports/${i.problemReport}` },
 ];
 
 describe('School isolation (e2e)', () => {
@@ -272,6 +274,13 @@ describe('School isolation (e2e)', () => {
     ids.invoice = (await prisma.invoice.findFirstOrThrow({ where: { studentId: ids.student } })).id;
     ids.payment = (await create(ownerA, `/api/fees/invoices/${ids.invoice}/payments`, { amount: 1000, method: 'CASH' }))
       .payment.id;
+    // A console gateway test run on school A's voucher (SCHOOL-149).
+    const school = await prisma.school.findFirstOrThrow({ where: { slug: a.slug } });
+    ids.gatewayRun = (
+      await prisma.gatewayTestRun.create({
+        data: { schoolId: school.id, provider: 'JAZZCASH', mode: 'mock', account: 'platform', amount: 10, invoiceId: ids.invoice },
+      })
+    ).id;
     const category = (await create(ownerA, '/api/accounts/categories', { name: 'Repairs', kind: 'EXPENSE' })).id;
     ids.entry = (await create(ownerA, '/api/accounts/entries', { categoryId: category, amount: 700, date: today })).id;
 
@@ -353,6 +362,9 @@ describe('School isolation (e2e)', () => {
         startsAt: new Date(Date.now() + 864e5).toISOString(),
       })
     ).id;
+
+    // Pilot kit
+    ids.problemReport = (await create(teacherA, '/api/problem-reports', { message: 'The register would not save', page: '/attendance' })).id;
   });
 
   afterAll(async () => {
@@ -369,6 +381,23 @@ describe('School isolation (e2e)', () => {
       expect([403, 404], `${res.status} ${JSON.stringify(res.body)}`).toContain(res.status);
     },
   );
+
+  // Console gateway test runs belong to SchoolSyncer staff: no school sign-in
+  // reaches them, not even the school's own owner, so they cannot sit in the
+  // table above (whose GET rows must answer school A's owner).
+  it.each([
+    ['get', ''],
+    ['post', '/refresh'],
+    ['post', '/simulate'],
+    ['post', '/reverse'],
+    ['post', '/cancel'],
+  ] as const)('keeps console gateway test runs from school sign-ins: %s /api/platform/gateways/runs/:id%s', async (method, suffix) => {
+    for (const as of [ownerA, ownerB]) {
+      const res = await request(server)[method](`/api/platform/gateways/runs/${ids.gatewayRun}${suffix}`).set(as).send({ approve: true });
+      expect(res.status).toBe(401);
+    }
+    expect(await prisma.gatewayTestRun.findUniqueOrThrow({ where: { id: ids.gatewayRun } })).toMatchObject({ finishedAt: null, reversedAt: null });
+  });
 
   it("still answers school A's owner on every GET route", async () => {
     for (const route of routes.filter((r) => r.method === 'get')) {

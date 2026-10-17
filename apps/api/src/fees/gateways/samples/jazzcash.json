@@ -1,0 +1,104 @@
+{
+  "_source": "JazzCash HTTP POST page redirection v1.1 and Transaction Status Inquiry, field layout and response codes as given in JazzCash's merchant integration guide. Test credentials are made up. Re-check against the guide JazzCash sends with the account (docs/gateway-go-live.md).",
+  "credentials": { "merchantId": "MC10010", "password": "x1y2z3w4v5", "integritySalt": "a1b2c3d4e5" },
+  "checkout": {
+    "params": {
+      "txnRef": "T1EXAMPLE0000000001",
+      "amount": 10,
+      "billReference": "V2610ABCD",
+      "description": "School fee V2610ABCD",
+      "createdAt": "2026-10-15T05:10:10Z",
+      "expiresAt": "2026-10-15T06:10:10Z"
+    },
+    "fields": {
+      "pp_Version": "1.1",
+      "pp_TxnType": "",
+      "pp_Language": "EN",
+      "pp_MerchantID": "MC10010",
+      "pp_SubMerchantID": "",
+      "pp_Password": "x1y2z3w4v5",
+      "pp_BankID": "",
+      "pp_ProductID": "",
+      "pp_TxnRefNo": "T1EXAMPLE0000000001",
+      "pp_Amount": "1000",
+      "pp_TxnCurrency": "PKR",
+      "pp_TxnDateTime": "20261015101010",
+      "pp_BillReference": "V2610ABCD",
+      "pp_Description": "School fee V2610ABCD",
+      "pp_TxnExpiryDateTime": "20261015111010",
+      "pp_ReturnURL": "https://api.example.pk/api/payments/return/jazzcash",
+      "ppmpf_1": "",
+      "ppmpf_2": "",
+      "ppmpf_3": "",
+      "ppmpf_4": "",
+      "ppmpf_5": ""
+    },
+    "_hashInput": "The integrity salt, then the non-empty pp_ and ppmpf_ values in field-name order, joined with &",
+    "hashInput": "a1b2c3d4e5&1000&V2610ABCD&School fee V2610ABCD&EN&MC10010&x1y2z3w4v5&https://api.example.pk/api/payments/return/jazzcash&PKR&20261015101010&20261015111010&T1EXAMPLE0000000001&1.1",
+    "secureHash": "1E3D4CCAA4A38F123A1206516984A0C469A4708AD8427827883BC499758BAAED"
+  },
+  "return": {
+    "fields": {
+      "pp_Amount": "1000",
+      "pp_AuthCode": "",
+      "pp_BankID": "",
+      "pp_BillReference": "V2610ABCD",
+      "pp_Language": "EN",
+      "pp_MerchantID": "MC10010",
+      "pp_ResponseCode": "000",
+      "pp_ResponseMessage": "Thank you for Using JazzCash, your transaction was successful.",
+      "pp_RetreivalReferenceNo": "261015123456",
+      "pp_SubMerchantId": "",
+      "pp_TxnCurrency": "PKR",
+      "pp_TxnDateTime": "20261015101010",
+      "pp_TxnRefNo": "T1EXAMPLE0000000001",
+      "pp_SettlementExpiry": "",
+      "pp_TxnType": "MWALLET",
+      "pp_Version": "1.1",
+      "ppmpf_1": "",
+      "ppmpf_2": "",
+      "ppmpf_3": "",
+      "ppmpf_4": "",
+      "ppmpf_5": ""
+    },
+    "secureHash": "15FA79DCB2C99C60AA0209EF6EA70CFE87DE1B4CCB320C1C912AB4DCE9E44AF7",
+    "codes": {
+      "000": { "outcome": "PAID", "message": "Thank you for Using JazzCash, your transaction was successful." },
+      "121": { "outcome": "PAID", "message": "Transaction has been marked confirmed by Merchant." },
+      "124": { "outcome": "PENDING", "message": "Order has been placed and is waiting for financials to be received over the counter." },
+      "157": { "outcome": "PENDING", "message": "Transaction is pending. Please confirm the transaction from your mobile." },
+      "199": { "outcome": "FAILED", "message": "System error." },
+      "004": { "outcome": "FAILED", "message": "Low balance." },
+      "101": { "outcome": "FAILED", "message": "Invalid merchant credentials." }
+    }
+  },
+  "inquiry": {
+    "request": { "pp_TxnRefNo": "T1EXAMPLE0000000001", "pp_MerchantID": "MC10010", "pp_Password": "x1y2z3w4v5" },
+    "hashInput": "a1b2c3d4e5&MC10010&x1y2z3w4v5&T1EXAMPLE0000000001",
+    "secureHash": "E6B742864C96EAAEBE17A5DC701D214D8608A608B36B1B682BC9183C3FE0457E",
+    "paid": {
+      "pp_ResponseCode": "000",
+      "pp_ResponseMessage": "Operation completed successfully.",
+      "pp_Status": "Completed",
+      "pp_PaymentResponseCode": "121",
+      "pp_PaymentResponseMessage": "Transaction has been marked confirmed by Merchant.",
+      "pp_Amount": "1000",
+      "pp_TxnRefNo": "T1EXAMPLE0000000001",
+      "pp_RetreivalReferenceNo": "261015123456",
+      "pp_AuthCode": "",
+      "pp_SettlementExpiry": ""
+    },
+    "notFound": {
+      "pp_ResponseCode": "110",
+      "pp_ResponseMessage": "Transaction not found."
+    },
+    "badCredentials": {
+      "pp_ResponseCode": "101",
+      "pp_ResponseMessage": "Invalid merchant credentials."
+    }
+  },
+  "ipnAck": {
+    "ok": { "pp_ResponseCode": "000", "pp_ResponseMessage": "IPN received" },
+    "rejected": { "pp_ResponseCode": "001", "pp_ResponseMessage": "IPN rejected" }
+  }
+}

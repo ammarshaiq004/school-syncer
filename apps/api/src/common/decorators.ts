@@ -29,6 +29,15 @@ export const ALLOW_PENDING_PASSWORD = 'allowPendingPasswordChange';
  */
 export const AllowPendingPasswordChange = () => SetMetadata(ALLOW_PENDING_PASSWORD, true);
 
+export const ALLOW_ANY_APP_VERSION = 'allowAnyAppVersion';
+
+/**
+ * Answers app builds below the minimum version too (see AppVersionGuard):
+ * the version check itself and health checks, which an outdated app must
+ * still reach to learn it has to update.
+ */
+export const AllowAnyAppVersion = () => SetMetadata(ALLOW_ANY_APP_VERSION, true);
+
 /** Needs a plan that includes this module. */
 export const RequiresFeature = (feature: Feature) => SetMetadata(FEATURE, feature);
 

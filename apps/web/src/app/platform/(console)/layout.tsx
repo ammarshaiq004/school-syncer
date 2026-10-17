@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Building, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, Receipt, ScrollText, Settings, Tags, UsersRound, Wallet, X, type LucideIcon } from "lucide-react";
+import { Activity, Bug, Building, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, PlugZap, Receipt, ScrollText, Settings, Smartphone, Tags, UsersRound, Wallet, X, type LucideIcon } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandMark } from "@/components/brand";
 import { Avatar } from "@/components/kit/avatar";
@@ -21,11 +21,15 @@ type NavItem = { href: string; label: string; icon: LucideIcon; ownerOnly?: bool
 const NAV: NavItem[] = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard },
   { href: "/platform/schools", label: "Schools", icon: Building },
+  { href: "/platform/problem-reports", label: "Problem reports", icon: Bug },
   { href: "/platform/invoices", label: "Bills", icon: Receipt },
   { href: "/platform/payments", label: "Payments", icon: Wallet },
   { href: "/platform/plans", label: "Plans", icon: Tags },
+  { href: "/platform/gateways", label: "Payment gateways", icon: PlugZap },
   { href: "/platform/reports", label: "Reports", icon: ChartColumn },
+  { href: "/platform/app-versions", label: "Mobile app", icon: Smartphone },
   { href: "/platform/audit", label: "Audit log", icon: ScrollText },
+  { href: "/platform/system-health", label: "System health", icon: Activity },
   { href: "/platform/staff", label: "Platform staff", icon: UsersRound, ownerOnly: true },
   { href: "/platform/settings", label: "Settings", icon: Settings },
 ];

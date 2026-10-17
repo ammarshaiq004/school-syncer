@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { openSecrets, secretKey } from '../fees/gateways/school-accounts.js';
+import { openSecrets, secretKeys } from '../fees/gateways/school-accounts.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HttpSmsDriver, LogDriver, smsGatewayConfig, WhatsAppDriver, type MessageDriver } from './drivers.js';
 
@@ -53,10 +53,10 @@ export class MessagingSenders {
   async schoolSender(schoolId: string): Promise<SchoolSender | null> {
     const row = await this.prisma.schoolMessagingSender.findUnique({ where: { schoolId } });
     if (!row) return null;
-    const key = secretKey();
+    const keys = secretKeys().all;
     try {
-      if (row.secrets && !key) throw new Error('PAYMENTS_SECRET_KEY is not set');
-      const secrets = key && row.secrets ? openSecrets(row.secrets, key) : {};
+      if (row.secrets && !keys.length) throw new Error('PAYMENTS_SECRET_KEY is not set');
+      const secrets = keys.length && row.secrets ? openSecrets(row.secrets, keys) : {};
       return { enabled: row.enabled, phoneNumberId: row.phoneNumberId, token: secrets.token ?? '' };
     } catch (error) {
       this.logger.error(`Cannot read the WhatsApp sender of school ${schoolId}: ${(error as Error).message}`);

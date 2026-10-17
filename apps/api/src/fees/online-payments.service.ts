@@ -10,7 +10,7 @@ import { onebillAuthorised } from './gateways/onebill.js';
 import {
   goLiveProblems,
   openSecrets,
-  secretKey,
+  secretKeys,
   withSchoolAccounts,
   type AccountSource,
   type SchoolAccount,
@@ -28,6 +28,8 @@ import {
 import { PaymentsService } from './payments.service.js';
 
 export type OnlineProvider = 'JAZZCASH' | 'EASYPAISA' | 'ONEBILL';
+/** How a gateway reached us about a checkout, as a console test run lists it. */
+export type GatewayCallKind = 'return' | 'ipn' | '1link-inquiry' | '1link-payment' | 'status-inquiry' | 'mock';
 export const ONLINE_PROVIDERS: OnlineProvider[] = ['JAZZCASH', 'EASYPAISA', 'ONEBILL'];
 
 const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -62,13 +64,13 @@ export class OnlinePaymentsService implements OnModuleInit {
   /** A school's own merchant accounts, decrypted. One that can't be decrypted counts as switched off. */
   async schoolAccounts(schoolId: string): Promise<SchoolAccount[]> {
     const rows = await this.prisma.schoolPaymentGateway.findMany({ where: { schoolId } });
-    const key = secretKey();
+    const keys = secretKeys().all;
     return rows.map((r) => {
       const provider = r.provider as OnlineProvider;
       const settings = (r.settings ?? {}) as Record<string, string>;
       try {
-        if (r.secrets && !key) throw new Error('PAYMENTS_SECRET_KEY is not set');
-        return { provider, enabled: r.enabled, settings, secrets: key ? openSecrets(r.secrets, key) : {} };
+        if (r.secrets && !keys.length) throw new Error('PAYMENTS_SECRET_KEY is not set');
+        return { provider, enabled: r.enabled, settings, secrets: keys.length ? openSecrets(r.secrets, keys) : {} };
       } catch (error) {
         this.logger.error(`Cannot read the ${provider} account of school ${schoolId}: ${(error as Error).message}`);
         return { provider, enabled: false, settings, secrets: {} };
@@ -121,7 +123,21 @@ export class OnlinePaymentsService implements OnModuleInit {
     if (balance === 0) throw new BadRequestException('This voucher is already paid in full.');
     // The same fine PaymentsService books onto the voucher when the payment is recorded.
     const amount = balance + fineDue(invoice, dayStart(localToday()), fineRule(invoice.school));
+    return this.openCheckout(config, user.schoolId, invoice, provider, amount, { mobile: contact.mobile, createdById: user.sub });
+  }
 
+  /**
+   * Creates the checkout for `amount` on a voucher and what the payer's
+   * browser does next. Used by parents and by the console's gateway tests.
+   */
+  async openCheckout(
+    config: GatewayConfig,
+    schoolId: string,
+    invoice: { id: string; voucherNo: string },
+    provider: OnlineProvider,
+    amount: number,
+    opts: { mobile?: string; createdById?: string | null } = {},
+  ) {
     const now = new Date();
     const expiresAt = new Date(
       now.getTime() + (provider === 'ONEBILL' ? config.onebillDays * 86_400_000 : config.checkoutMinutes * 60_000),
@@ -131,14 +147,14 @@ export class OnlinePaymentsService implements OnModuleInit {
       try {
         checkout = await this.prisma.onlinePayment.create({
           data: {
-            schoolId: user.schoolId,
+            schoolId,
             invoiceId: invoice.id,
             provider: provider as PaymentMethod,
             amount,
             txnRef: txnRef(),
             consumerNumber:
               provider === 'ONEBILL' ? onebillConsumerNumber(config.onebill.billerPrefix, () => randomInt(10) / 10) : null,
-            createdById: user.sub,
+            createdById: opts.createdById ?? null,
             expiresAt,
           },
         });
@@ -161,7 +177,7 @@ export class OnlinePaymentsService implements OnModuleInit {
         expiresAt,
       });
     } else {
-      action = easypaisaCheckout(config, { txnRef: checkout.txnRef, amount, expiresAt, mobile: contact.mobile });
+      action = easypaisaCheckout(config, { txnRef: checkout.txnRef, amount, expiresAt, mobile: opts.mobile });
     }
     return { checkout: this.view(checkout), action };
   }
@@ -234,6 +250,34 @@ export class OnlinePaymentsService implements OnModuleInit {
     };
   }
 
+  /**
+   * Where the payer's browser lands after the gateway: the parent's voucher,
+   * or the console for a gateway test run.
+   */
+  async landingUrl(checkout?: { id: string; invoiceId: string } | null) {
+    const web = this.config.webUrl;
+    if (!checkout) return `${web}/parent/invoices?payment=unverified`;
+    const run = await this.prisma.gatewayTestRun.findUnique({ where: { checkoutId: checkout.id }, select: { id: true } });
+    return run ? `${web}/platform/gateways?run=${run.id}` : `${web}/parent/invoices/${checkout.invoiceId}?payment=${checkout.id}`;
+  }
+
+  /**
+   * Notes a gateway call on the checkout's console test run, if it has one,
+   * so the console shows each return, IPN and 1LINK call as it arrives. One
+   * indexed update that matches nothing for parents' checkouts.
+   */
+  async noteCall(checkoutId: string, kind: GatewayCallKind, verified: boolean, status: CheckoutStatus | null, code?: string | null) {
+    // `status` is the checkout's once the call was handled; `code` the gateway's (or our answer's) code.
+    const event = JSON.stringify([{ at: new Date().toISOString(), kind, verified, status, code: code ?? null }]);
+    // Our own pull (status inquiry) is not the gateway calling us.
+    const callback = verified && kind !== 'status-inquiry';
+    await this.prisma.$executeRaw`
+      UPDATE "GatewayTestRun"
+      SET "events" = "events" || ${event}::jsonb,
+          "callbackAt" = CASE WHEN ${callback} THEN COALESCE("callbackAt", NOW()) ELSE "callbackAt" END
+      WHERE "checkoutId" = ${checkoutId}`;
+  }
+
   // ----- Gateway results -----
 
   /**
@@ -297,19 +341,20 @@ export class OnlinePaymentsService implements OnModuleInit {
   }
 
   /** JazzCash return post. Null when the post is not a genuine JazzCash response. */
-  async jazzcashReturn(body: Record<string, unknown>) {
+  async jazzcashReturn(body: Record<string, unknown>, via: GatewayCallKind = 'return') {
     const ref = typeof body.pp_TxnRefNo === 'string' ? body.pp_TxnRefNo : '';
     const checkout = ref ? await this.prisma.onlinePayment.findFirst({ where: { txnRef: ref, provider: PaymentMethod.JAZZCASH } }) : null;
     if (!checkout) return null;
     // Signed with the salt of the account the checkout was sent to.
     const result = jazzcashVerify((await this.configFor(checkout.schoolId)).config, body);
-    if (!result) return null;
-    return this.apply('JAZZCASH', result);
+    const after = result ? await this.apply('JAZZCASH', result) : null;
+    await this.noteCall(checkout.id, via, Boolean(result), after?.status ?? null, result?.responseCode ?? null);
+    return after;
   }
 
   /** JazzCash IPN: applies the post like a return and answers in JazzCash's signed format. */
   async jazzcashIpn(body: Record<string, unknown>) {
-    const checkout = await this.jazzcashReturn(body);
+    const checkout = await this.jazzcashReturn(body, 'ipn');
     const config = checkout ? (await this.configFor(checkout.schoolId)).config : this.config;
     return jazzcashIpnAck(config, Boolean(checkout));
   }
@@ -338,11 +383,14 @@ export class OnlinePaymentsService implements OnModuleInit {
   }
 
   /** Asks Easypaisa what happened to an order, then applies the answer. */
-  async easypaisaCheck(orderRef: string) {
+  async easypaisaCheck(orderRef: string, via: GatewayCallKind = 'return') {
     const checkout = await this.prisma.onlinePayment.findFirst({ where: { txnRef: orderRef, provider: PaymentMethod.EASYPAISA } });
     if (!checkout) return null;
     // Mock mode has no Easypaisa to ask; its checkout page settles orders itself.
-    return (await this.refresh(checkout)) ?? checkout;
+    const after = await this.refresh(checkout);
+    // Nothing Easypaisa sends is signed: the call counts as verified once the inquiry answered.
+    await this.noteCall(checkout.id, via, Boolean(after), (after ?? checkout).status, after?.responseCode ?? null);
+    return after ?? checkout;
   }
 
   // ----- 1Bill (1LINK calls these) -----
@@ -351,10 +399,13 @@ export class OnlinePaymentsService implements OnModuleInit {
    * Whether a 1LINK call carries the credentials of the biller this consumer
    * number belongs to: the school's own 1Bill account or the server's.
    */
-  async onebillAuthorised(consumerNumber: string | undefined, username?: string, password?: string) {
+  async onebillAuthorised(consumerNumber: string | undefined, username?: string, password?: string, via?: GatewayCallKind) {
     let schoolId: string | undefined;
+    let checkoutId: string | undefined;
     if (consumerNumber) {
-      schoolId = (await this.prisma.onlinePayment.findUnique({ where: { consumerNumber }, select: { schoolId: true } }))?.schoolId;
+      const found = await this.prisma.onlinePayment.findUnique({ where: { consumerNumber }, select: { id: true, schoolId: true } });
+      schoolId = found?.schoolId;
+      checkoutId = found?.id;
     }
     if (!schoolId && consumerNumber && this.config.mode !== 'mock') {
       // An unknown number: is it under one of the schools' biller prefixes?
@@ -365,7 +416,10 @@ export class OnlinePaymentsService implements OnModuleInit {
       })?.schoolId;
     }
     const config = schoolId ? (await this.configFor(schoolId)).config : this.config;
-    return onebillAuthorised(config, username, password);
+    const ok = onebillAuthorised(config, username, password);
+    // A test run shows 1LINK calls refused for bad credentials too.
+    if (!ok && checkoutId && via) await this.noteCall(checkoutId, via, false, null);
+    return ok;
   }
 
   async onebillInquiry(consumerNumber: string | undefined) {
@@ -375,6 +429,7 @@ export class OnlinePaymentsService implements OnModuleInit {
       include: { payment: true, invoice: { select: { period: true, status: true, student: { select: { firstName: true, lastName: true } } } } },
     });
     if (!c) return onebillInquiryResponse(null);
+    await this.noteCall(c.id, '1link-inquiry', true, c.status);
     const blocked = c.status === CheckoutStatus.FAILED || c.invoice.status === InvoiceStatus.CANCELLED || (c.status === CheckoutStatus.PENDING && c.expiresAt < new Date());
     return onebillInquiryResponse({
       consumerNumber,
@@ -390,6 +445,15 @@ export class OnlinePaymentsService implements OnModuleInit {
   }
 
   async onebillPayment(req: OnebillPaymentRequest) {
+    const answer = await this.onebillPay(req);
+    const c = req.consumer_number
+      ? await this.prisma.onlinePayment.findUnique({ where: { consumerNumber: req.consumer_number }, select: { id: true, status: true } })
+      : null;
+    if (c) await this.noteCall(c.id, '1link-payment', true, c.status, answer.response_Code);
+    return answer;
+  }
+
+  private async onebillPay(req: OnebillPaymentRequest) {
     const reply = (code: string, id = '') => ({ response_Code: code, Identification_parameter: id, reserved: '' });
     const amount = onebillRupees(req.transaction_amount);
     if (!req.consumer_number || !req.tran_auth_id || amount === null) return reply(ONEBILL.INVALID_DATA);
@@ -438,9 +502,16 @@ export class OnlinePaymentsService implements OnModuleInit {
     if (this.config.mode !== 'mock') throw new NotFoundException();
     const c = await this.get(user, id);
     if (c.status !== CheckoutStatus.PENDING) return c;
+    await this.mockSettle(c, approve);
+    return this.get(user, id);
+  }
+
+  /** Mock mode: what the gateway would send for one open checkout, put through the real handlers. */
+  async mockSettle(c: Pick<OnlinePayment, 'id' | 'txnRef' | 'amount' | 'consumerNumber'> & { provider: string }, approve: boolean) {
+    if (this.config.mode !== 'mock') throw new NotFoundException();
     const at = new Date();
     if (c.provider === 'JAZZCASH') {
-      await this.jazzcashReturn(jazzcashMockReturn(this.config, { txnRef: c.txnRef, amount: c.amount, approve, at }));
+      await this.jazzcashReturn(jazzcashMockReturn(this.config, { txnRef: c.txnRef, amount: c.amount, approve, at }), 'mock');
     } else if (c.provider === 'EASYPAISA') {
       const result = easypaisaResult(this.config, c.txnRef, {
         responseCode: '0000',
@@ -451,7 +522,8 @@ export class OnlinePaymentsService implements OnModuleInit {
         transactionAmount: c.amount,
         responseDesc: approve ? 'Transaction paid' : 'Transaction declined by the customer',
       });
-      if (result) await this.apply('EASYPAISA', result);
+      const after = result ? await this.apply('EASYPAISA', result) : null;
+      await this.noteCall(c.id, 'mock', Boolean(after), after?.status ?? null);
     } else if (approve) {
       // What 1LINK does when a parent pays the consumer number from a banking app.
       await this.onebillInquiry(c.consumerNumber!);
@@ -464,9 +536,9 @@ export class OnlinePaymentsService implements OnModuleInit {
         bank_mnemonic: 'MOCKBANK',
       });
     } else {
-      await this.apply('ONEBILL', { txnRef: c.txnRef, outcome: 'FAILED', message: 'Cancelled in the sandbox.' });
+      const after = await this.apply('ONEBILL', { txnRef: c.txnRef, outcome: 'FAILED', message: 'Cancelled in the sandbox.' });
+      await this.noteCall(c.id, 'mock', true, after?.status ?? null);
     }
-    return this.get(user, id);
   }
 
   view(c: CheckoutRow) {

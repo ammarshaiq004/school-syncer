@@ -34,6 +34,8 @@ import {
   PaymentGatewayController,
 } from './fees/online-payments.controller.js';
 import { OnlinePaymentsService } from './fees/online-payments.service.js';
+import { GatewayChecksService } from './fees/gateway-checks.service.js';
+import { GatewayTestsService } from './fees/gateway-tests.service.js';
 import { ReconciliationController } from './fees/reconciliation/reconciliation.controller.js';
 import { ReconciliationScheduler } from './fees/reconciliation/reconciliation.scheduler.js';
 import { ReconciliationService } from './fees/reconciliation/reconciliation.service.js';
@@ -56,6 +58,8 @@ import { StudentsController } from './students/students.controller.js';
 import { StudentController } from './student/student.controller.js';
 import { AcademicYearsController } from './academic-years/academic-years.controller.js';
 import { AuditController } from './audit/audit.controller.js';
+import { AppVersionGuard } from './app-version/app-version.guard.js';
+import { AppVersionModule } from './app-version/app-version.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CampusesController } from './campuses/campuses.controller.js';
 import { ClassesController } from './classes/classes.controller.js';
@@ -63,7 +67,7 @@ import { CommonModule } from './common/common.module.js';
 import { validateEnv } from './common/env.validation.js';
 import { JwtAuthGuard } from './common/jwt-auth.guard.js';
 import { PermissionGuard } from './common/permission.guard.js';
-import { PrismaExceptionFilter } from './common/prisma-exception.filter.js';
+import { AppExceptionFilter } from './common/app-exception.filter.js';
 import { RateLimitGuard } from './common/rate-limit.guard.js';
 import { RolesGuard } from './common/roles.guard.js';
 import { RolesController } from './roles/roles.controller.js';
@@ -72,9 +76,16 @@ import { BillingScheduler } from './platform/billing/billing.scheduler.js';
 import { BillingService } from './platform/billing/billing.service.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
+import { PlatformGatewaysController } from './platform/platform-gateways.controller.js';
 import { PlatformModule } from './platform/platform.module.js';
 import { SubscriptionController } from './platform/subscription.controller.js';
 import { HealthController } from './health/health.controller.js';
+import { MonitoringModule } from './monitoring/monitoring.module.js';
+import { ObservabilityModule } from './observability/observability.module.js';
+import { PlatformPilotController } from './pilot/platform-pilot.controller.js';
+import { PlatformProblemReportsController } from './pilot/platform-problem-reports.controller.js';
+import { ProblemReportsController } from './pilot/problem-reports.controller.js';
+import { SetupChecklistController } from './pilot/setup-checklist.controller.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SchoolController } from './school/school.controller.js';
 import { SubjectsController } from './subjects/subjects.controller.js';
@@ -93,16 +104,19 @@ import { UsersController } from './users/users.controller.js';
       }),
     }),
     PrismaModule,
+    ObservabilityModule,
     JobsModule,
     CommonModule,
     AuthModule,
     PlatformModule,
+    AppVersionModule,
     NotificationsModule,
     ElearningModule,
     GradebookModule,
     LessonPlansModule,
     ChatModule,
     AssistantModule,
+    MonitoringModule,
   ],
   controllers: [
     HealthController,
@@ -143,12 +157,18 @@ import { UsersController } from './users/users.controller.js';
     PaymentAccountsController,
     AnnouncementsController,
     DashboardController,
+    // Pilot kit (SCHOOL-150): setup checklist, problem reports, pilot health.
+    SetupChecklistController,
+    ProblemReportsController,
+    PlatformProblemReportsController,
+    PlatformPilotController,
     ParentController,
     ParentRecordsController,
     StudentController,
     SubscriptionController,
     PlatformAuthController,
     PlatformController,
+    PlatformGatewaysController,
   ],
   providers: [
     StudentPhotoLinks,
@@ -156,19 +176,24 @@ import { UsersController } from './users/users.controller.js';
     FeeCorrectionsService,
     VoucherRunsService,
     OnlinePaymentsService,
+    GatewayChecksService,
+    GatewayTestsService,
     ReconciliationService,
     ReconciliationScheduler,
     BillingService,
     BillingScheduler,
     // First, so floods of public requests stop before any database work.
     { provide: APP_GUARD, useClass: RateLimitGuard },
+    // Then outdated mobile builds (426), before they can sign in or load anything.
+    { provide: APP_GUARD, useClass: AppVersionGuard },
     // Order matters: authenticate first, then check roles, then the school's plan.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: SubscriptionGuard },
     // Last: the school's role matrix (@Permission) narrows what @Roles allowed.
     { provide: APP_GUARD, useClass: PermissionGuard },
-    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
+    // Every error answer: database errors mapped, request id added, crashes reported.
+    { provide: APP_FILTER, useFactory: () => new AppExceptionFilter() },
   ],
 })
 export class AppModule {}

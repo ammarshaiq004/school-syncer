@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { ActivityService } from './activity.service.js';
 import type { AuthUser, PlatformUser } from './auth-user.js';
 import { ALLOW_PENDING_PASSWORD, IS_PLATFORM, IS_PUBLIC } from './decorators.js';
+import { verifySessionToken } from './signing-secrets.js';
 import { UserStatusService } from './user-status.service.js';
 
 @Injectable()
@@ -17,6 +19,7 @@ export class JwtAuthGuard implements CanActivate {
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
     private readonly users: UserStatusService,
+    private readonly activity: ActivityService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -32,7 +35,8 @@ export class JwtAuthGuard implements CanActivate {
 
     let payload: Partial<AuthUser & PlatformUser>;
     try {
-      payload = await this.jwt.verifyAsync(token);
+      // JWT_SECRET, or JWT_SECRET_PREVIOUS during a rotation window.
+      payload = await verifySessionToken(this.jwt, token);
     } catch {
       throw new UnauthorizedException();
     }
@@ -78,6 +82,8 @@ export class JwtAuthGuard implements CanActivate {
       // Grants come from the database, not the token, so a role change or
       // demotion applies within the cache TTL instead of when the token expires.
       payload.roles = status.roles;
+      // Daily active users for the console; a support session is not the user.
+      if (!payload.support) await this.activity.seen(payload.sub, payload.schoolId, status.roles);
     }
     request.user = payload;
     return true;

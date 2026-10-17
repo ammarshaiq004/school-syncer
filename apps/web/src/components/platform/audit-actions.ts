@@ -1,5 +1,6 @@
 import {
   Ban,
+  Bug,
   Building,
   CircleCheck,
   CreditCard,
@@ -9,14 +10,17 @@ import {
   LogIn,
   Receipt,
   RotateCcw,
+  Smartphone,
   SlidersHorizontal,
+  FlaskConical,
+  PlugZap,
   Tags,
+  Undo2,
   UserCog,
   UserPlus,
   Wallet,
   CircleX,
   Settings,
-  Undo2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -38,11 +42,18 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "payment.record": { label: "Recorded a payment", icon: Wallet },
   "payment.void": { label: "Voided a payment", icon: Undo2 },
   "settings.update": { label: "Changed SchoolSyncer's business settings", icon: Settings },
+  "payments.gateway.check": { label: "Tested a gateway connection", icon: PlugZap },
+  "payments.test.start": { label: "Started a gateway test payment", icon: FlaskConical },
+  "payments.test.reverse": { label: "Reversed a gateway test payment", icon: Undo2 },
+  "payments.test.cancel": { label: "Cancelled a gateway test payment", icon: CircleX },
   "plan.update": { label: "Edited a plan", icon: Tags },
+  "app_version.update": { label: "Changed the mobile app versions", icon: Smartphone },
+  "app_version.reset": { label: "Reset the mobile app versions to defaults", icon: Smartphone },
   "staff.create": { label: "Added a staff member", icon: UserPlus },
   "staff.update": { label: "Changed a staff member", icon: UserCog },
   "staff.reset_password": { label: "Reset a staff password", icon: KeyRound },
   "staff.change_password": { label: "Changed their own password", icon: CircleCheck },
+  "problem_report.status": { label: "Changed a problem report's status", icon: Bug },
 };
 
 export const auditLabel = (action: string) => AUDIT_ACTIONS[action]?.label ?? action;

@@ -26,7 +26,7 @@ jobs:
       EXPO_PUBLIC_API_URL: http://localhost:4000/api
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -41,6 +41,7 @@ jobs:
         run: pnpm audit --audit-level=high --prod
       - run: pnpm lint
       - run: pnpm --filter mobile typecheck
+      - run: pnpm --filter mobile test
       - run: pnpm --filter web test
       - name: Apply database migrations
         run: pnpm --filter api prisma:deploy
@@ -68,7 +69,7 @@ jobs:
       JWT_SECRET: ci-only-secret
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22

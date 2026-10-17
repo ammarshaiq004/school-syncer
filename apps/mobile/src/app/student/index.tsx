@@ -1,10 +1,11 @@
 import { Stack } from 'expo-router';
+import { AccountLink } from '@/components/account-link';
 import { useState } from 'react';
 import { Linking, Text, View } from 'react-native';
+import { AppFooter } from '@/components/app-footer';
 import { Badge, Body, Button, Card, colors, ErrorText, H2, Loading, Muted, Row, Screen } from '@/components/ui';
 import { api } from '@/lib/api';
 import { DAYS } from '@/lib/format';
-import { useSession } from '@/lib/session';
 import type { AssignmentState, LiveState, StudentResults, StudentToday } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
 
@@ -59,7 +60,6 @@ function dueIn(hoursLeft: number) {
 }
 
 export default function StudentHome() {
-  const { signOut } = useSession();
   const today = useApi<StudentToday>('/student/today');
   const results = useApi<StudentResults>('/student/results');
   const [joining, setJoining] = useState<string | null>(null);
@@ -91,16 +91,7 @@ export default function StudentHome() {
       <Stack.Screen
         options={{
           title: t ? DAYS[t.dayOfWeek] : 'Today',
-          headerRight: () => (
-            <Text
-              onPress={signOut}
-              accessibilityRole="button"
-              accessibilityLabel="Sign out"
-              style={{ color: colors.brand, paddingHorizontal: 12 }}
-            >
-              Sign out
-            </Text>
-          ),
+          headerRight: () => <AccountLink />,
         }}
       />
       <ErrorText>{today.error}</ErrorText>
@@ -205,6 +196,7 @@ export default function StudentHome() {
           </View>
         ))}
       </Card>
+      <AppFooter />
     </Screen>
   );
 }

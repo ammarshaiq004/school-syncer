@@ -1,5 +1,6 @@
 import type { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { fileSigningSecrets } from '../../../common/signing-secrets.js';
 import { LocalStorageDriver } from './local.driver.js';
 import { S3StorageDriver } from './s3.driver.js';
 import { STORAGE_DRIVER, type StorageDriver } from './storage-driver.js';
@@ -22,12 +23,15 @@ export function createStorageDriver(config: ConfigService): StorageDriver {
   }
   const port = config.get<string>('PORT') || '4000';
   const publicUrl = (config.get<string>('API_PUBLIC_URL') || `http://localhost:${port}`).replace(/\/+$/, '');
-  return new LocalStorageDriver(
-    config.get<string>('STORAGE_LOCAL_DIR') || 'uploads',
-    config.get<string>('FILE_SIGNING_SECRET') || config.getOrThrow<string>('JWT_SECRET'),
-    publicUrl,
-  );
+  const signing = fileSigningSecrets(signingEnv(config));
+  return new LocalStorageDriver(config.get<string>('STORAGE_LOCAL_DIR') || 'uploads', signing.current, publicUrl, signing.previous);
 }
+
+/** The settings fileSigningSecrets reads, from the config (which includes .env). */
+export const signingEnv = (config: ConfigService) =>
+  Object.fromEntries(
+    ['FILE_SIGNING_SECRET', 'FILE_SIGNING_SECRET_PREVIOUS', 'JWT_SECRET', 'JWT_SECRET_PREVIOUS'].map((k) => [k, config.get<string>(k)]),
+  );
 
 export const storageProvider: Provider = {
   provide: STORAGE_DRIVER,
