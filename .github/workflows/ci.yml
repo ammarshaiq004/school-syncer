@@ -25,7 +25,7 @@ jobs:
       NEXT_PUBLIC_API_URL: http://localhost:4000/api
       EXPO_PUBLIC_API_URL: http://localhost:4000/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -67,7 +67,7 @@ jobs:
       DATABASE_URL: postgresql://schoolsyncer:schoolsyncer@localhost:5432/schoolsyncer?schema=public
       JWT_SECRET: ci-only-secret
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
