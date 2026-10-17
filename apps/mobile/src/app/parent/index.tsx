@@ -1,8 +1,8 @@
 import { router, Stack } from 'expo-router';
 import { AccountLink } from '@/components/account-link';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
 import { AppFooter } from '@/components/app-footer';
-import { Badge, Button, Card, colors, ErrorText, H2, Loading, Muted, Screen, Stat } from '@/components/ui';
+import { Badge, Button, Card, ErrorText, H2, Loading, Muted, Screen, Stat } from '@/components/ui';
 import type { Child } from '@/lib/types';
 import { useSession } from '@/lib/session';
 import { useApi } from '@/lib/use-api';

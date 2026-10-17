@@ -5,7 +5,7 @@ import { Bug, Image as ImageIcon, Inbox, Send } from "lucide-react";
 import { FileUploadField, type FileLink } from "@/components/elearning/file-upload";
 import { Alert, Badge, Button, Drawer, EmptyState, ErrorState, SegmentedControl, SkeletonRows, StatusPill, TextareaField, useToast } from "@/components/ui";
 import { api } from "@/lib/api";
-import { APP_VERSION } from "@/lib/app-version";
+import { APP_VERSION } from "@/lib/build-version";
 import { day } from "@/lib/format";
 import { PROBLEM_STATUS_LABEL, PROBLEM_STATUS_TONE, type ProblemReport } from "@/lib/problem-reports";
 import { useApi } from "@/lib/use-api";

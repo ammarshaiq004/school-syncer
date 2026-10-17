@@ -2,7 +2,7 @@ import { router, Stack } from 'expo-router';
 import { AccountLink } from '@/components/account-link';
 import { Text, View } from 'react-native';
 import { AppFooter } from '@/components/app-footer';
-import { Badge, Card, colors, ErrorText, H2, Muted, Row, Screen } from '@/components/ui';
+import { Badge, Card, ErrorText, H2, Muted, Row, Screen } from '@/components/ui';
 import { DAYS, isoWeekday } from '@/lib/format';
 import { hasRole, TEACHING, useSession } from '@/lib/session';
 import type { Slot } from '@/lib/types';
