@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { AuthUser, PlatformUser } from './auth-user.js';
 import { ALLOW_PENDING_PASSWORD, IS_PLATFORM, IS_PUBLIC } from './decorators.js';
+import { verifySessionToken } from './signing-secrets.js';
 import { UserStatusService } from './user-status.service.js';
 
 @Injectable()
@@ -32,7 +33,8 @@ export class JwtAuthGuard implements CanActivate {
 
     let payload: Partial<AuthUser & PlatformUser>;
     try {
-      payload = await this.jwt.verifyAsync(token);
+      // JWT_SECRET, or JWT_SECRET_PREVIOUS during a rotation window.
+      payload = await verifySessionToken(this.jwt, token);
     } catch {
       throw new UnauthorizedException();
     }

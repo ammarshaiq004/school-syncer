@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_BUILD } from "next/constants";
+import { parseDsn } from "./src/lib/error-reporting";
 
 /** Where lesson videos linked from YouTube and Vimeo play (see the API's video-embed.ts). */
 const VIDEO_PLAYERS = ["https://www.youtube-nocookie.com", "https://player.vimeo.com"];
@@ -9,7 +10,7 @@ const VIDEO_PLAYERS = ["https://www.youtube-nocookie.com", "https://player.vimeo
  * Next and the theme script use inline scripts, and uploaded files, school
  * logos and photos come from the API or an S3 bucket on any https host.
  */
-function contentSecurityPolicy(apiOrigin: string, dev: boolean) {
+function contentSecurityPolicy(apiOrigin: string, dev: boolean, trackerOrigin: string | null) {
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     // React's dev overlay and fast refresh need eval.
@@ -19,7 +20,8 @@ function contentSecurityPolicy(apiOrigin: string, dev: boolean) {
     "font-src": ["'self'", "data:"],
     "img-src": ["'self'", "data:", "blob:", "https:", apiOrigin],
     "media-src": ["'self'", "blob:", "https:", apiOrigin],
-    "connect-src": ["'self'", apiOrigin, ...(dev ? ["ws:"] : [])],
+    // The error tracker (Sentry or GlitchTip) when NEXT_PUBLIC_SENTRY_DSN is set.
+    "connect-src": ["'self'", apiOrigin, ...(trackerOrigin ? [trackerOrigin] : []), ...(dev ? ["ws:"] : [])],
     "frame-src": VIDEO_PLAYERS,
     "frame-ancestors": ["'none'"],
     "object-src": ["'none'"],
@@ -43,8 +45,12 @@ export default function config(phase: string): NextConfig {
     );
   }
   const apiOrigin = new URL(apiUrl ?? "http://localhost:4000/api").origin;
+  const trackerOrigin = parseDsn(process.env.NEXT_PUBLIC_SENTRY_DSN)?.origin ?? null;
+  if (process.env.NEXT_PUBLIC_SENTRY_DSN?.trim() && !trackerOrigin && phase === PHASE_PRODUCTION_BUILD) {
+    throw new Error("NEXT_PUBLIC_SENTRY_DSN is not a valid DSN (https://<key>@<host>/<project id>).");
+  }
   const headers = [
-    { key: "Content-Security-Policy", value: contentSecurityPolicy(apiOrigin, dev) },
+    { key: "Content-Security-Policy", value: contentSecurityPolicy(apiOrigin, dev, trackerOrigin) },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "X-Frame-Options", value: "DENY" },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

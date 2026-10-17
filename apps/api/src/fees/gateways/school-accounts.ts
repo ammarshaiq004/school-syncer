@@ -37,22 +37,86 @@ export function secretKey(value: string | undefined = process.env.PAYMENTS_SECRE
   return v.length >= 32 ? createHash('sha256').update(v).digest() : null;
 }
 
-/** "v1:" + base64(iv, tag, ciphertext) of the JSON, AES-256-GCM. */
+/**
+ * The keys for school secrets: `current` seals (PAYMENTS_SECRET_KEY), and
+ * every key opens, so secrets sealed before a rotation still open with
+ * PAYMENTS_SECRET_KEY_PREVIOUS (comma-separated for more than one) until
+ * `secrets:reencrypt --apply` has resealed them. See docs/secrets.md.
+ */
+export interface SecretKeys {
+  current: Buffer | null;
+  /** Current first, then the previous ones. */
+  all: Buffer[];
+}
+
+export function secretKeys(env: Record<string, string | undefined> = process.env): SecretKeys {
+  const current = secretKey(env.PAYMENTS_SECRET_KEY);
+  const previous = (env.PAYMENTS_SECRET_KEY_PREVIOUS ?? '')
+    .split(',')
+    .map((v) => secretKey(v))
+    .filter((k): k is Buffer => k !== null);
+  const all = [...(current ? [current] : []), ...previous].filter((k, i, list) => list.findIndex((o) => o.equals(k)) === i);
+  return { current, all };
+}
+
+/** A short public fingerprint of a key, stored with what it sealed so the right key is tried first. */
+export function keyId(key: Buffer): string {
+  return createHash('sha256').update('schoolsyncer-secret-key-id').update(key).digest('hex').slice(0, 8);
+}
+
+/**
+ * "v2:<key id>:" + base64(iv, tag, ciphertext) of the JSON, AES-256-GCM.
+ * (v1 values, from before rotation was supported, have no key id.)
+ */
 export function sealSecrets(secrets: Record<string, string>, key: Buffer): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   const body = Buffer.concat([cipher.update(JSON.stringify(secrets), 'utf8'), cipher.final()]);
-  return `v1:${Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64')}`;
+  return `v2:${keyId(key)}:${Buffer.concat([iv, cipher.getAuthTag(), body]).toString('base64')}`;
 }
 
-/** Decrypts sealSecrets output. Throws when the key is wrong or the value was altered. */
-export function openSecrets(sealed: string, key: Buffer): Record<string, string> {
-  if (!sealed) return {};
-  if (!sealed.startsWith('v1:')) throw new Error('Unknown secret format');
-  const raw = Buffer.from(sealed.slice(3), 'base64');
+function decrypt(raw: Buffer, key: Buffer): Record<string, string> {
   const decipher = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12));
   decipher.setAuthTag(raw.subarray(12, 28));
   return JSON.parse(Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8')) as Record<string, string>;
+}
+
+/**
+ * Decrypts sealSecrets output with whichever key sealed it (pass the list
+ * from secretKeys().all during a rotation). Throws when none of the keys
+ * opens it or the value was altered.
+ */
+export function openSecrets(sealed: string, keys: Buffer | Buffer[]): Record<string, string> {
+  if (!sealed) return {};
+  const list = Array.isArray(keys) ? keys : [keys];
+  let candidates: Buffer[];
+  let body: string;
+  const v2 = /^v2:([0-9a-f]{8}):(.*)$/s.exec(sealed);
+  if (v2) {
+    candidates = list.filter((k) => keyId(k) === v2[1]);
+    if (!candidates.length) throw new Error(`No key for secrets sealed with key ${v2[1]} (set it as PAYMENTS_SECRET_KEY_PREVIOUS)`);
+    body = v2[2];
+  } else if (sealed.startsWith('v1:')) {
+    candidates = list;
+    body = sealed.slice(3);
+  } else {
+    throw new Error('Unknown secret format');
+  }
+  const raw = Buffer.from(body, 'base64');
+  let last: unknown = new Error('No key to open the secrets');
+  for (const key of candidates) {
+    try {
+      return decrypt(raw, key);
+    } catch (e) {
+      last = e;
+    }
+  }
+  throw last;
+}
+
+/** True when `sealed` is already sealed with `key` in the current format: nothing to re-encrypt. */
+export function sealedWith(sealed: string, key: Buffer): boolean {
+  return !sealed || sealed.startsWith(`v2:${keyId(key)}:`);
 }
 
 /** The fields an account still needs before it can take payments. */

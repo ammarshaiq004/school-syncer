@@ -1,3 +1,5 @@
+import { reportError } from "./error-reporting";
+
 /** Set at build time; next.config.ts refuses a production build without it. */
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ??
@@ -183,9 +185,19 @@ export class ApiError extends Error {
     message: string,
     /** The error body, for answers that carry more than a message (e.g. warnings to confirm). */
     public data: unknown = null,
+    /** The API's id for the request, also in its logs and error reports. */
+    public requestId: string | null = null,
   ) {
     super(message);
   }
+}
+
+/** A fresh id for each call, so an error the user reports can be found in the API's logs. */
+const newRequestId = () => (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : undefined);
+
+/** A server error's message with a short reference support can look up (the start of the request id). */
+export function withReference(message: string, status: number, requestId: string | null): string {
+  return status >= 500 && requestId ? `${message} (reference ${requestId.slice(0, 8)})` : message;
 }
 
 type RequestInit = { method?: string; body?: unknown };
@@ -219,10 +231,12 @@ function sessionEnded(kind: "school" | "platform") {
 }
 
 async function request<T>(path: string, init: RequestInit, token: string | null, kind: "school" | "platform"): Promise<T> {
+  const sentId = newRequestId();
   const res = await fetch(`${API_URL}${path}`, {
     method: init.method ?? "GET",
     headers: {
       "Content-Type": "application/json",
+      ...(sentId ? { "X-Request-Id": sentId } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -236,7 +250,11 @@ async function request<T>(path: string, init: RequestInit, token: string | null,
     const message = issues?.length
       ? issues.map((i) => `${i.path}: ${i.message}`).join(", ")
       : (data?.message ?? `Request failed (${res.status})`);
-    throw new ApiError(res.status, message, data);
+    const requestId: string | null = data?.requestId ?? res.headers.get("X-Request-Id") ?? sentId ?? null;
+    const error = new ApiError(res.status, withReference(message, res.status, requestId), data, requestId);
+    // The API reports its own crashes; this links them to the page the user was on.
+    if (res.status >= 500 && res.status !== 503) reportError(error, { requestId: requestId ?? undefined, tags: { api_path: path.split("?")[0], status: String(res.status) } });
+    throw error;
   }
   return data as T;
 }

@@ -10,7 +10,7 @@ import { onebillAuthorised } from './gateways/onebill.js';
 import {
   goLiveProblems,
   openSecrets,
-  secretKey,
+  secretKeys,
   withSchoolAccounts,
   type AccountSource,
   type SchoolAccount,
@@ -64,13 +64,13 @@ export class OnlinePaymentsService implements OnModuleInit {
   /** A school's own merchant accounts, decrypted. One that can't be decrypted counts as switched off. */
   async schoolAccounts(schoolId: string): Promise<SchoolAccount[]> {
     const rows = await this.prisma.schoolPaymentGateway.findMany({ where: { schoolId } });
-    const key = secretKey();
+    const keys = secretKeys().all;
     return rows.map((r) => {
       const provider = r.provider as OnlineProvider;
       const settings = (r.settings ?? {}) as Record<string, string>;
       try {
-        if (r.secrets && !key) throw new Error('PAYMENTS_SECRET_KEY is not set');
-        return { provider, enabled: r.enabled, settings, secrets: key ? openSecrets(r.secrets, key) : {} };
+        if (r.secrets && !keys.length) throw new Error('PAYMENTS_SECRET_KEY is not set');
+        return { provider, enabled: r.enabled, settings, secrets: keys.length ? openSecrets(r.secrets, keys) : {} };
       } catch (error) {
         this.logger.error(`Cannot read the ${provider} account of school ${schoolId}: ${(error as Error).message}`);
         return { provider, enabled: false, settings, secrets: {} };

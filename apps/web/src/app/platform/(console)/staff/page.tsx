@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Ellipsis, KeyRound, Lock, Power, PowerOff, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
+import { BellRing, Ellipsis, KeyRound, Lock, Power, PowerOff, ShieldCheck, UserPlus, UsersRound } from "lucide-react";
 import {
   Alert,
   Avatar,
@@ -36,6 +36,8 @@ interface Staff {
   email: string;
   role: PlatformRole;
   isActive: boolean;
+  /** Where system alerts reach them by WhatsApp or SMS; null for none. */
+  phone: string | null;
   mustChangePassword: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -57,6 +59,7 @@ export default function PlatformStaffPage() {
   const [pending, setPending] = useState<Pending>(null);
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState<{ staff: Pick<Staff, "name" | "email">; value: string } | null>(null);
+  const [phoneFor, setPhoneFor] = useState<Staff | null>(null);
 
   if (!isOwner(me)) {
     return (
@@ -142,6 +145,12 @@ export default function PlatformStaffPage() {
     },
     { id: "added", header: "Added", sortValue: (s) => s.createdAt, cell: (s) => day(s.createdAt), hideBelow: "lg" },
     {
+      id: "alerts",
+      header: "System alerts",
+      cell: (s) => (s.phone ? <span className="tabular-nums">{s.phone}</span> : <span className="text-fg-muted">Not sent</span>),
+      hideBelow: "lg",
+    },
+    {
       id: "actions",
       header: <span className="sr-only">Actions</span>,
       width: "48px",
@@ -170,6 +179,9 @@ export default function PlatformStaffPage() {
               disabledReason="Activate the account first"
             >
               Reset password
+            </DropdownItem>
+            <DropdownItem icon={<BellRing />} onSelect={() => setPhoneFor(s)}>
+              {s.phone ? "Change alert phone" : "Send system alerts"}
             </DropdownItem>
             <DropdownSeparator />
             {s.isActive ? (
@@ -246,6 +258,16 @@ export default function PlatformStaffPage() {
         onOpenChange={setAdding}
         onCreated={(s, value) => {
           setPassword({ staff: s, value });
+          void staff.reload();
+        }}
+      />
+
+      <AlertPhoneDialog
+        staff={phoneFor}
+        onOpenChange={(o) => !o && setPhoneFor(null)}
+        onSaved={(s) => {
+          toast.success(s.phone ? `System alerts go to ${s.name} at ${s.phone}` : `${s.name} no longer gets system alerts`);
+          setPhoneFor(null);
           void staff.reload();
         }}
       />
@@ -338,6 +360,55 @@ function AddStaffDialog({
           </DialogClose>
           <Button type="submit" loading={busy}>
             Add staff member
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/** The phone where a staff member gets system alerts (WhatsApp or SMS through the platform sender). */
+function AlertPhoneDialog({ staff, onOpenChange, onSaved }: { staff: Staff | null; onOpenChange: (open: boolean) => void; onSaved: (staff: Staff) => void }) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!staff) return;
+    const phone = String(new FormData(event.currentTarget).get("phone") ?? "").trim();
+    setBusy(true);
+    setError("");
+    try {
+      onSaved(await platformApi<Staff>(`/staff/${staff.id}`, { method: "PATCH", body: { phone } }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={!!staff}
+      onOpenChange={(o) => {
+        if (busy) return;
+        if (!o) setError("");
+        onOpenChange(o);
+      }}
+      title={`System alerts for ${staff?.name ?? ""}`}
+      description="Alerts about failing jobs, messages and reconciliation are sent here by WhatsApp or SMS, when the server has a sender set up. Leave it empty to stop them."
+    >
+      <form key={staff?.id} onSubmit={submit} className="flex flex-col gap-4">
+        <TextField label="Mobile number" name="phone" type="tel" inputMode="tel" defaultValue={staff?.phone ?? ""} placeholder="0300 1234567" />
+        {error && <Alert tone="danger">{error}</Alert>}
+        <div className="flex justify-end gap-2">
+          <DialogClose asChild>
+            <Button type="button" variant="secondary" disabled={busy}>
+              Cancel
+            </Button>
+          </DialogClose>
+          <Button type="submit" loading={busy}>
+            Save
           </Button>
         </div>
       </form>

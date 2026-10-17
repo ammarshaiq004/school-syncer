@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { JobStatus, Prisma } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
+import { errorReporter } from '../observability/error-reporter.js';
+import { withRequestContext } from '../observability/request-context.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 /** What a handler sees of the job it runs. */
@@ -164,7 +166,8 @@ export class JobsService {
         FOR UPDATE SKIP LOCKED
       )
       RETURNING "id", "queue", "payload", "attempts", "maxAttempts"`;
-    await Promise.all(jobs.map((job) => this.process(job, workerId, now)));
+    // Each job runs under its own id, so its log lines (and error reports) can be told apart.
+    await Promise.all(jobs.map((job) => withRequestContext({ requestId: `job:${job.id}` }, () => this.process(job, workerId, now))));
     return jobs.length;
   }
 
@@ -190,6 +193,7 @@ export class JobsService {
           data: { status: JobStatus.FAILED, finishedAt: new Date(), lockedAt: null, lockedBy: null, lastError, payload: scrubbed() },
         });
         this.logger.warn(`Job ${job.queue} ${job.id} failed after ${job.attempts} attempt(s): ${lastError}`);
+        void errorReporter().captureException(error, { level: 'warning', tags: { queue: job.queue }, extra: { jobId: job.id, attempts: job.attempts } });
         await handler?.failed?.(payload, info, error).catch((err: Error) => this.logger.error(`failed() of ${job.id}: ${err.message}`));
       } else {
         const runAt = new Date(now.getTime() + backoffMs(job.attempts, handler?.backoffMs));
@@ -200,6 +204,29 @@ export class JobsService {
         await handler?.retrying?.(payload, info, error).catch((err: Error) => this.logger.error(`retrying() of ${job.id}: ${err.message}`));
       }
     }
+  }
+
+  /**
+   * Whether a failed job of this queue can run again from what it kept: not
+   * when its handler scrubs the payload on finishing (message deliveries
+   * drop their parameters), nor when nothing handles the queue.
+   */
+  canRetry(queue: string): boolean {
+    const handler = this.handlers.get(queue);
+    return Boolean(handler && !handler.scrub);
+  }
+
+  /**
+   * Gives a failed job a fresh set of attempts, due now. Returns false when
+   * the job is not (or no longer) FAILED.
+   */
+  async retry(id: string, now = new Date()): Promise<boolean> {
+    const { count } = await this.prisma.job.updateMany({
+      where: { id, status: JobStatus.FAILED },
+      data: { status: JobStatus.PENDING, attempts: 0, runAt: now, finishedAt: null, lockedAt: null, lockedBy: null },
+    });
+    if (count) this.onEnqueue?.();
+    return count > 0;
   }
 
   /** Puts jobs whose worker died mid-run back in the queue (or fails them when out of attempts). */

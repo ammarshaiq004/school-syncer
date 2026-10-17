@@ -25,6 +25,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "platform:create-admin": "tsx src/platform/create-admin.ts",
     "data:normalise-contacts": "tsx src/students/normalise-contacts.ts",
+    "secrets:reencrypt": "tsx src/platform/reencrypt-secrets.ts",
     "postinstall": "prisma generate",
     "dev": "nest start --watch"
   },

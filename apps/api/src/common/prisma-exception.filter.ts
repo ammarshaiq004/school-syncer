@@ -1,6 +1,5 @@
-import { type ArgumentsHost, Catch, type ExceptionFilter, HttpStatus, Logger } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { Response } from 'express';
 
 /** What a database error means for the caller. Messages never include the query, values or stack. */
 const KNOWN: Record<string, { status: HttpStatus; message: string }> = {
@@ -30,7 +29,11 @@ const ERROR_NAMES: Partial<Record<HttpStatus, string>> = {
   [HttpStatus.INTERNAL_SERVER_ERROR]: 'Internal Server Error',
 };
 
-/** The HTTP answer for a Prisma error. Unmapped errors stay a plain 500. */
+/**
+ * The HTTP answer for a Prisma error (AppExceptionFilter sends it): 409, 404
+ * or 400 instead of a 500, without leaking SQL or stack traces. Unmapped
+ * errors stay a plain 500.
+ */
 export function mapPrismaError(exception: unknown): MappedError {
   let status = HttpStatus.INTERNAL_SERVER_ERROR;
   let message = 'Internal server error';
@@ -42,23 +45,4 @@ export function mapPrismaError(exception: unknown): MappedError {
     message = 'Invalid value in the request';
   }
   return { status, body: { statusCode: status, message, error: ERROR_NAMES[status] ?? 'Error' } };
-}
-
-/**
- * Turns database errors that escape a handler into proper HTTP answers (409,
- * 404, 400) instead of 500s, without leaking SQL or stack traces. Other
- * exceptions, HttpExceptions included, keep Nest's default handling.
- */
-@Catch(Prisma.PrismaClientKnownRequestError, Prisma.PrismaClientValidationError)
-export class PrismaExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger('PrismaException');
-
-  catch(exception: Prisma.PrismaClientKnownRequestError | Prisma.PrismaClientValidationError, host: ArgumentsHost) {
-    const { status, body } = mapPrismaError(exception);
-    const code = exception instanceof Prisma.PrismaClientKnownRequestError ? exception.code : 'validation';
-    if (status >= 500) this.logger.error(`Unhandled database error (${code})`, exception.stack);
-    else this.logger.warn(`Database error ${code} answered with ${status}`);
-    const res = host.switchToHttp().getResponse<Response>();
-    res.status(status).json(body);
-  }
 }

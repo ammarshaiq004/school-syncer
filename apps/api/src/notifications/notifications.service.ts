@@ -1,7 +1,7 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { NotificationStatus } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
-import { openSecrets, sealSecrets, secretKey } from '../fees/gateways/school-accounts.js';
+import { openSecrets, sealSecrets, secretKey, secretKeys } from '../fees/gateways/school-accounts.js';
 import { JobsService, PermanentJobError, type JobInfo } from '../jobs/jobs.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DeliveryError } from './drivers.js';
@@ -114,11 +114,11 @@ export class NotificationsService implements OnModuleInit {
     if (!log || log.status !== NotificationStatus.QUEUED) return;
     const template = log.template as TemplateKey;
     if (!(template in TEMPLATES)) throw new PermanentJobError(`Unknown template ${log.template}`);
-    const key = secretKey();
+    const keys = secretKeys().all;
     const params = {
       ...payload.params,
       ...payload.secrets,
-      ...(payload.sealed && key ? openSecrets(payload.sealed, key) : {}),
+      ...(payload.sealed && keys.length ? openSecrets(payload.sealed, keys) : {}),
     };
     const sender = payload.platform ? this.senders.forPlatform() : await this.senders.forSchool(log.schoolId);
     await this.prisma.notificationLog.update({

@@ -187,8 +187,11 @@ pnpm build                   # needs NEXT_PUBLIC_API_URL (apps/web/.env.local or
 Run the API with `NODE_ENV=production`. It then refuses to start unless `DATABASE_URL` is set, `JWT_SECRET` and
 `FILE_SIGNING_SECRET` are different random strings of 32+ characters (`openssl rand -hex 32`; the signing secret is
 only needed with local file storage), `API_PUBLIC_URL` and `WEB_PUBLIC_URL` are https addresses, `PAYMENTS_MODE` is not
-`mock`, and `PAYMENTS_SECRET_KEY` is set for sandbox or live payments. `GET /api/health` checks the database and answers
-503 when it is unreachable. Build the web portal with `NEXT_PUBLIC_API_URL` and the app with `EXPO_PUBLIC_API_URL`
+`mock`, and `PAYMENTS_SECRET_KEY` is set for sandbox or live payments; secrets must be random and all different.
+[docs/secrets.md](docs/secrets.md) lists every secret and setting and how to rotate keys. `GET /api/health` checks the
+database and answers 503 when it is unreachable; `GET /api/health/ready` also checks the job queue and the nightly
+reconciliation. Error tracking (`SENTRY_DSN`, Sentry or GlitchTip) and alerts (`ALERT_WEBHOOK_URL`) are optional; the
+console's **System health** page shows the same without them. Build the web portal with `NEXT_PUBLIC_API_URL` and the app with `EXPO_PUBLIC_API_URL`
 pointing at the public API; the web build fails without it.
 
 ## API overview
@@ -198,6 +201,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | Method | Path | Who |
 | --- | --- | --- |
 | GET | `/health` | anyone |
+| GET | `/health/ready` | anyone |
 | POST | `/auth/register-school` | anyone |
 | POST | `/auth/login` | anyone |
 | GET | `/auth/me` | signed in (also while a new password is pending) |
@@ -265,6 +269,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET, POST | `/platform/invoices`, `/platform/invoices/:id`, `/platform/invoices/generate`, `/platform/invoices/:id/pay`, `/platform/invoices/:id/void` | SchoolSyncer staff (void: owner) |
 | GET, POST | `/platform/payments`, `/platform/payments/:id`, `/platform/payments/:id/void`, `/platform/schools/:id/payments`, `/platform/schools/:id/statement`, `/platform/schools/:id/bill-now` | SchoolSyncer staff (void: owner) |
 | GET, PATCH | `/platform/settings` | SchoolSyncer staff (edit: owner) |
+| GET, POST | `/platform/system-health`, `/platform/system-health/jobs/:id/retry` | SchoolSyncer staff |
 
 ## AI assistant setup
 

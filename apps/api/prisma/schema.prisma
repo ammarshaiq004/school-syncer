@@ -864,6 +864,8 @@ model NotificationLog {
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, createdAt])
+  /// Monitoring: delivery failures across every school.
+  @@index([createdAt, status])
 }
 
 enum Audience {
@@ -1437,6 +1439,8 @@ model PlatformAdmin {
   mustChangePassword Boolean      @default(false)
   // Signed into console tokens as `tv`; bumped on a password change or reset.
   tokenVersion       Int          @default(0)
+  // Where system alerts reach them (WhatsApp/SMS via the platform sender), stored as 03XXXXXXXXX. Optional.
+  phone              String?
   isActive           Boolean      @default(true)
   lastLoginAt        DateTime?
   createdAt          DateTime     @default(now())
@@ -2345,6 +2349,28 @@ model Job {
 
   @@index([status, priority, runAt])
   @@index([status, lockedAt])
+  /// Monitoring: a queue's latest runs and failures.
+  @@index([queue, status, finishedAt])
+}
+
+/// A problem the monitoring job found (failed jobs, message failures, no
+/// reconciliation, readiness failing), kept per key so the same open problem
+/// alerts once per ALERT_REPEAT_MINUTES instead of every run.
+model PlatformAlert {
+  /// Stable identity of the problem, e.g. "jobs.failed" or "readiness.database".
+  key            String    @id
+  severity       String    @default("warning") // warning or critical
+  summary        String
+  detail         String    @default("")
+  openedAt       DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  lastNotifiedAt DateTime?
+  /// How many times admins were told about this problem while open.
+  notifications  Int       @default(0)
+  /// Set when a run no longer finds the problem; a new occurrence reopens it.
+  resolvedAt     DateTime?
+
+  @@index([resolvedAt])
 }
 
 /// Fixed-window counters for rate limits, shared by every API instance.

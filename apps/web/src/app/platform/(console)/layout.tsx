@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Building, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, PlugZap, Receipt, ScrollText, Settings, Tags, UsersRound, Wallet, X, type LucideIcon } from "lucide-react";
+import { Activity, Building, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, PlugZap, Receipt, ScrollText, Settings, Tags, UsersRound, Wallet, X, type LucideIcon } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandMark } from "@/components/brand";
 import { Avatar } from "@/components/kit/avatar";
@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
   { href: "/platform/gateways", label: "Payment gateways", icon: PlugZap },
   { href: "/platform/reports", label: "Reports", icon: ChartColumn },
   { href: "/platform/audit", label: "Audit log", icon: ScrollText },
+  { href: "/platform/system-health", label: "System health", icon: Activity },
   { href: "/platform/staff", label: "Platform staff", icon: UsersRound, ownerOnly: true },
   { href: "/platform/settings", label: "Settings", icon: Settings },
 ];

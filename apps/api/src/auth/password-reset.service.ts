@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import bcrypt from 'bcryptjs';
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { tooManyRequests } from '../common/rate-limit.guard.js';
+import { previousSecrets } from '../common/signing-secrets.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { COUNTER_STORE, type CounterStore } from '../jobs/counter-store.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -102,7 +103,7 @@ export class PasswordResetService {
       data: { attempts: { increment: 1 } },
     });
     if (!counted.count) throw new BadRequestException(TOO_MANY);
-    if (!this.matches(row.codeHash, this.hash(school.id, phone, input.code))) {
+    if (!this.hashes(school.id, phone, input.code).some((h) => this.matches(row.codeHash, h))) {
       throw new BadRequestException(row.attempts + 1 >= RESET_MAX_ATTEMPTS ? TOO_MANY : WRONG_CODE);
     }
     const claimed = await this.prisma.passwordResetCode.updateMany({
@@ -152,8 +153,14 @@ export class PasswordResetService {
     if (counter.count > max) throw tooManyRequests(counter.resetAt - now);
   }
 
-  private hash(schoolId: string, phone: string, code: string) {
-    return createHmac('sha256', this.config.getOrThrow<string>('JWT_SECRET')).update(`${schoolId}|${phone}|${code}`).digest('hex');
+  private hash(schoolId: string, phone: string, code: string, secret = this.config.getOrThrow<string>('JWT_SECRET')) {
+    return createHmac('sha256', secret).update(`${schoolId}|${phone}|${code}`).digest('hex');
+  }
+
+  /** The code's hash under JWT_SECRET and, during a rotation, each JWT_SECRET_PREVIOUS. */
+  private hashes(schoolId: string, phone: string, code: string) {
+    const previous = previousSecrets(this.config.get<string>('JWT_SECRET_PREVIOUS'));
+    return [this.hash(schoolId, phone, code), ...previous.map((secret) => this.hash(schoolId, phone, code, secret))];
   }
 
   private matches(stored: string, given: string) {
