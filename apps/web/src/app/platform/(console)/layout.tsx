@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Building, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, Receipt, ScrollText, Tags, UsersRound, X, type LucideIcon } from "lucide-react";
+import { Building, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, Receipt, ScrollText, Settings, Tags, UsersRound, Wallet, X, type LucideIcon } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandMark } from "@/components/brand";
 import { Avatar } from "@/components/kit/avatar";
@@ -22,10 +22,18 @@ const NAV: NavItem[] = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard },
   { href: "/platform/schools", label: "Schools", icon: Building },
   { href: "/platform/invoices", label: "Bills", icon: Receipt },
+  { href: "/platform/payments", label: "Payments", icon: Wallet },
   { href: "/platform/plans", label: "Plans", icon: Tags },
   { href: "/platform/reports", label: "Reports", icon: ChartColumn },
   { href: "/platform/audit", label: "Audit log", icon: ScrollText },
   { href: "/platform/staff", label: "Platform staff", icon: UsersRound, ownerOnly: true },
+  { href: "/platform/settings", label: "Settings", icon: Settings },
+];
+
+/** Printable pages that belong under a nav entry with a different path. */
+const NAV_ALIASES: [prefix: string, href: string][] = [
+  ["/platform/bills/", "/platform/invoices"],
+  ["/platform/receipts/", "/platform/payments"],
 ];
 
 const navFor = (admin: ConsoleAdmin) => NAV.filter((n) => !n.ownerOnly || admin.role === "OWNER");
@@ -33,6 +41,8 @@ const navFor = (admin: ConsoleAdmin) => NAV.filter((n) => !n.ownerOnly || admin.
 /** The nav entry for the current page ("/platform" itself only matches exactly). */
 function activeItem(pathname: string, items: NavItem[]) {
   if (pathname === "/platform") return items[0];
+  const alias = NAV_ALIASES.find(([prefix]) => pathname.startsWith(prefix));
+  if (alias) return items.find((n) => n.href === alias[1]);
   const href = activeHref(
     pathname,
     items.slice(1).map((n) => n.href),

@@ -25,6 +25,8 @@ interface DeliverPayload {
   params: Record<string, string>;
   sealed?: string;
   secrets?: Record<string, string>;
+  /** SchoolSyncer writing to the school: always the platform sender, never the school's own number. */
+  platform?: boolean;
 }
 
 /**
@@ -50,7 +52,7 @@ export class NotificationsService implements OnModuleInit {
       run: (payload, job) => this.deliver(payload, job),
       failed: (payload, job, error) => this.markFailed(payload.logId, job, error),
       // Delivered or failed messages keep no parameters (passwords, reset codes) in the queue.
-      scrub: (payload) => ({ logId: payload.logId }),
+      scrub: (payload) => ({ logId: payload.logId, ...(payload.platform ? { platform: true } : {}) }),
       backoffMs: 30_000,
     });
   }
@@ -58,8 +60,14 @@ export class NotificationsService implements OnModuleInit {
   /**
    * Queues messages for delivery; returns the queued count. `urgent` puts
    * them ahead of bulk sends (a password reset code ahead of fee vouchers).
+   * `platform` is for SchoolSyncer's own messages to the school (bills and
+   * reminders): they go out from the platform sender, never the school's number.
    */
-  async send(schoolId: string, messages: OutgoingMessage[], opts: { urgent?: boolean } = {}): Promise<number> {
+  async send(
+    schoolId: string,
+    messages: OutgoingMessage[],
+    opts: { urgent?: boolean; platform?: boolean } = {},
+  ): Promise<number> {
     const unique = [
       ...new Map(
         messages
@@ -68,7 +76,7 @@ export class NotificationsService implements OnModuleInit {
       ).values(),
     ];
     if (!unique.length) return 0;
-    const sender = await this.senders.forSchool(schoolId);
+    const sender = opts.platform ? this.senders.forPlatform() : await this.senders.forSchool(schoolId);
     const key = secretKey();
     const rows = unique.map((m) => ({
       id: randomUUID(),
@@ -83,8 +91,9 @@ export class NotificationsService implements OnModuleInit {
       const secret = secretParams(m.template);
       const params = Object.fromEntries(Object.entries(m.params).filter(([k]) => !secret.includes(k)));
       const hidden = Object.fromEntries(Object.entries(m.params).filter(([k]) => secret.includes(k)));
-      if (!Object.keys(hidden).length) return { logId: rows[i].id, params };
-      return key ? { logId: rows[i].id, params, sealed: sealSecrets(hidden, key) } : { logId: rows[i].id, params, secrets: hidden };
+      const base = { logId: rows[i].id, params, ...(opts.platform ? { platform: true } : {}) };
+      if (!Object.keys(hidden).length) return base;
+      return key ? { ...base, sealed: sealSecrets(hidden, key) } : { ...base, secrets: hidden };
     });
     await this.prisma.$transaction(async (tx) => {
       await tx.notificationLog.createMany({ data: rows });
@@ -111,7 +120,7 @@ export class NotificationsService implements OnModuleInit {
       ...payload.secrets,
       ...(payload.sealed && key ? openSecrets(payload.sealed, key) : {}),
     };
-    const sender = await this.senders.forSchool(log.schoolId);
+    const sender = payload.platform ? this.senders.forPlatform() : await this.senders.forSchool(log.schoolId);
     await this.prisma.notificationLog.update({
       where: { id: log.id },
       data: { attempts: job.attempt, channel: sender.driver.channel, sender: sender.source },

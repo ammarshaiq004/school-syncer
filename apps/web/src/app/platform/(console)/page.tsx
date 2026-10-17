@@ -212,7 +212,7 @@ export default function OverviewPage() {
           <Card>
             <CardHeader
               title="Revenue collected"
-              description="Paid SchoolSyncer bills per month, last 12 months"
+              description="Payments received from schools per month, last 12 months"
               action={
                 <Link href="/platform/reports" className={buttonClass("secondary", "sm")}>
                   <ChartColumn aria-hidden />

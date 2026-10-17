@@ -68,6 +68,8 @@ import { RateLimitGuard } from './common/rate-limit.guard.js';
 import { RolesGuard } from './common/roles.guard.js';
 import { RolesController } from './roles/roles.controller.js';
 import { SubscriptionGuard } from './common/subscription.guard.js';
+import { BillingScheduler } from './platform/billing/billing.scheduler.js';
+import { BillingService } from './platform/billing/billing.service.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
 import { PlatformModule } from './platform/platform.module.js';
@@ -156,6 +158,8 @@ import { UsersController } from './users/users.controller.js';
     OnlinePaymentsService,
     ReconciliationService,
     ReconciliationScheduler,
+    BillingService,
+    BillingScheduler,
     // First, so floods of public requests stop before any database work.
     { provide: APP_GUARD, useClass: RateLimitGuard },
     // Order matters: authenticate first, then check roles, then the school's plan.

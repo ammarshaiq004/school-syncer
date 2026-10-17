@@ -135,7 +135,7 @@ export default function ReportsPage() {
 
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
-              <CardHeader title="Revenue collected" description="Paid SchoolSyncer bills per month, last 12 months" />
+              <CardHeader title="Revenue collected" description="Payments received from schools per month, last 12 months" />
               {!data ? (
                 <Skeleton className="h-[240px] w-full" />
               ) : totalRevenue === 0 ? (

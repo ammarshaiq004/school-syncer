@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   NotFoundException,
+  Param,
   Post,
 } from '@nestjs/common';
 import { Role, StudentStatus, SubscriptionStatus } from '@prisma/client';
@@ -14,6 +15,8 @@ import type { AuthUser } from '../common/auth-user.js';
 import { AllowWhenReadOnly, CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { localDate } from '../common/dates.js';
+import { BillingService, nextPeriod } from './billing/billing.service.js';
 import { FEATURES, monthlyAmount } from './plans.js';
 import { SubscriptionService } from './subscription.service.js';
 
@@ -28,11 +31,12 @@ export class SubscriptionController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly subscriptions: SubscriptionService,
+    private readonly billing: BillingService,
   ) {}
 
   @Get()
   async get(@CurrentUser() user: AuthUser) {
-    const [sub, students, campuses, plans, invoices, access] =
+    const [sub, students, campuses, plans, invoices, access, statement, notices, settings] =
       await Promise.all([
         this.prisma.subscription.findUnique({
           where: { schoolId: user.schoolId },
@@ -50,6 +54,13 @@ export class SubscriptionController {
           take: 24,
         }),
         this.subscriptions.forSchool(user.schoolId),
+        this.billing.statement(user.schoolId),
+        this.prisma.platformNotice.findMany({
+          where: { schoolId: user.schoolId },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        }),
+        this.billing.settings(),
       ]);
     if (!sub) throw new NotFoundException('This school has no plan');
     return {
@@ -77,7 +88,76 @@ export class SubscriptionController {
           (p.maxCampuses === null || campuses <= p.maxCampuses),
       })),
       invoices,
+      outstanding: statement.outstanding,
+      credit: statement.credit,
+      payments: statement.payments
+        .slice()
+        .reverse()
+        .slice(0, 24)
+        .map((p) => ({
+          id: p.id,
+          number: p.number,
+          amount: p.amount,
+          method: p.method,
+          reference: p.reference,
+          receivedOn: p.receivedOn,
+          status: p.status,
+          bills: p.allocations.map((a) => a.invoice.number),
+        })),
+      notices,
+      paymentInstructions: settings.paymentInstructions,
     };
+  }
+
+  /** One SchoolSyncer bill, for the printable copy. */
+  @Get('invoices/:id')
+  @AllowWhenReadOnly()
+  async invoice(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const invoice = await this.prisma.platformInvoice.findFirst({
+      where: { id, schoolId: user.schoolId },
+      include: {
+        school: { select: { id: true, name: true, slug: true, city: true, phone: true, email: true } },
+        allocations: { include: { payment: { select: { id: true, number: true, receivedOn: true, method: true, status: true } } } },
+      },
+    });
+    if (!invoice) throw new NotFoundException('Bill not found');
+    return { invoice, settings: await this.billing.settings() };
+  }
+
+  /** One receipt for a payment to SchoolSyncer. */
+  @Get('payments/:id')
+  @AllowWhenReadOnly()
+  async payment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const payment = await this.prisma.platformPayment.findFirst({
+      where: { id, schoolId: user.schoolId },
+      include: {
+        school: { select: { id: true, name: true, slug: true, city: true, phone: true, email: true } },
+        allocations: { include: { invoice: { select: { id: true, number: true, period: true, amount: true } } } },
+      },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    return { payment, settings: await this.billing.settings() };
+  }
+
+  /** Unread SchoolSyncer messages that need attention, for the banner at the top of the app. */
+  @Get('notices/unread')
+  @AllowWhenReadOnly()
+  unread(@CurrentUser() user: AuthUser) {
+    return this.prisma.platformNotice.findMany({
+      where: { schoolId: user.schoolId, readAt: null, severity: { in: ['WARNING', 'URGENT'] } },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    });
+  }
+
+  @Post('notices/:id/read')
+  @AllowWhenReadOnly()
+  async markRead(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    const { count } = await this.prisma.platformNotice.updateMany({
+      where: { id, schoolId: user.schoolId, readAt: null },
+      data: { readAt: new Date() },
+    });
+    return { updated: count };
   }
 
   /**
@@ -123,6 +203,10 @@ export class SubscriptionController {
           before.status === SubscriptionStatus.TRIAL
             ? SubscriptionStatus.ACTIVE
             : before.status,
+        // The rest of this month is free; the nightly bill run starts next month.
+        ...(before.status === SubscriptionStatus.TRIAL
+          ? { billedFrom: nextPeriod(localDate(new Date()).slice(0, 7)) }
+          : {}),
       },
     });
     this.subscriptions.forget(user.schoolId);

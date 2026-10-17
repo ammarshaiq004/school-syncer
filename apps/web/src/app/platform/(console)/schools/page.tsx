@@ -10,8 +10,14 @@ import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
 import { StatusBadge, STATUS_OPTIONS, statusLabel, trialEnded } from "../status";
 
-// The list can also be narrowed to trials that have run out (worked out by the API).
-const FILTER_OPTIONS = [...STATUS_OPTIONS.slice(0, 1), { value: "TRIAL_ENDED", label: statusLabel("TRIAL_ENDED") }, ...STATUS_OPTIONS.slice(1)];
+// The list can also be narrowed to trials that have run out and to schools with a
+// bill 30 or more days past due (both worked out by the API).
+const FILTER_OPTIONS = [
+  ...STATUS_OPTIONS.slice(0, 1),
+  { value: "TRIAL_ENDED", label: statusLabel("TRIAL_ENDED") },
+  ...STATUS_OPTIONS.slice(1),
+  { value: "OVERDUE_30", label: "30+ days overdue" },
+];
 
 interface SchoolRow {
   id: string;
@@ -26,6 +32,8 @@ interface SchoolRow {
   campuses: number;
   monthly: number;
   balanceDue: number;
+  /** Days since the oldest unpaid bill fell due; 0 when nothing is overdue. */
+  daysOverdue: number;
   lastLoginAt: string | null;
 }
 
@@ -85,7 +93,19 @@ const columns: Column<SchoolRow>[] = [
     header: "Owed",
     align: "right",
     sortValue: (s) => s.balanceDue,
-    cell: (s) => (s.balanceDue ? <span className="font-medium text-danger-text">{rupees(s.balanceDue)}</span> : <span className="text-fg-muted">–</span>),
+    cell: (s) =>
+      s.balanceDue ? (
+        <span className="flex flex-col items-end gap-0.5">
+          <span className="font-medium text-danger-text">{rupees(s.balanceDue)}</span>
+          {s.daysOverdue > 0 && (
+            <span className="whitespace-nowrap text-xs text-fg-muted">
+              {s.daysOverdue} {s.daysOverdue === 1 ? "day" : "days"} overdue
+            </span>
+          )}
+        </span>
+      ) : (
+        <span className="text-fg-muted">–</span>
+      ),
   },
   {
     id: "login",

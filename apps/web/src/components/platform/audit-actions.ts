@@ -15,6 +15,8 @@ import {
   UserPlus,
   Wallet,
   CircleX,
+  Settings,
+  Undo2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,9 +32,12 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "school.user.update": { label: "Changed a school user", icon: UserCog },
   "school.user.reset_password": { label: "Reset a school user's password", icon: KeyRound },
   "subscription.update": { label: "Changed the subscription", icon: CreditCard },
-  "invoice.pay": { label: "Recorded a payment", icon: Wallet },
+  "invoice.pay": { label: "Recorded a bill payment", icon: Wallet },
   "invoice.void": { label: "Voided a bill", icon: Receipt },
   "invoices.generate": { label: "Generated monthly bills", icon: FileText },
+  "payment.record": { label: "Recorded a payment", icon: Wallet },
+  "payment.void": { label: "Voided a payment", icon: Undo2 },
+  "settings.update": { label: "Changed SchoolSyncer's business settings", icon: Settings },
   "plan.update": { label: "Edited a plan", icon: Tags },
   "staff.create": { label: "Added a staff member", icon: UserPlus },
   "staff.update": { label: "Changed a staff member", icon: UserCog },
