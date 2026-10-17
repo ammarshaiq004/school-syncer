@@ -170,7 +170,9 @@ cp apps/mobile/.env.example apps/mobile/.env.local   # point EXPO_PUBLIC_API_URL
 pnpm --filter mobile start                           # scan the QR code with Expo Go
 ```
 
-On a phone, the API URL must be your computer's network address (for example `http://192.168.1.20:4000/api`), not `localhost`. To preview the app in a browser, run `pnpm --filter mobile web` and add `http://localhost:8081` to `WEB_ORIGIN` in `apps/api/.env` (it takes a comma-separated list). Store builds are made with EAS (`npx eas-cli build`), which needs an Expo account.
+On a phone, the API URL must be your computer's network address (for example `http://192.168.1.20:4000/api`), not `localhost`. To preview the app in a browser, run `pnpm --filter mobile web` and add `http://localhost:8081` to `WEB_ORIGIN` in `apps/api/.env` (it takes a comma-separated list). Store builds are made with EAS (`eas.json` has development, preview and production profiles); `docs/mobile-release.md` lists the accounts to create and the exact build and submit commands.
+
+**Version gate.** The app sends `X-App-Version`, `X-App-Build` and `X-App-Platform` on every request and checks `GET /api/app/version` when it opens and when it returns to the foreground. A platform owner sets the minimum and latest version per store in the console (**Mobile app**; defaults from the `APP_*` settings in `apps/api/.env.example`). Builds below the minimum are refused with 426 `APP_UPDATE_REQUIRED` and show an "Update required" screen; builds below the latest get an "Update available" banner at most once a day. The web portal and the app's web preview are never gated. `docs/api-compatibility.md` is the policy for changing endpoints and raising the minimum.
 
 ## Tests
 

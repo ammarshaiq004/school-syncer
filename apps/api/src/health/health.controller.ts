@@ -1,5 +1,5 @@
 import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
-import { Public } from '../common/decorators.js';
+import { AllowAnyAppVersion, Public } from '../common/decorators.js';
 import { SystemHealthService } from '../monitoring/system-health.service.js';
 
 @Controller('health')
@@ -11,6 +11,7 @@ export class HealthController {
    * answers, 503 when it does not.
    */
   @Public()
+  @AllowAnyAppVersion()
   @Get()
   async check() {
     if (!(await this.health.database()).ok) {
@@ -27,6 +28,7 @@ export class HealthController {
    * reconciliation does not take the API out of rotation.
    */
   @Public()
+  @AllowAnyAppVersion()
   @Get('ready')
   async ready() {
     const readiness = await this.health.readiness();

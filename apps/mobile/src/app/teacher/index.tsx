@@ -1,5 +1,6 @@
 import { router, Stack } from 'expo-router';
 import { Text, View } from 'react-native';
+import { AppFooter } from '@/components/app-footer';
 import { Badge, Card, colors, ErrorText, H2, Muted, Row, Screen } from '@/components/ui';
 import { DAYS, isoWeekday } from '@/lib/format';
 import { hasRole, TEACHING, useSession } from '@/lib/session';
@@ -61,6 +62,7 @@ export default function TeacherHome() {
           </Card>
         </>
       )}
+      <AppFooter />
     </Screen>
   );
 }

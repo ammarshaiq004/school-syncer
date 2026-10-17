@@ -1,3 +1,5 @@
+import { APP_HEADERS } from './app-info';
+
 /**
  * Inlined when the app is bundled. Development falls back to a local API; a
  * release build without it cannot reach any server, so it says so loudly.
@@ -32,6 +34,21 @@ export const setApiToken = (t: string | null) => {
   token = t;
 };
 
+/** What the API sends with 426 APP_UPDATE_REQUIRED: this build is below the minimum. */
+export interface UpdateRequired {
+  message: string;
+  minVersion?: string;
+  storeUrl?: string;
+}
+
+export const APP_UPDATE_REQUIRED = 'APP_UPDATE_REQUIRED';
+
+let onUpdateRequired: ((info: UpdateRequired) => void) | null = null;
+/** The update gate listens here, so any refused request shows the "Update required" screen. */
+export const setUpdateRequiredHandler = (handler: typeof onUpdateRequired) => {
+  onUpdateRequired = handler;
+};
+
 /** Calls the API and returns the JSON body; throws the API's message on failure. */
 export async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   let res: Response;
@@ -40,6 +57,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
       method: init.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...APP_HEADERS,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -49,6 +67,11 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   }
   const data = await res.json().catch(() => null);
   if (!res.ok) {
+    if (res.status === 426 && data?.code === APP_UPDATE_REQUIRED) {
+      const info: UpdateRequired = { message: data.message, minVersion: data.minVersion, storeUrl: data.storeUrl };
+      onUpdateRequired?.(info);
+      throw new ApiError(426, info.message, APP_UPDATE_REQUIRED);
+    }
     const issues: { message: string }[] | undefined = data?.issues;
     const message = issues?.length
       ? issues.map((i) => i.message).join(', ')
@@ -64,6 +87,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** A machine-readable reason, e.g. APP_UPDATE_REQUIRED. */
+    readonly code?: string,
   ) {
     super(message);
   }

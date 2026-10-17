@@ -37,7 +37,12 @@ export function AuthShell({ eyebrow, title, description, children, footer, aside
           <div className="mt-7">{children}</div>
           {footer && <div className="mt-6 text-[13px] text-fg-muted">{footer}</div>}
         </main>
-        <p className="text-xs text-fg-disabled">© {new Date().getFullYear()} SchoolSyncer</p>
+        <p className="text-xs text-fg-disabled">
+          © {new Date().getFullYear()} SchoolSyncer ·{" "}
+          <Link href="/privacy" className="hover:text-fg-muted hover:underline">
+            Privacy policy
+          </Link>
+        </p>
       </div>
       <aside className="relative hidden overflow-hidden border-s border-border bg-slate-950 lg:flex lg:flex-col lg:justify-center lg:px-14 xl:px-20">
         {aside ?? <DefaultAside />}

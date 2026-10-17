@@ -1,5 +1,6 @@
 import { router, Stack } from 'expo-router';
 import { Text, View } from 'react-native';
+import { AppFooter } from '@/components/app-footer';
 import { Badge, Button, Card, colors, ErrorText, H2, Loading, Muted, Screen, Stat } from '@/components/ui';
 import type { Child } from '@/lib/types';
 import { useSession } from '@/lib/session';
@@ -37,6 +38,7 @@ export default function ParentHome() {
           </Card>
         );
       })}
+      <AppFooter />
     </Screen>
   );
 }

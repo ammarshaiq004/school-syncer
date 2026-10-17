@@ -1,3 +1,5 @@
+import { appEnvKeys } from '../app-version/app-release.js';
+import { compareVersions, isVersion } from '../app-version/version.js';
 import { secretKey } from '../fees/gateways/school-accounts.js';
 import { parseDsn } from '../observability/error-reporter.js';
 import { previousSecrets } from './signing-secrets.js';
@@ -105,6 +107,19 @@ export function validateEnv(env: Env): Env {
   if (dsn && !parseDsn(dsn)) problems.push('SENTRY_DSN is not a valid DSN (https://<key>@<host>/<project id>)');
   const webhook = text(env, 'ALERT_WEBHOOK_URL');
   if (webhook && !URL.canParse(webhook)) problems.push('ALERT_WEBHOOK_URL is not a valid URL');
+
+  // Mobile app version defaults (the console can override them).
+  for (const platform of ['IOS', 'ANDROID'] as const) {
+    const keys = appEnvKeys(platform);
+    const min = text(env, keys.minVersion);
+    const latest = text(env, keys.latestVersion);
+    for (const [key, value] of [[keys.minVersion, min], [keys.latestVersion, latest]]) {
+      if (value && !isVersion(value)) problems.push(`${key} must be a version like 1.4.0 (got "${value}")`);
+    }
+    if (isVersion(min) && isVersion(latest) && compareVersions(latest, min) < 0) {
+      problems.push(`${keys.latestVersion} cannot be below ${keys.minVersion}`);
+    }
+  }
 
   if (text(env, 'NODE_ENV') === 'production') {
     if (!text(env, 'DATABASE_URL')) problems.push('DATABASE_URL is required');
