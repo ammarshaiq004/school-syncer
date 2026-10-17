@@ -1,4 +1,5 @@
 import { router, Stack } from 'expo-router';
+import { AccountLink } from '@/components/account-link';
 import { Text, View } from 'react-native';
 import { AppFooter } from '@/components/app-footer';
 import { Badge, Button, Card, colors, ErrorText, H2, Loading, Muted, Screen, Stat } from '@/components/ui';
@@ -7,12 +8,12 @@ import { useSession } from '@/lib/session';
 import { useApi } from '@/lib/use-api';
 
 export default function ParentHome() {
-  const { user, signOut } = useSession();
+  const { user } = useSession();
   const children = useApi<Child[]>('/parent/children');
 
   return (
     <Screen onRefresh={children.reload} refreshing={children.refreshing}>
-      <Stack.Screen options={{ title: 'My children', headerRight: () => <Text onPress={signOut} accessibilityRole="button" style={{ color: colors.brand, paddingHorizontal: 12 }}>Sign out</Text> }} />
+      <Stack.Screen options={{ title: 'My children', headerRight: () => <AccountLink /> }} />
       <Muted>Assalam-o-alaikum, {user?.name}</Muted>
       <ErrorText>{children.error}</ErrorText>
       {!children.data && !children.error && <Loading />}

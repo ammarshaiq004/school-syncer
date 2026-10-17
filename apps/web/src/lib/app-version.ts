@@ -1,3 +1,8 @@
+import pkg from "../../package.json";
+
+/** The web app's version, sent with problem reports. NEXT_PUBLIC_APP_VERSION (a release tag or commit) wins when set at build time. */
+export const APP_VERSION: string = process.env.NEXT_PUBLIC_APP_VERSION || pkg.version;
+
 /** Store versions: one to three whole numbers ("2", "2.1", "2.1.3"), as the API accepts them. */
 const VERSION = /^\d{1,6}(\.\d{1,6}){0,2}$/;
 

@@ -148,6 +148,8 @@ const routes: { method: Method; path: (i: Ids) => string; body?: (i: Ids) => obj
   { method: 'delete', path: (i) => `/api/elearning/live/${i.live}` },
   { method: 'post', path: (i) => `/api/elearning/live/${i.live}/cancel` },
   { method: 'get', path: (i) => `/api/elearning/live/${i.live}/attendance` },
+  // Pilot kit
+  { method: 'get', path: (i) => `/api/problem-reports/${i.problemReport}` },
 ];
 
 describe('School isolation (e2e)', () => {
@@ -360,6 +362,9 @@ describe('School isolation (e2e)', () => {
         startsAt: new Date(Date.now() + 864e5).toISOString(),
       })
     ).id;
+
+    // Pilot kit
+    ids.problemReport = (await create(teacherA, '/api/problem-reports', { message: 'The register would not save', page: '/attendance' })).id;
   });
 
   afterAll(async () => {

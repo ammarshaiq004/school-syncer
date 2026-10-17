@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, ChevronDown, KeyRound, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
+import { Bell, Bug, ChevronDown, KeyRound, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
 import { Avatar } from "@/components/kit/avatar";
 import { IconButton } from "@/components/kit/button";
 import { DropdownItem, DropdownLabel, DropdownMenu, DropdownSeparator, Tooltip } from "@/components/kit/overlay";
@@ -26,6 +26,8 @@ export interface TopBarProps {
   onOpenMenu: () => void;
   onOpenPalette: () => void;
   onSignOut: () => void;
+  /** Opens "Report a problem" (SCHOOL-150). */
+  onReportProblem: () => void;
   /** Where "Change password" goes; omitted to hide it (support sessions). */
   changePasswordHref?: string;
   showBell: boolean;
@@ -33,7 +35,7 @@ export interface TopBarProps {
   searchLabel?: string;
 }
 
-export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, changePasswordHref, showBell, searchLabel = "Search pages" }: TopBarProps) {
+export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, onReportProblem, changePasswordHref, showBell, searchLabel = "Search pages" }: TopBarProps) {
   const current = viewDef(view);
   const [theme, setTheme] = useTheme();
   const CurrentIcon = current.icon;
@@ -95,6 +97,12 @@ export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu,
 
         <ThemeToggle className="hidden sm:inline-flex" />
 
+        <Tooltip content="Report a problem" side="bottom">
+          <IconButton aria-label="Report a problem" onClick={onReportProblem}>
+            <Bug />
+          </IconButton>
+        </Tooltip>
+
         {showBell && (
           <Tooltip content="Announcements" side="bottom">
             <Link href="/announcements" className={ICON_LINK} aria-label="Announcements">
@@ -136,6 +144,9 @@ export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu,
               Change password
             </DropdownItem>
           )}
+          <DropdownItem icon={<Bug />} onSelect={onReportProblem}>
+            Report a problem
+          </DropdownItem>
           <DropdownSeparator />
           <DropdownItem icon={<LogOut />} danger onSelect={onSignOut}>
             Sign out

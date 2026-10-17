@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   Banknote,
   CalendarCheck,
+  ListChecks,
   ChartColumn,
   CircleAlert,
   Download,
@@ -20,6 +22,7 @@ import {
   AreaChart,
   BarChart,
   Button,
+  buttonClass,
   Card,
   CardHeader,
   DataTable,
@@ -89,9 +92,15 @@ export default function ReportsPage() {
         breadcrumbs={[{ label: "Finance" }, { label: "Reports" }]}
         actions={
           tabs.length > 0 ? (
-            <Button variant="secondary" icon={<Printer />} onClick={() => window.print()}>
-              Print
-            </Button>
+            <>
+              <Link href="/reports/parallel-run" className={buttonClass("secondary")}>
+                <ListChecks aria-hidden />
+                Parallel-run check
+              </Link>
+              <Button variant="secondary" icon={<Printer />} onClick={() => window.print()}>
+                Print
+              </Button>
+            </>
           ) : undefined
         }
       />

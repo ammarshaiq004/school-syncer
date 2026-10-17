@@ -53,6 +53,7 @@ import {
   type Notice,
   type QuickAction,
 } from "./shared";
+import { SetupChecklistCard } from "./setup-checklist";
 
 interface DayAttendance {
   date: string;
@@ -152,6 +153,7 @@ export function AdminDashboard() {
 
   const reachable = new Set(allNavItems(user).map((i) => i.href));
   const canFees = hasRole(user, FEES) && reachable.has("/fees");
+  const isOwner = hasRole(user, ["OWNER"]);
 
   const t = s?.attendanceToday;
   const attendanceRate = t ? pct(t.present, t.marked) : null;
@@ -252,6 +254,8 @@ export function AdminDashboard() {
           </>
         }
       />
+
+      {isOwner && <SetupChecklistCard />}
 
       <StatGrid>
         <KpiCard

@@ -76,6 +76,8 @@ export const LIMITS: Record<FilePurpose, Partial<Record<FileKind, number>>> = {
   SUBMISSION: { video: 100 * MB, audio: 50 * MB, image: 10 * MB, document: 25 * MB, archive: 50 * MB },
   // Profile and ID card photos (SCHOOL-139): a phone picture is well under this.
   STUDENT_PHOTO: { image: 5 * MB },
+  // A screenshot sent with "Report a problem" (SCHOOL-150).
+  PROBLEM_REPORT: { image: 5 * MB },
 };
 
 /** Bytes the type check needs from the start of a file. */

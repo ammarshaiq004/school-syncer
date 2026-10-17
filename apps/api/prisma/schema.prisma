@@ -117,6 +117,11 @@ model School {
 
   messagingSender SchoolMessagingSender?
   passwordResets  PasswordResetCode[]
+
+  /// The owner hid the setup checklist on the dashboard before finishing it.
+  setupChecklistDismissedAt DateTime?
+  problemReports            ProblemReport[]
+  activityDays              UserActivityDay[]
 }
 
 model Campus {
@@ -315,6 +320,9 @@ model User {
   chatThreadsAsParent ChatThread[]  @relation("ChatThreadGuardian")
   chatThreadsAsStaff  ChatThread[]  @relation("ChatThreadStaff")
   chatMessagesSent    ChatMessage[]
+
+  problemReports ProblemReport[]
+  activityDays   UserActivityDay[]
 
   @@unique([schoolId, email])
   @@unique([schoolId, phone])
@@ -1445,8 +1453,9 @@ model PlatformAdmin {
   lastLoginAt        DateTime?
   createdAt          DateTime     @default(now())
 
-  auditLogs       PlatformAuditLog[]
-  gatewayTestRuns GatewayTestRun[]
+  auditLogs             PlatformAuditLog[]
+  gatewayTestRuns       GatewayTestRun[]
+  problemReportActivity ProblemReportActivity[]
 }
 
 model PlatformAuditLog {
@@ -2281,6 +2290,7 @@ enum FilePurpose {
   ASSIGNMENT
   SUBMISSION
   STUDENT_PHOTO
+  PROBLEM_REPORT
 }
 
 /// A file uploaded to the school's storage (S3-compatible bucket or local
@@ -2298,13 +2308,15 @@ model StoredFile {
   uploadedById String?
   createdAt    DateTime    @default(now())
 
-  school       School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  uploadedBy   User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  lesson       Lesson?
-  assignment   Assignment? @relation("AssignmentAttachment")
-  submission   Submission? @relation("SubmissionFile")
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  uploadedBy    User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  lesson        Lesson?
+  assignment    Assignment?    @relation("AssignmentAttachment")
+  submission    Submission?    @relation("SubmissionFile")
   /// A student's photo (purpose STUDENT_PHOTO).
-  studentPhoto Student?    @relation("StudentPhoto")
+  studentPhoto  Student?       @relation("StudentPhoto")
+  /// A screenshot sent with a problem report (purpose PROBLEM_REPORT).
+  problemReport ProblemReport? @relation("ProblemReportScreenshot")
 
   @@index([schoolId])
   @@index([uploadedById])
@@ -2467,4 +2479,85 @@ model GatewayTestRun {
 
   @@index([createdAt])
   @@index([schoolId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Pilot kit (SCHOOL-150): problem reports and daily activity
+// ---------------------------------------------------------------------------
+
+enum ProblemReportStatus {
+  NEW
+  IN_PROGRESS
+  FIXED
+  WONT_FIX
+}
+
+enum ProblemReportSource {
+  WEB
+  MOBILE
+}
+
+/// "Report a problem" from the web or mobile app, triaged in the platform console.
+model ProblemReport {
+  id              String              @id @default(cuid())
+  schoolId        String
+  reporterId      String?
+  /// Kept as sent, so the report still reads right if the account is removed.
+  reporterName    String
+  roles           Role[]
+  source          ProblemReportSource
+  message         String
+  /// The web path (with its query) or the mobile screen the user was on.
+  page            String
+  appVersion      String?
+  /// The browser's user agent, or the phone's platform and OS version.
+  browser         String?
+  screenshotId    String?             @unique
+  status          ProblemReportStatus @default(NEW)
+  statusChangedAt DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  school     School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  reporter   User?                   @relation(fields: [reporterId], references: [id], onDelete: SetNull)
+  screenshot StoredFile?             @relation("ProblemReportScreenshot", fields: [screenshotId], references: [id], onDelete: SetNull)
+  activity   ProblemReportActivity[]
+
+  @@index([schoolId, createdAt])
+  @@index([status, createdAt])
+  @@index([reporterId, createdAt])
+}
+
+/// A status change (shown to the school) or an internal note (console only) on a problem report.
+model ProblemReportActivity {
+  id         String               @id @default(cuid())
+  reportId   String
+  adminId    String?
+  adminName  String
+  /// Set on a status change: the new status.
+  status     ProblemReportStatus?
+  fromStatus ProblemReportStatus?
+  /// Set on an internal note. Never sent to the school.
+  note       String?
+  createdAt  DateTime             @default(now())
+
+  report ProblemReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  admin  PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([reportId, createdAt])
+}
+
+/// One row per school user per day they used the API, with the roles they
+/// held, for the console's daily active users. Support sessions do not count.
+model UserActivityDay {
+  userId   String
+  date     DateTime @db.Date
+  schoolId String
+  roles    Role[]
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([userId, date])
+  @@index([schoolId, date])
 }

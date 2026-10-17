@@ -1,13 +1,23 @@
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
+import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { colors } from '@/components/ui';
+import { screenShown } from '@/lib/screens';
 import { SessionProvider } from '@/lib/session';
 import { UpdateGate } from '@/lib/update-gate';
+
+/** Remembers the screens shown, for "Report a problem". */
+function ScreenTracker() {
+  const path = usePathname();
+  useEffect(() => screenShown(path), [path]);
+  return null;
+}
 
 export default function RootLayout() {
   return (
     <SessionProvider>
       <UpdateGate>
+        <ScreenTracker />
         <StatusBar style="dark" />
         <Stack
           screenOptions={{
@@ -32,6 +42,7 @@ export default function RootLayout() {
           <Stack.Screen name="teacher/index" options={{ title: 'Today' }} />
           <Stack.Screen name="teacher/attendance/[sectionId]" options={{ title: 'Attendance' }} />
           <Stack.Screen name="teacher/homework/[sectionId]" options={{ title: 'Homework' }} />
+          <Stack.Screen name="account" options={{ title: 'Account' }} />
         </Stack>
       </UpdateGate>
     </SessionProvider>

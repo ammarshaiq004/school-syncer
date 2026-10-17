@@ -82,6 +82,10 @@ import { SubscriptionController } from './platform/subscription.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { MonitoringModule } from './monitoring/monitoring.module.js';
 import { ObservabilityModule } from './observability/observability.module.js';
+import { PlatformPilotController } from './pilot/platform-pilot.controller.js';
+import { PlatformProblemReportsController } from './pilot/platform-problem-reports.controller.js';
+import { ProblemReportsController } from './pilot/problem-reports.controller.js';
+import { SetupChecklistController } from './pilot/setup-checklist.controller.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SchoolController } from './school/school.controller.js';
 import { SubjectsController } from './subjects/subjects.controller.js';
@@ -153,6 +157,11 @@ import { UsersController } from './users/users.controller.js';
     PaymentAccountsController,
     AnnouncementsController,
     DashboardController,
+    // Pilot kit (SCHOOL-150): setup checklist, problem reports, pilot health.
+    SetupChecklistController,
+    ProblemReportsController,
+    PlatformProblemReportsController,
+    PlatformPilotController,
     ParentController,
     ParentRecordsController,
     StudentController,
