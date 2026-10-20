@@ -37,7 +37,7 @@
     "@react-native/metro-config": "0.87.1",
     "@types/react": "~19.3.0",
     "@types/react-dom": "~19.3.0",
-    "eslint": "^9.0.0",
+    "eslint": "^10.13.0",
     "eslint-config-expo": "~57.0.0",
     "typescript": "~6.0.3"
   }
