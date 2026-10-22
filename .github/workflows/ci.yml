@@ -35,7 +35,6 @@ jobs:
       - name: Audit production dependencies
         # TODO(SCHOOL-66): make this blocking once the current high advisories
         # are fixed upstream. All are transitive with no compatible fix today:
-        # deepmerge-ts <8 via prisma 6 (@prisma/config; fixed only in Prisma 7),
         # node-forge and braces via expo's CLI (no patched release yet).
         continue-on-error: true
         run: pnpm audit --audit-level=high --prod

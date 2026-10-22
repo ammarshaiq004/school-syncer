@@ -9,7 +9,7 @@
 // Demo data has no place in production: with NODE_ENV=production the seed
 // refuses to run unless ALLOW_DEMO_SEED=true. The first real console login
 // comes from `pnpm --filter api platform:create-admin` instead.
-import { Gender, PrismaClient, Role, SchoolMode, SubscriptionStatus, VehicleType } from '@prisma/client';
+import { Gender, Role, SchoolMode, SubscriptionStatus, VehicleType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { localToday } from '../src/common/dates.js';
 import { CUSTOMER_SCHOOLS, PLATFORM_ADMIN, seedBilling, seedCustomerSchools, seedPlans, seedPlatformAdmin, seedPlatformSettings } from './demo/platform.js';
@@ -17,8 +17,9 @@ import { seedSchool, type SchoolPlan } from './demo/school.js';
 import { SUPPORT_ADMIN, seedPlatformActivity, seedSchoolAccess, seedSupportAdmin } from './demo/access.js';
 import { seedAcademia } from './demo/academia.js';
 import { seedOnlinePayments } from './demo/online-payments.js';
+import { createScriptPrismaClient } from '../src/prisma/client.js';
 
-const prisma = new PrismaClient();
+const prisma = createScriptPrismaClient();
 
 const grades = (from: number, to: number, sections: string[]) =>
   Array.from({ length: to - from + 1 }, (_, i) => ({ name: `Grade ${from + i}`, level: from + i, sections }));

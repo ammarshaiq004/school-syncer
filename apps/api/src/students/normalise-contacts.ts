@@ -8,15 +8,15 @@
 //
 // Rows it cannot normalise are listed (table, id, value, reason) and left
 // alone; the run never stops on them. Safe to run again.
-import { PrismaClient } from '@prisma/client';
 import { parseArgs } from 'node:util';
+import { createScriptPrismaClient } from '../prisma/client.js';
 import { normaliseContacts } from './contact-cleanup.js';
 
 async function main() {
   const { values } = parseArgs({
     options: { apply: { type: 'boolean', default: false }, school: { type: 'string' } },
   });
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
   try {
     const report = await normaliseContacts(prisma, { apply: values.apply, schoolId: values.school });
     const verb = values.apply ? 'Normalised' : 'Would normalise';

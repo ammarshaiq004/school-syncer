@@ -9,19 +9,14 @@
 // Needs the new key in PAYMENTS_SECRET_KEY and the old one in
 // PAYMENTS_SECRET_KEY_PREVIOUS. Values no key opens are listed and left
 // alone. Safe to run again: already current values are skipped.
-import { PrismaClient } from '@prisma/client';
 import { parseArgs } from 'node:util';
+import { createScriptPrismaClient } from '../prisma/client.js';
 import { rotateSecrets, type TableReport } from './secret-rotation.js';
 
 async function main() {
-  // The keys usually live in apps/api/.env; variables already set win.
-  try {
-    process.loadEnvFile();
-  } catch {
-    // No .env here: the environment has them (a container, a CI job).
-  }
+  // Also loads apps/api/.env, where the keys usually live.
+  const prisma = createScriptPrismaClient();
   const { values } = parseArgs({ options: { apply: { type: 'boolean', default: false } } });
-  const prisma = new PrismaClient();
   try {
     const report = await rotateSecrets(prisma, { apply: values.apply });
     const verb = values.apply ? 'Re-encrypted' : 'Would re-encrypt';
