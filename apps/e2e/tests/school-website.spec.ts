@@ -1,4 +1,5 @@
 import { expect, test } from '../support/fixtures';
+import { call } from '../support/api';
 import { signIn } from '../support/session';
 
 // The school's public website: edited in the portal, drawn live in a preview
@@ -30,9 +31,9 @@ test('the owner edits the site, sees it in the preview, and publishes it', async
   await expect(page.getByText('Website saved and live')).toBeVisible();
   await expect(page.getByText('Your website is live')).toBeVisible();
 
-  const live = await page.request.get(`/s/${slug}`);
-  expect(live.status()).toBe(200);
-  expect(await live.text()).toContain('Learning that lasts');
+  // The headline is split into one span per word, so read the rendered heading, not the raw HTML.
+  await page.goto(`/s/${slug}`);
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Learning that lasts');
 });
 
 test('a section reset goes back to the suggested wording', async ({ page, seed }) => {
@@ -44,6 +45,7 @@ test('a section reset goes back to the suggested wording', async ({ page, seed }
   await expect(page.getByLabel('Headline')).not.toHaveValue(/Learning that lasts/);
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('Website saved', { exact: false })).toBeVisible();
-  const live = await page.request.get(`/s/${slug}`);
-  expect(await live.text()).not.toContain('Learning that lasts');
+  // Ask the API: the web page may serve a copy up to 30 seconds old.
+  const live = await call<{ site: { hero: { headline: string } } }>('GET', `/public/${slug}/site`);
+  expect(live.site.hero.headline).not.toContain('Learning that lasts');
 });
