@@ -85,6 +85,7 @@ model School {
   accountEntries    AccountEntry[]
 
   subscription      Subscription?
+  site              SchoolSite?
   platformInvoices  PlatformInvoice[]
   platformPayments  PlatformPayment[]
   platformNotices   PlatformNotice[]
@@ -2561,4 +2562,15 @@ model UserActivityDay {
 
   @@id([userId, date])
   @@index([schoolId, date])
+}
+
+/// The school's public website (served at /s/<slug>). `config` holds only the
+/// choices the school made; the API lays them over defaults (src/site).
+model SchoolSite {
+  schoolId  String   @id
+  published Boolean  @default(false)
+  config    Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 }

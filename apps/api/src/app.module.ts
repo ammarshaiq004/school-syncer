@@ -88,6 +88,7 @@ import { ProblemReportsController } from './pilot/problem-reports.controller.js'
 import { SetupChecklistController } from './pilot/setup-checklist.controller.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SchoolController } from './school/school.controller.js';
+import { SiteController } from './site/site.controller.js';
 import { SubjectsController } from './subjects/subjects.controller.js';
 import { UsersController } from './users/users.controller.js';
 
@@ -121,6 +122,7 @@ import { UsersController } from './users/users.controller.js';
   controllers: [
     HealthController,
     SchoolController,
+    SiteController,
     CampusesController,
     AcademicYearsController,
     ClassesController,

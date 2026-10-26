@@ -17,6 +17,7 @@ import { seedSchool, type SchoolPlan } from './demo/school.js';
 import { SUPPORT_ADMIN, seedPlatformActivity, seedSchoolAccess, seedSupportAdmin } from './demo/access.js';
 import { seedAcademia } from './demo/academia.js';
 import { seedOnlinePayments } from './demo/online-payments.js';
+import { seedSite } from './demo/site.js';
 import { createScriptPrismaClient } from '../src/prisma/client.js';
 
 const prisma = createScriptPrismaClient();
@@ -299,6 +300,10 @@ async function main() {
     if (a.lessonPlans || a.threads) {
       console.log(`  ${plan.slug}: ${a.lessonPlans} lesson plans, ${a.threads} chat threads (${a.messages} messages)`);
     }
+  }
+  // Each demo school's public website (/s/<slug>), with its own colours and fonts.
+  for (const plan of DEMO_SCHOOLS) {
+    if (await seedSite(prisma, plan.slug, today)) console.log(`  ${plan.slug}: public website at /s/${plan.slug}`);
   }
   // Online fee checkouts behind the demo schools' wallet and 1Bill receipts.
   for (const plan of DEMO_SCHOOLS) {
