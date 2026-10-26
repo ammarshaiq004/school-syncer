@@ -74,6 +74,7 @@ import { RolesController } from './roles/roles.controller.js';
 import { SubscriptionGuard } from './common/subscription.guard.js';
 import { BillingScheduler } from './platform/billing/billing.scheduler.js';
 import { BillingService } from './platform/billing/billing.service.js';
+import { PaymentClaimsController, PlatformPaymentClaimsController } from './platform/billing/payment-claims.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
 import { PlatformGatewaysController } from './platform/platform-gateways.controller.js';
@@ -166,6 +167,8 @@ import { UsersController } from './users/users.controller.js';
     ParentRecordsController,
     StudentController,
     SubscriptionController,
+    PaymentClaimsController,
+    PlatformPaymentClaimsController,
     PlatformAuthController,
     PlatformController,
     PlatformGatewaysController,

@@ -41,6 +41,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "invoices.generate": { label: "Generated monthly bills", icon: FileText },
   "payment.record": { label: "Recorded a payment", icon: Wallet },
   "payment.void": { label: "Voided a payment", icon: Undo2 },
+  "payment_claim.approve": { label: "Confirmed a payment the school reported", icon: CircleCheck },
+  "payment_claim.reject": { label: "Could not confirm a payment the school reported", icon: CircleX },
   "settings.update": { label: "Changed SchoolSyncer's business settings", icon: Settings },
   "payments.gateway.check": { label: "Tested a gateway connection", icon: PlugZap },
   "payments.test.start": { label: "Started a gateway test payment", icon: FlaskConical },

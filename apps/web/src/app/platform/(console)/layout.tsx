@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Activity, Bug, Building, ChartColumn, KeyRound, LayoutDashboard, LogOut, Menu, PlugZap, Receipt, ScrollText, Settings, Smartphone, Tags, UsersRound, Wallet, X, type LucideIcon } from "lucide-react";
+import { Activity, Bug, Building, ChartColumn, KeyRound, LayoutDashboard, HandCoins, LogOut, Menu, PlugZap, Receipt, ScrollText, Settings, Smartphone, Tags, UsersRound, Wallet, X, type LucideIcon } from "lucide-react";
 import { Dialog as RDialog } from "radix-ui";
 import { BrandMark } from "@/components/brand";
 import { Avatar } from "@/components/kit/avatar";
@@ -15,14 +15,16 @@ import { ConsoleAdminContext, PLATFORM_ROLE_LABEL, type ConsoleAdmin } from "@/c
 import { cn } from "@/lib/cn";
 import { platformApi, setPlatformToken } from "@/lib/api";
 import { activeHref } from "@/lib/nav";
+import { CLAIMS_CHANGED } from "@/lib/platform-billing";
 
-type NavItem = { href: string; label: string; icon: LucideIcon; ownerOnly?: boolean };
+type NavItem = { href: string; label: string; icon: LucideIcon; ownerOnly?: boolean; count?: number };
 
 const NAV: NavItem[] = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard },
   { href: "/platform/schools", label: "Schools", icon: Building },
   { href: "/platform/problem-reports", label: "Problem reports", icon: Bug },
   { href: "/platform/invoices", label: "Bills", icon: Receipt },
+  { href: "/platform/payment-claims", label: "Payments to check", icon: HandCoins },
   { href: "/platform/payments", label: "Payments", icon: Wallet },
   { href: "/platform/plans", label: "Plans", icon: Tags },
   { href: "/platform/gateways", label: "Payment gateways", icon: PlugZap },
@@ -76,6 +78,11 @@ function ConsoleNav({ items, pathname, onNavigate }: { items: NavItem[]; pathnam
             {on && <span aria-hidden className="absolute inset-y-2 start-0 w-[3px] rounded-full bg-indigo-400" />}
             <Icon className={cn("size-[18px]", on ? "text-indigo-300" : "text-slate-500")} aria-hidden />
             {item.label}
+            {!!item.count && (
+              <span className="ms-auto rounded-full bg-indigo-500 px-1.5 text-[11px] font-semibold leading-5 text-white" aria-label={`${item.count} waiting`}>
+                {item.count}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -103,6 +110,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const [admin, setAdmin] = useState<ConsoleAdmin | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [waiting, setWaiting] = useState(0);
 
   useEffect(() => {
     platformApi<ConsoleAdmin>("/auth/me")
@@ -113,6 +121,18 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       })
       .catch(() => router.replace("/platform/login"));
   }, [router]);
+
+  // Payments schools say they made, waiting to be checked: refreshed on each page and after a review.
+  useEffect(() => {
+    if (!admin) return;
+    const load = () =>
+      platformApi<{ PENDING: number }>("/payment-claims/counts")
+        .then((c) => setWaiting(c.PENDING))
+        .catch(() => undefined);
+    void load();
+    window.addEventListener(CLAIMS_CHANGED, load);
+    return () => window.removeEventListener(CLAIMS_CHANGED, load);
+  }, [admin, pathname]);
 
   function signOut() {
     setPlatformToken(null);
@@ -127,7 +147,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     );
   }
 
-  const items = navFor(admin);
+  const items = navFor(admin).map((n) => (n.href === "/platform/payment-claims" ? { ...n, count: waiting } : n));
 
   return (
     <ConsoleAdminContext.Provider value={admin}>
