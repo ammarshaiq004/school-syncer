@@ -25,6 +25,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { BillStatePill } from "@/components/billing/platform-documents";
+import { PaymentClaims } from "@/components/billing/payment-claims";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { day, rupees } from "@/lib/format";
@@ -444,6 +445,8 @@ export default function BillingPage() {
               }}
             />
           </Card>
+
+          <PaymentClaims owed={owed} onChanged={sub.reload} />
 
           <Card padding="none" className="overflow-hidden">
             <div className="p-4 pb-0 sm:p-5 sm:pb-0">

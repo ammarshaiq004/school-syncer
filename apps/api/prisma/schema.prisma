@@ -88,6 +88,7 @@ model School {
   site              SchoolSite?
   platformInvoices  PlatformInvoice[]
   platformPayments  PlatformPayment[]
+  paymentClaims     PaymentClaim[]
   platformNotices   PlatformNotice[]
   vehicles          Vehicle[]
   transportRoutes   TransportRoute[]
@@ -1371,8 +1372,43 @@ model PlatformPayment {
 
   school      School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   allocations PlatformPaymentAllocation[]
+  claim       PaymentClaim?
 
   @@index([schoolId, receivedOn])
+}
+
+enum PaymentClaimStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A school saying "we paid", with proof, waiting for the console to check it
+/// against the bank. Approving it records a PlatformPayment (and its receipt).
+model PaymentClaim {
+  id           String             @id @default(cuid())
+  schoolId     String
+  amount       Int
+  method       String
+  reference    String?
+  paidOn       DateTime           @db.Date
+  note         String?
+  proofId      String?            @unique
+  status       PaymentClaimStatus @default(PENDING)
+  rejectReason String?
+  reviewedBy   String? // PlatformAdmin name
+  reviewedAt   DateTime?
+  paymentId    String?            @unique
+  createdById  String?
+  createdByName String
+  createdAt    DateTime           @default(now())
+
+  school  School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  proof   StoredFile?      @relation("PaymentClaimProof", fields: [proofId], references: [id], onDelete: SetNull)
+  payment PlatformPayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, status])
+  @@index([status, createdAt])
 }
 
 model PlatformPaymentAllocation {
@@ -2293,6 +2329,7 @@ enum FilePurpose {
   SUBMISSION
   STUDENT_PHOTO
   PROBLEM_REPORT
+  PAYMENT_PROOF
 }
 
 /// A file uploaded to the school's storage (S3-compatible bucket or local
@@ -2319,6 +2356,8 @@ model StoredFile {
   studentPhoto  Student?       @relation("StudentPhoto")
   /// A screenshot sent with a problem report (purpose PROBLEM_REPORT).
   problemReport ProblemReport? @relation("ProblemReportScreenshot")
+  /// Proof of a payment to SchoolSyncer (purpose PAYMENT_PROOF).
+  paymentClaim  PaymentClaim?  @relation("PaymentClaimProof")
 
   @@index([schoolId])
   @@index([uploadedById])

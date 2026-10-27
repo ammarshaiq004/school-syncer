@@ -168,3 +168,35 @@ export function parseTaxPercent(input: string): { value: number | null } | { err
 /** Banner and list tone for a notice's severity. */
 export const noticeTone = (severity: NoticeSeverity) => (severity === "URGENT" ? "danger" : severity === "WARNING" ? "warning" : "info");
 
+
+export type PaymentClaimStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+/** A payment a school says it made, with proof, waiting for the console to check it. */
+export interface PaymentClaim {
+  id: string;
+  amount: number;
+  method: string;
+  reference: string | null;
+  paidOn: string;
+  note: string | null;
+  status: PaymentClaimStatus;
+  rejectReason: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  createdByName: string;
+  createdAt: string;
+  /** Set once approved. */
+  receipt: { id: string; number: string } | null;
+  proof: { id: string; filename: string; url: string } | null;
+  /** Only on the console's list. */
+  school?: { id: string; name: string; slug: string };
+}
+
+export const CLAIM_STATUS: Record<PaymentClaimStatus, { label: string; tone: "warning" | "success" | "danger" }> = {
+  PENDING: { label: "Being checked", tone: "warning" },
+  APPROVED: { label: "Confirmed", tone: "success" },
+  REJECTED: { label: "Not confirmed", tone: "danger" },
+};
+
+/** Pages tell the console menu to refresh its count of payments waiting to be checked. */
+export const CLAIMS_CHANGED = "payment-claims-changed";

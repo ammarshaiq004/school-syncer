@@ -78,6 +78,8 @@ export const LIMITS: Record<FilePurpose, Partial<Record<FileKind, number>>> = {
   STUDENT_PHOTO: { image: 5 * MB },
   // A screenshot sent with "Report a problem" (SCHOOL-150).
   PROBLEM_REPORT: { image: 5 * MB },
+  // A bank slip or app screenshot proving a payment to SchoolSyncer (SCHOOL-42).
+  PAYMENT_PROOF: { image: 5 * MB, document: 5 * MB },
 };
 
 /** Bytes the type check needs from the start of a file. */
