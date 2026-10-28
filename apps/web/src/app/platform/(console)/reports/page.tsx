@@ -21,6 +21,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { RISK_LABELS, type PlatformReports } from "@/components/platform/reports";
+import { type ReportHistory } from "@/components/platform/watch";
 import { when } from "@/components/platform/session";
 import { downloadCsv } from "@/lib/csv";
 import { rupees } from "@/lib/format";
@@ -63,6 +64,7 @@ const planColumns: Column<PlanRow>[] = [
 export default function ReportsPage() {
   const { data, error, reload } = usePlatformApi<PlatformReports>("/reports");
   const loading = !data && !error;
+  const history = usePlatformApi<ReportHistory>("/reports/history");
 
   function exportRevenue() {
     if (!data) return;
@@ -132,6 +134,26 @@ export default function ReportsPage() {
               loading={loading}
             />
           </StatGrid>
+
+          <Card>
+            <CardHeader
+              title="Monthly recurring revenue over time"
+              description="As on the last nightly snapshot of each month. History starts the night snapshots were first taken."
+            />
+            {!history.data ? (
+              <Skeleton className="h-[220px] w-full" />
+            ) : history.data.length < 2 ? (
+              <EmptyState icon={<Wallet />} title="History is still building" description="A snapshot is taken each night, so this fills in over the coming weeks." compact />
+            ) : (
+              <AreaChart
+                label="Monthly recurring revenue by month in rupees"
+                categories={history.data.map((h) => monthName(h.month))}
+                series={[{ name: "Monthly recurring revenue", values: history.data.map((h) => h.mrr) }]}
+                formatValue={rupees}
+                height={220}
+              />
+            )}
+          </Card>
 
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">

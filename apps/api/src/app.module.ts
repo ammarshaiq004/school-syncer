@@ -74,6 +74,8 @@ import { RolesController } from './roles/roles.controller.js';
 import { SubscriptionGuard } from './common/subscription.guard.js';
 import { BillingScheduler } from './platform/billing/billing.scheduler.js';
 import { BillingService } from './platform/billing/billing.service.js';
+import { PlatformWatchController } from './platform/platform-watch.controller.js';
+import { UsageSnapshotsService } from './platform/usage-snapshots.service.js';
 import { PaymentClaimsController, PlatformPaymentClaimsController } from './platform/billing/payment-claims.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
@@ -171,6 +173,7 @@ import { UsersController } from './users/users.controller.js';
     SubscriptionController,
     PaymentClaimsController,
     PlatformPaymentClaimsController,
+    PlatformWatchController,
     PlatformAuthController,
     PlatformController,
     PlatformGatewaysController,
@@ -186,6 +189,7 @@ import { UsersController } from './users/users.controller.js';
     ReconciliationService,
     ReconciliationScheduler,
     BillingService,
+    UsageSnapshotsService,
     BillingScheduler,
     // First, so floods of public requests stop before any database work.
     { provide: APP_GUARD, useClass: RateLimitGuard },

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Building, Plus } from "lucide-react";
 import { Avatar, Button, DataTable, NativeSelect, PageHeader, type Column } from "@/components/ui";
+import { HealthBadge, type Health, type SchoolHealthRow } from "@/components/platform/watch";
 import { CreateSchoolDialog } from "@/components/platform/create-school-dialog";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
@@ -35,6 +36,7 @@ interface SchoolRow {
   /** Days since the oldest unpaid bill fell due; 0 when nothing is overdue. */
   daysOverdue: number;
   lastLoginAt: string | null;
+  health?: Health;
 }
 
 const columns: Column<SchoolRow>[] = [
@@ -108,6 +110,13 @@ const columns: Column<SchoolRow>[] = [
       ),
   },
   {
+    id: "health",
+    header: "Health",
+    sortValue: (s) => s.health?.score ?? -1,
+    cell: (s) => <HealthBadge health={s.health} />,
+    hideBelow: "md",
+  },
+  {
     id: "login",
     header: "Last sign-in",
     sortValue: (s) => s.lastLoginAt,
@@ -124,6 +133,11 @@ export default function SchoolsPage() {
   const [status, setStatus] = useState(() => new URLSearchParams(window.location.search).get("status") ?? "");
   const query = new URLSearchParams({ ...(search && { search }), ...(status && { status }) }).toString();
   const schools = usePlatformApi<SchoolRow[]>(`/schools${query ? `?${query}` : ""}`);
+  const health = usePlatformApi<SchoolHealthRow[]>("/school-health");
+  const rows = useMemo(() => {
+    const byId = new Map(health.data?.map((h) => [h.schoolId, h]));
+    return schools.data?.map((s) => ({ ...s, health: byId.get(s.id) }));
+  }, [schools.data, health.data]);
   const [creating, setCreating] = useState(false);
 
   return (
@@ -140,7 +154,7 @@ export default function SchoolsPage() {
       <DataTable
         label="Schools"
         columns={columns}
-        data={schools.data}
+        data={rows}
         getRowId={(s) => s.id}
         error={schools.error}
         onRetry={schools.reload}
