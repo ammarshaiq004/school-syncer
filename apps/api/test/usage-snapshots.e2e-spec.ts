@@ -55,8 +55,9 @@ describe('School usage snapshots (e2e)', () => {
 
   it('records what a school did today, and taking it again replaces the row', async () => {
     const snapshots = app.get(UsageSnapshotsService);
-    expect(await snapshots.take(localToday())).toBeGreaterThanOrEqual(1);
-    await snapshots.take(localToday());
+    // Only this school: writing every school's row would collide with other test files deleting theirs.
+    expect(await snapshots.take(localToday(), schoolId)).toBe(1);
+    await snapshots.take(localToday(), schoolId);
     const rows = await prisma.schoolUsageSnapshot.findMany({ where: { schoolId } });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ students: 0, staffActive7d: 1, parentsActive7d: 0, attendanceSessions: 0, feesCollected: 0 });
