@@ -56,6 +56,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "staff.reset_password": { label: "Reset a staff password", icon: KeyRound },
   "staff.change_password": { label: "Changed their own password", icon: CircleCheck },
   "problem_report.status": { label: "Changed a problem report's status", icon: Bug },
+  "problem_report.assign": { label: "Gave a problem report to a staff member", icon: Bug },
+  "problem_report.reply": { label: "Replied to a problem report", icon: Bug },
 };
 
 export const auditLabel = (action: string) => AUDIT_ACTIONS[action]?.label ?? action;

@@ -1495,6 +1495,7 @@ model PlatformAdmin {
   auditLogs             PlatformAuditLog[]
   gatewayTestRuns       GatewayTestRun[]
   problemReportActivity ProblemReportActivity[]
+  assignedReports       ProblemReport[]         @relation("ProblemReportAssignee")
 }
 
 model PlatformAuditLog {
@@ -2555,6 +2556,8 @@ model ProblemReport {
   /// The browser's user agent, or the phone's platform and OS version.
   browser         String?
   screenshotId    String?             @unique
+  /// The SchoolSyncer staff member looking after it (SCHOOL-61).
+  assignedToId    String?
   status          ProblemReportStatus @default(NEW)
   statusChangedAt DateTime?
   createdAt       DateTime            @default(now())
@@ -2563,6 +2566,7 @@ model ProblemReport {
   school     School                  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   reporter   User?                   @relation(fields: [reporterId], references: [id], onDelete: SetNull)
   screenshot StoredFile?             @relation("ProblemReportScreenshot", fields: [screenshotId], references: [id], onDelete: SetNull)
+  assignedTo PlatformAdmin?          @relation("ProblemReportAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
   activity   ProblemReportActivity[]
 
   @@index([schoolId, createdAt])
@@ -2581,6 +2585,8 @@ model ProblemReportActivity {
   fromStatus ProblemReportStatus?
   /// Set on an internal note. Never sent to the school.
   note       String?
+  /// Set on a reply to the school, which the school sees (SCHOOL-61).
+  reply      String?
   createdAt  DateTime             @default(now())
 
   report ProblemReport  @relation(fields: [reportId], references: [id], onDelete: Cascade)
