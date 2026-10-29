@@ -1,3 +1,4 @@
+import { dayStart, daysBefore, localToday } from '../common/dates.js';
 import {
   BadRequestException,
   Body,
@@ -265,11 +266,20 @@ export class PlatformSchoolsController {
   @Get(':id/users')
   async users(@Param('id') id: string) {
     await this.assertSchool(id);
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { schoolId: id, roles: { some: { role: { in: STAFF_ROLES } } } },
       orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
       select: userSelect,
     });
+    // Days each person used the app in the last 30 (UserActivityDay), the sign-in history.
+    const since = dayStart(daysBefore(localToday(), 29));
+    const active = await this.prisma.userActivityDay.groupBy({
+      by: ['userId'],
+      where: { userId: { in: users.map((u) => u.id) }, date: { gte: since } },
+      _count: true,
+    });
+    const days = new Map(active.map((a) => [a.userId, a._count]));
+    return users.map((u) => ({ ...u, activeDays30: days.get(u.id) ?? 0 }));
   }
 
   @Post(':id/users')

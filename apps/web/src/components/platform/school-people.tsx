@@ -34,6 +34,8 @@ interface Person {
   phone: string | null;
   isActive: boolean;
   lastLoginAt: string | null;
+  /** Days in the last 30 the person used the app. */
+  activeDays30: number;
   createdAt: string;
   roles: { role: string; campusId: string | null; customRoleId: string | null; campus: { name: string } | null; customRole: { name: string } | null }[];
 }
@@ -141,7 +143,12 @@ export function SchoolPeople({ schoolId, schoolName, campuses }: { schoolId: str
       id: "login",
       header: "Last sign-in",
       sortValue: (p) => p.lastLoginAt,
-      cell: (p) => (p.lastLoginAt ? day(p.lastLoginAt) : <span className="text-fg-muted">Never</span>),
+      cell: (p) => (
+        <span className="flex flex-col items-start">
+          {p.lastLoginAt ? day(p.lastLoginAt) : <span className="text-fg-muted">Never</span>}
+          <span className="text-xs text-fg-muted">{p.activeDays30} of the last 30 days</span>
+        </span>
+      ),
       hideBelow: "md",
     },
     {

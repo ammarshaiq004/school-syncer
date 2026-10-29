@@ -65,6 +65,7 @@ export default function ReportsPage() {
   const { data, error, reload } = usePlatformApi<PlatformReports>("/reports");
   const loading = !data && !error;
   const history = usePlatformApi<ReportHistory>("/reports/history");
+  const latest = history.data?.at(-1);
 
   function exportRevenue() {
     if (!data) return;
@@ -151,6 +152,19 @@ export default function ReportsPage() {
                 series={[{ name: "Monthly recurring revenue", values: history.data.map((h) => h.mrr) }]}
                 formatValue={rupees}
                 height={220}
+              />
+            )}
+            {latest && (
+              <DescriptionList
+                columns={2}
+                className="mt-4"
+                items={[
+                  {
+                    label: `Churn in ${monthName(latest.month)}`,
+                    value: latest.churnRate == null ? "Not enough history yet" : `${latest.churnRate}% (${latest.churned} of ${latest.payingAtStart} paying schools)`,
+                  },
+                  { label: "Net revenue retention", value: latest.nrr == null ? "Not enough history yet" : `${latest.nrr}% of last month's revenue kept` },
+                ]}
               />
             )}
           </Card>
