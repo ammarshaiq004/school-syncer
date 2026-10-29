@@ -55,6 +55,7 @@ import { PilotHealthPanel } from "@/components/platform/pilot-health";
 import { LifecycleDialog, type LifecycleAction } from "@/components/platform/lifecycle-dialog";
 import { ReasonDialog } from "@/components/platform/reason-dialog";
 import { SchoolFeatures, type FeatureState } from "@/components/platform/school-features";
+import { SchoolUsageCard } from "@/components/platform/watch";
 import { SchoolBilling } from "@/components/platform/school-billing";
 import { SchoolPeople } from "@/components/platform/school-people";
 import { isOwner, useConsoleAdmin, when } from "@/components/platform/session";
@@ -318,6 +319,7 @@ export default function SchoolDetailPage() {
         ]}
       >
         <TabPanel value="overview" className="pt-5">
+          <SchoolUsageCard schoolId={id} />
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
               <CardHeader title="School details" />

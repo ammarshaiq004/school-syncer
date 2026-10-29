@@ -89,6 +89,7 @@ model School {
   platformInvoices  PlatformInvoice[]
   platformPayments  PlatformPayment[]
   paymentClaims     PaymentClaim[]
+  usageSnapshots     SchoolUsageSnapshot[]
   platformNotices   PlatformNotice[]
   vehicles          Vehicle[]
   transportRoutes   TransportRoute[]
@@ -2612,4 +2613,31 @@ model SchoolSite {
   updatedAt DateTime @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+/// One row per school per local day, taken nightly (SCHOOL-116, SCHOOL-32):
+/// what the console charts and scores health from. Counts are as at the
+/// snapshot, so a missed night is a gap, never a guess.
+model SchoolUsageSnapshot {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  day                DateTime @db.Date
+  students           Int
+  /// Staff (anyone but parents and students) who signed in during the last 7 days.
+  staffActive7d      Int
+  parentsActive7d    Int
+  /// Class registers taken that day.
+  attendanceSessions Int
+  /// Rupees of school fees received that day, reversals left out.
+  feesCollected      Int
+  messagesSent       Int
+  storageBytes       BigInt
+  /// What the school's plan charges a month at this student count; 0 unless paying.
+  mrr                Int
+  createdAt          DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, day])
+  @@index([day])
 }
