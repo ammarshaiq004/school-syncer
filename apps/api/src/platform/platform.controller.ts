@@ -238,7 +238,6 @@ export class PlatformController {
       this.prisma.school.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: 500,
         include: {
           subscription: { include: { plan: true } },
           _count: { select: { campuses: true } },
@@ -550,21 +549,40 @@ export class PlatformController {
   // ----- Platform invoices -----
 
   @Get('invoices')
-  invoices(
+  async invoices(
     @Query('status') status?: string,
     @Query('period') forPeriod?: string,
+    @Query('search') search?: string,
+    @Query('page') pageParam?: string,
+    @Query('pageSize') sizeParam?: string,
   ) {
-    return this.prisma.platformInvoice.findMany({
-      where: {
-        ...(status && status in PlatformInvoiceStatus
-          ? { status: status as PlatformInvoiceStatus }
-          : {}),
-        ...(forPeriod ? { period: forPeriod } : {}),
-      },
-      orderBy: [{ period: 'desc' }, { number: 'desc' }],
-      take: 500,
-      include: { school: { select: { id: true, name: true, slug: true } } },
-    });
+    const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
+    const pageSize = Math.min(100, Math.max(1, Math.floor(Number(sizeParam)) || 25));
+    const where: Prisma.PlatformInvoiceWhereInput = {
+      ...(status && status in PlatformInvoiceStatus
+        ? { status: status as PlatformInvoiceStatus }
+        : {}),
+      ...(forPeriod ? { period: forPeriod } : {}),
+      ...(search?.trim()
+        ? {
+            OR: [
+              { number: { contains: search.trim(), mode: 'insensitive' } },
+              { school: { name: { contains: search.trim(), mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.platformInvoice.findMany({
+        where,
+        orderBy: [{ period: 'desc' }, { number: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { school: { select: { id: true, name: true, slug: true } } },
+      }),
+      this.prisma.platformInvoice.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   /**

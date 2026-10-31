@@ -2647,3 +2647,34 @@ model SchoolUsageSnapshot {
   @@unique([schoolId, day])
   @@index([day])
 }
+
+enum PlatformMessageTarget {
+  ALL
+  CHOSEN
+  OVERDUE
+  TRIALS_ENDING
+}
+
+enum PlatformMessageAudience {
+  OWNERS
+  STAFF
+}
+
+/// A message SchoolSyncer staff sent to schools from the console (SCHOOL-155).
+/// Each school got it as a PlatformNotice (kind "message") plus SMS and email.
+model PlatformMessage {
+  id        String                  @id @default(cuid())
+  title     String
+  body      String
+  severity  PlatformNoticeSeverity  @default(INFO)
+  target    PlatformMessageTarget
+  audience  PlatformMessageAudience
+  /// The schools picked, for target CHOSEN only.
+  schoolIds String[]                @default([])
+  /// How many schools it reached.
+  schools   Int
+  sentBy    String
+  createdAt DateTime                @default(now())
+
+  @@index([createdAt])
+}

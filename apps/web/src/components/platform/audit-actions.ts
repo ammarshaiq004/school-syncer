@@ -1,4 +1,5 @@
 import {
+  Megaphone,
   Ban,
   Bug,
   Building,
@@ -41,6 +42,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "invoices.generate": { label: "Generated monthly bills", icon: FileText },
   "payment.record": { label: "Recorded a payment", icon: Wallet },
   "payment.void": { label: "Voided a payment", icon: Undo2 },
+  "message.send": { label: "Sent a message to schools", icon: Megaphone },
   "payment_claim.approve": { label: "Confirmed a payment the school reported", icon: CircleCheck },
   "payment_claim.reject": { label: "Could not confirm a payment the school reported", icon: CircleX },
   "settings.update": { label: "Changed SchoolSyncer's business settings", icon: Settings },
