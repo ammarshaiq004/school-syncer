@@ -17,6 +17,7 @@ interface Report {
   status: Status;
   createdAt: string;
   history: { status: Status; at: string }[];
+  replies: { id: string; reply: string; at: string }[];
 }
 
 const STATUS: Record<Status, { label: string; tone: 'blue' | 'amber' | 'green' | 'red' }> = {
@@ -136,6 +137,12 @@ export default function Account() {
             <Muted>
               {day(r.createdAt, true)} · {r.page}
             </Muted>
+            {r.replies.map((x) => (
+              <View key={x.id} style={{ paddingTop: 4 }}>
+                <Muted>SchoolSyncer support, {day(x.at, true)}</Muted>
+                <Body>{x.reply}</Body>
+              </View>
+            ))}
             {r.history.map((h) => (
               <Muted key={h.at}>
                 {day(h.at, true)}: {STATUS[h.status].label}

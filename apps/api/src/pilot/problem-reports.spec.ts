@@ -25,6 +25,30 @@ const row = {
   ],
 } as unknown as Parameters<typeof schoolView>[0];
 
+describe('problem report replies', () => {
+  const replied = {
+    ...row,
+    assignedTo: { id: 'p1', name: 'Support' },
+    activity: [
+      ...row.activity,
+      { id: 'a4', reportId: 'r1', adminId: 'p1', adminName: 'Support', status: null, fromStatus: null, note: null, reply: 'Please update the app.', createdAt: at('2026-10-02T01:00:00Z') },
+    ],
+  } as unknown as Parameters<typeof schoolView>[0];
+
+  it('shows the school each reply without who wrote it, and not who looks after the report', () => {
+    const view = schoolView(replied);
+    expect(view.replies).toEqual([{ id: 'a4', reply: 'Please update the app.', at: at('2026-10-02T01:00:00Z') }]);
+    expect(view.history).toHaveLength(2);
+    expect(JSON.stringify(view)).not.toContain('Support');
+  });
+
+  it('shows the console the assignee and the reply', () => {
+    const view = consoleView(replied);
+    expect(view.assignedTo).toEqual({ id: 'p1', name: 'Support' });
+    expect(view.activity.at(-1)).toMatchObject({ reply: 'Please update the app.', adminName: 'Support' });
+  });
+});
+
 describe('problem report views', () => {
   it('shows the school status changes only, never notes or staff names', () => {
     const view = schoolView(row);

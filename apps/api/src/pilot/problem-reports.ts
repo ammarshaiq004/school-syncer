@@ -39,12 +39,18 @@ export type ReportInput = z.infer<typeof reportSchema>;
 
 export const statusSchema = z.object({ status: z.enum(ProblemReportStatus) });
 export const noteSchema = z.object({ note: z.string().trim().min(1).max(4000) });
+/** A reply the school sees (SCHOOL-61), unlike a note. */
+export const replySchema = z.object({ reply: z.string().trim().min(1).max(4000) });
+/** null hands the report back to nobody. */
+export const assignSchema = z.object({ adminId: z.string().min(1).max(40).nullable() });
 
 export const listQuerySchema = z.object({
   status: z.enum(ProblemReportStatus).optional(),
   /** Every report still open (new or in progress). */
   open: z.enum(['true', 'false']).optional(),
   schoolId: z.string().max(40).optional(),
+  /** "none" for reports nobody looks after, or a staff member's id. */
+  assigned: z.string().max(40).optional(),
   q: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
 });
@@ -52,6 +58,7 @@ export const listQuerySchema = z.object({
 export const reportInclude = {
   activity: { orderBy: { createdAt: 'asc' } },
   screenshot: true,
+  assignedTo: { select: { id: true, name: true } },
 } satisfies Prisma.ProblemReportInclude;
 
 type ReportRow = Prisma.ProblemReportGetPayload<{ include: typeof reportInclude }>;
@@ -72,6 +79,7 @@ export function schoolView(r: ReportRow) {
     statusChangedAt: r.statusChangedAt,
     createdAt: r.createdAt,
     hasScreenshot: Boolean(r.screenshotId),
+    replies: r.activity.filter((a) => a.reply).map((a) => ({ id: a.id, reply: a.reply!, at: a.createdAt })),
     history: r.activity
       .filter((a) => a.status !== null)
       .map((a) => ({ status: a.status!, fromStatus: a.fromStatus, at: a.createdAt })),
@@ -84,6 +92,7 @@ export function consoleView(r: ReportRow) {
     ...schoolView(r),
     schoolId: r.schoolId,
     updatedAt: r.updatedAt,
+    assignedTo: r.assignedTo,
     activity: r.activity.map((a) => ({
       id: a.id,
       at: a.createdAt,
@@ -92,6 +101,7 @@ export function consoleView(r: ReportRow) {
       status: a.status,
       fromStatus: a.fromStatus,
       note: a.note,
+      reply: a.reply,
     })),
   };
 }
