@@ -36,6 +36,10 @@ export interface NoticeInput {
   dedupeKey: string;
   invoiceId?: string;
   paymentId?: string;
+  /** Who gets the SMS and email: the active owners (default) or everyone on the school's staff. */
+  audience?: 'owners' | 'staff';
+  /** The line closing the email; defaults to the pointer to bills and receipts. */
+  footer?: string;
 }
 
 type Tx = Prisma.TransactionClient;
@@ -458,14 +462,19 @@ export class BillingService {
    * same notice (dedupeKey) was already sent.
    */
   async notify(schoolId: string, notice: NoticeInput): Promise<boolean> {
+    const { audience, footer, ...saved } = notice;
     try {
-      await this.prisma.platformNotice.create({ data: { schoolId, ...notice } });
+      await this.prisma.platformNotice.create({ data: { schoolId, ...saved } });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return false;
       throw error;
     }
     const owners = await this.prisma.user.findMany({
-      where: { schoolId, isActive: true, roles: { some: { role: Role.OWNER } } },
+      where: {
+        schoolId,
+        isActive: true,
+        roles: { some: { role: audience === 'staff' ? { notIn: [Role.PARENT, Role.STUDENT] } : Role.OWNER } },
+      },
       select: { phone: true, email: true },
     });
     try {
@@ -481,7 +490,7 @@ export class BillingService {
           .map((o) => ({
             to: o.email!,
             subject: `SchoolSyncer: ${notice.title}`,
-            text: `${notice.body}\n\nSee your bills and receipts under Plan and billing in SchoolSyncer.\n\nSchoolSyncer`,
+            text: `${notice.body}\n\n${footer ?? 'See your bills and receipts under Plan and billing in SchoolSyncer.'}\n\nSchoolSyncer`,
             template: 'platform.billing',
           })),
       );
