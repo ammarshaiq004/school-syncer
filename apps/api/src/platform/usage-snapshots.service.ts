@@ -43,14 +43,14 @@ export class UsageSnapshotsService implements OnModuleInit {
     if (process.env.NODE_ENV !== 'test') this.logger.log(`Usage snapshots are taken daily at ${at} (${SCHOOL_TIMEZONE}).`);
   }
 
-  /** Records (or re-records) the snapshot of every school that is not cancelled for a local day; returns how many. */
-  async take(day: string): Promise<number> {
+  /** Records (or re-records) the snapshot of every school that is not cancelled (or just `onlySchoolId`) for a local day; returns how many. */
+  async take(day: string, onlySchoolId?: string): Promise<number> {
     const from = startOfLocalDay(day);
     const to = startOfLocalDay(daysBefore(day, -1));
     const signedIn = { isActive: true, lastLoginAt: { gte: new Date(to.getTime() - 7 * 86_400_000) } };
     const [subs, students, staff, parents, registers, fees, messages, storage] = await Promise.all([
       this.prisma.subscription.findMany({
-        where: { status: { not: SubscriptionStatus.CANCELLED } },
+        where: { status: { not: SubscriptionStatus.CANCELLED }, ...(onlySchoolId && { schoolId: onlySchoolId }) },
         select: { schoolId: true, status: true, plan: { select: { pricePerStudent: true, minimumMonthly: true } } },
       }),
       this.prisma.student.groupBy({ by: ['schoolId'], where: { status: StudentStatus.ACTIVE }, _count: true }),

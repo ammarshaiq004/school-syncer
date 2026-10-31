@@ -5,6 +5,7 @@ import { PlatformOnly } from '../common/decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { schoolHealth, HEALTH_WINDOW_DAYS, type HealthSnapshot } from './health.js';
 import { PlatformAccessGuard } from './platform-access.guard.js';
+import { retention } from './reports.js';
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -69,7 +70,7 @@ export class PlatformWatchController {
     return { health, snapshots };
   }
 
-  /** Monthly recurring revenue and students as they stood on the last snapshot of each of the last 12 months. */
+  /** Monthly recurring revenue, students, churn and net revenue retention as they stood on the last snapshot of each of the last 12 months. */
   @Get('reports/history')
   async history() {
     const since = dayStart(daysBefore(localToday(), 366));
@@ -82,12 +83,23 @@ export class PlatformWatchController {
     });
     const lastOfMonth = new Map<string, (typeof days)[number]>();
     for (const d of days) lastOfMonth.set(iso(d.day).slice(0, 7), d);
-    return [...lastOfMonth].slice(-12).map(([month, d]) => ({
-      month,
-      day: iso(d.day),
-      mrr: d._sum.mrr ?? 0,
-      students: d._sum.students ?? 0,
-      schools: d._count,
-    }));
+    const months = [...lastOfMonth];
+    // Churn and retention compare each month's last snapshot with the month before's.
+    const rows = await this.prisma.schoolUsageSnapshot.findMany({
+      where: { day: { in: months.map(([, d]) => d.day) } },
+      select: { schoolId: true, day: true, mrr: true },
+    });
+    const at = (day: Date) => rows.filter((r) => +r.day === +day);
+    return months.slice(-12).map(([month, d]) => {
+      const before = months[months.findIndex(([m]) => m === month) - 1]?.[1];
+      return {
+        month,
+        day: iso(d.day),
+        mrr: d._sum.mrr ?? 0,
+        students: d._sum.students ?? 0,
+        schools: d._count,
+        ...(before ? retention(at(before.day), at(d.day)) : { payingAtStart: 0, churned: 0, churnRate: null, nrr: null }),
+      };
+    });
   }
 }

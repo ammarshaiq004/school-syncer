@@ -52,6 +52,11 @@ export type ReportHistory = {
   mrr: number;
   students: number;
   schools: number;
+  payingAtStart: number;
+  churned: number;
+  /** Percent; null when nobody was paying at the start of the month or there is no earlier snapshot. */
+  churnRate: number | null;
+  nrr: number | null;
 }[];
 
 const HEALTH: Record<
