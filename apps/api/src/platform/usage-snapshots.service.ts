@@ -51,7 +51,7 @@ export class UsageSnapshotsService implements OnModuleInit {
     const [subs, students, staff, parents, registers, fees, messages, storage] = await Promise.all([
       this.prisma.subscription.findMany({
         where: { status: { not: SubscriptionStatus.CANCELLED }, ...(onlySchoolId && { schoolId: onlySchoolId }) },
-        select: { schoolId: true, status: true, plan: { select: { pricePerStudent: true, minimumMonthly: true } } },
+        select: { schoolId: true, status: true, agreedPricePerStudent: true, agreedMinimumMonthly: true, plan: { select: { pricePerStudent: true, minimumMonthly: true } } },
       }),
       this.prisma.student.groupBy({ by: ['schoolId'], where: { status: StudentStatus.ACTIVE }, _count: true }),
       this.prisma.user.groupBy({
@@ -87,7 +87,7 @@ export class UsageSnapshotsService implements OnModuleInit {
         feesCollected: feesBy.get(s.schoolId) ?? 0,
         messagesSent: messagesBy.get(s.schoolId) ?? 0,
         storageBytes: BigInt(storageBy.get(s.schoolId) ?? 0),
-        mrr: paying ? monthlyAmount(s.plan, n) : 0,
+        mrr: paying ? monthlyAmount(s.plan, n, s) : 0,
       };
     });
     // Re-running a day replaces its rows.

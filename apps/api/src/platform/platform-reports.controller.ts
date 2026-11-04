@@ -167,7 +167,7 @@ export class PlatformReportsController {
         s.status === SubscriptionStatus.ACTIVE ||
         s.status === SubscriptionStatus.PAST_DUE
       ) {
-        const amount = monthlyAmount(s.plan, students.get(s.schoolId) ?? 0);
+        const amount = monthlyAmount(s.plan, students.get(s.schoolId) ?? 0, s);
         mrr += amount;
         entry.mrr += amount;
       }

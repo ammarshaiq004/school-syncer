@@ -220,7 +220,8 @@ function rateLabel(subtotal: number, students: number) {
 export function BillDocumentView({ doc, receiptHref }: { doc: BillDocument; receiptHref?: (paymentId: string) => string }) {
   const { invoice: bill, settings } = doc;
   const owed = billOwed(bill);
-  const subtotal = bill.amount - bill.taxAmount;
+  // The charge before any discount and tax.
+  const subtotal = bill.amount - bill.taxAmount + bill.discountAmount;
   const applied = bill.allocations.filter((a) => a.payment.status === "RECORDED");
   return (
     <article aria-label={`Bill ${bill.number}`} className={docClass}>
@@ -262,12 +263,9 @@ export function BillDocumentView({ doc, receiptHref }: { doc: BillDocument; rece
       </table>
 
       <dl className="ms-auto mt-3 flex max-w-xs flex-col gap-1.5 text-sm">
-        {bill.taxAmount > 0 && (
-          <>
-            <Total label="Subtotal" value={rupees(subtotal)} />
-            <Total label={`Sales tax (${bill.taxPercent}%)`} value={rupees(bill.taxAmount)} />
-          </>
-        )}
+        {(bill.taxAmount > 0 || bill.discountAmount > 0) && <Total label="Subtotal" value={rupees(subtotal)} />}
+        {bill.discountAmount > 0 && <Total label={`Discount${bill.discountName ? ` (${bill.discountName})` : ""}`} value={`- ${rupees(bill.discountAmount)}`} />}
+        {bill.taxAmount > 0 && <Total label={`Sales tax (${bill.taxPercent}%)`} value={rupees(bill.taxAmount)} />}
         <Total label="Total" value={rupees(bill.amount)} strong className="border-t border-black/20 pt-1.5" />
         <Total label="Paid so far" value={bill.amountPaid > 0 ? `- ${rupees(bill.amountPaid)}` : rupees(0)} />
         <div className="mt-1 flex items-baseline justify-between gap-3 rounded-md border border-black/30 px-3 py-2">
