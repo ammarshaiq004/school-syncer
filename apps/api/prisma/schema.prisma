@@ -90,6 +90,8 @@ model School {
   platformPayments  PlatformPayment[]
   paymentClaims     PaymentClaim[]
   usageSnapshots     SchoolUsageSnapshot[]
+  supportSessions     SupportSession[]
+  contactNotes        SchoolContact[]
   platformNotices   PlatformNotice[]
   vehicles          Vehicle[]
   transportRoutes   TransportRoute[]
@@ -2677,4 +2679,60 @@ model PlatformMessage {
   createdAt DateTime                @default(now())
 
   @@index([createdAt])
+}
+
+enum SupportScope {
+  VIEW
+  EDIT
+}
+
+/// A SchoolSyncer staff member signed in to a school as its owner (SCHOOL-142).
+/// The token carries the id; the guard refuses it once the session is ended or
+/// expired, and a VIEW session can only read.
+model SupportSession {
+  id        String       @id @default(cuid())
+  schoolId  String
+  adminId   String
+  adminName String
+  reason    String
+  scope     SupportScope
+  expiresAt DateTime
+  endedAt   DateTime?
+  /// Who ended it early: the school owner's name, or the staff member.
+  endedBy   String?
+  createdAt DateTime     @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, expiresAt])
+}
+
+enum ContactKind {
+  CALL
+  VISIT
+  MESSAGE
+  PROMISE_TO_PAY
+  NOTE
+}
+
+/// What SchoolSyncer staff did or were promised with a school, and when to
+/// follow up (SCHOOL-129). Console only; never shown to the school.
+model SchoolContact {
+  id             String      @id @default(cuid())
+  schoolId       String
+  kind           ContactKind
+  note           String
+  /// For PROMISE_TO_PAY: rupees the school said it would pay.
+  promisedAmount Int?
+  /// The day staff should get back to the school; null when no follow-up is needed.
+  followUpOn     DateTime?   @db.Date
+  doneAt         DateTime?
+  adminId        String?
+  adminName      String
+  createdAt      DateTime    @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+  @@index([followUpOn, doneAt])
 }

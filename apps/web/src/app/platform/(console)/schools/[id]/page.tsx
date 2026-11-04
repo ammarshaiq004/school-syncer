@@ -37,6 +37,7 @@ import {
   EmptyState,
   ErrorState,
   KpiCard,
+  NativeSelect,
   PageHeader,
   SelectField,
   Skeleton,
@@ -56,6 +57,7 @@ import { LifecycleDialog, type LifecycleAction } from "@/components/platform/lif
 import { ReasonDialog } from "@/components/platform/reason-dialog";
 import { SchoolFeatures, type FeatureState } from "@/components/platform/school-features";
 import { SchoolUsageCard } from "@/components/platform/watch";
+import { SchoolContacts } from "@/components/platform/school-contacts";
 import { SchoolBilling } from "@/components/platform/school-billing";
 import { SchoolPeople } from "@/components/platform/school-people";
 import { isOwner, useConsoleAdmin, when } from "@/components/platform/session";
@@ -191,6 +193,7 @@ export default function SchoolDetailPage() {
   const owner = isOwner(admin);
   const toast = useToast();
   const [supportOpen, setSupportOpen] = useState(false);
+  const [supportScope, setSupportScope] = useState<"view" | "edit">("view");
   const [lifecycle, setLifecycle] = useState<LifecycleAction | null>(null);
   const sub = school.data?.subscription;
 
@@ -202,8 +205,8 @@ export default function SchoolDetailPage() {
   async function startSupport(reason: string) {
     const tab = window.open("about:blank", "_blank");
     try {
-      const res = await platformApi<{ accessToken: string; expiresAt: string }>(`/schools/${id}/support-login`, { method: "POST", body: { reason } });
-      const hash = new URLSearchParams({ token: res.accessToken, school: school.data?.name ?? "", expires: res.expiresAt }).toString();
+      const res = await platformApi<{ accessToken: string; expiresAt: string; scope: string }>(`/schools/${id}/support-login`, { method: "POST", body: { reason, scope: supportScope } });
+      const hash = new URLSearchParams({ token: res.accessToken, school: school.data?.name ?? "", expires: res.expiresAt, scope: res.scope }).toString();
       const url = `${window.location.origin}/support#${hash}`;
       if (tab) tab.location.href = url;
       else window.open(url, "_blank");
@@ -312,12 +315,17 @@ export default function SchoolDetailPage() {
           { value: "overview", label: "Overview", icon: <Building /> },
           { value: "people", label: "People", icon: <Users /> },
           { value: "pilot", label: "Pilot health", icon: <Activity /> },
+          { value: "contacts", label: "Contacts", icon: <Phone /> },
           { value: "features", label: "Plan & features", icon: <SlidersHorizontal />, disabled: !sub },
           { value: "subscription", label: "Subscription", icon: <CreditCard /> },
           { value: "billing", label: "Billing", icon: <Receipt />, count: s.invoices.length },
           { value: "audit", label: "Audit", icon: <History />, count: s.history.length },
         ]}
       >
+        <TabPanel value="contacts" className="pt-5">
+          <SchoolContacts schoolId={s.id} />
+        </TabPanel>
+
         <TabPanel value="overview" className="pt-5">
           <SchoolUsageCard schoolId={id} />
           <div className="grid gap-6 lg:grid-cols-3">
@@ -454,12 +462,22 @@ export default function SchoolDetailPage() {
         open={supportOpen}
         onOpenChange={setSupportOpen}
         title={`Start a support session at ${s.name}?`}
-        description="Opens the school app in a new tab, signed in as the owner for one hour. The school's own audit log records it with your reason."
+        description="Opens the school app in a new tab, signed in as the owner for one hour. The school is told, can end it early, and its own audit log records it with your reason."
         confirmLabel="Start session"
         reasonLabel="Why do you need access?"
         placeholder="Owner asked for help setting up the October fee vouchers (ticket 4821)"
         onSubmit={startSupport}
-      />
+      >
+        <NativeSelect
+          aria-label="What the session may do"
+          options={[
+            { value: "view", label: "View only: look, change nothing" },
+            { value: "edit", label: "Can make changes" },
+          ]}
+          value={supportScope}
+          onChange={(e) => setSupportScope(e.target.value as "view" | "edit")}
+        />
+      </ReasonDialog>
 
       <LifecycleDialog action={lifecycle} schoolId={s.id} schoolName={s.name} onOpenChange={(o) => !o && setLifecycle(null)} onDone={school.reload} />
     </div>

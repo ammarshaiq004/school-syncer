@@ -75,7 +75,9 @@ import { SubscriptionGuard } from './common/subscription.guard.js';
 import { BillingScheduler } from './platform/billing/billing.scheduler.js';
 import { PlatformMessagesController } from './platform/platform-messages.controller.js';
 import { BillingService } from './platform/billing/billing.service.js';
+import { PlatformContactsController } from './platform/platform-contacts.controller.js';
 import { PlatformWatchController } from './platform/platform-watch.controller.js';
+import { SupportSessionsController } from './platform/support-sessions.controller.js';
 import { UsageSnapshotsService } from './platform/usage-snapshots.service.js';
 import { PaymentClaimsController, PlatformPaymentClaimsController } from './platform/billing/payment-claims.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
@@ -176,6 +178,8 @@ import { UsersController } from './users/users.controller.js';
     PlatformPaymentClaimsController,
     PlatformMessagesController,
     PlatformWatchController,
+    PlatformContactsController,
+    SupportSessionsController,
     PlatformAuthController,
     PlatformController,
     PlatformGatewaysController,

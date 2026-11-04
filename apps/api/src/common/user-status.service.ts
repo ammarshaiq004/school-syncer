@@ -36,6 +36,7 @@ interface Entry<T> {
 export class UserStatusService {
   private users = new Map<string, Entry<UserStatus | null>>();
   private admins = new Map<string, Entry<boolean>>();
+  private sessions = new Map<string, Entry<boolean>>();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -78,11 +79,25 @@ export class UserStatusService {
     );
   }
 
+  /** Whether a support session has not been ended early (its token expiry covers the rest). */
+  supportSessionOpen(sessionId: string): Promise<boolean> {
+    return cached(this.sessions, sessionId, () =>
+      this.prisma.supportSession
+        .findUnique({ where: { id: sessionId }, select: { endedAt: true } })
+        .then((s) => !!s && !s.endedAt),
+    );
+  }
+
+  forgetSession(sessionId: string) {
+    this.sessions.delete(sessionId);
+  }
+
   /** Drops cached state for one user (or everyone, including admins, with no id). */
   forget(userId?: string) {
     if (!userId) {
       this.users.clear();
       this.admins.clear();
+      this.sessions.clear();
       return;
     }
     for (const key of this.users.keys()) if (key.endsWith(`/${userId}`)) this.users.delete(key);
