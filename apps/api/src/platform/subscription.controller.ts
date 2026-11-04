@@ -70,7 +70,7 @@ export class SubscriptionController {
       reason: access.reason,
       plan: { code: sub.plan.code, name: sub.plan.name },
       usage: { students, campuses },
-      estimate: monthlyAmount(sub.plan, students),
+      estimate: monthlyAmount(sub.plan, students, sub),
       plans: plans.map((p) => ({
         code: p.code,
         name: p.name,

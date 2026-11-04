@@ -47,6 +47,10 @@ const subscriptionSchema = z.object({
   status: z.enum(SubscriptionStatus).optional(),
   trialEndsAt: z.coerce.date().nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
+  // A price agreed with this school; null goes back to the plan's rate.
+  agreedPricePerStudent: z.number().int().min(0).max(100_000).nullable().optional(),
+  agreedMinimumMonthly: z.number().int().min(0).max(10_000_000).nullable().optional(),
+  agreedNote: z.string().trim().max(300).nullable().optional(),
 });
 
 const planSchema = z.object({
@@ -143,7 +147,7 @@ export class PlatformController {
         s.status === SubscriptionStatus.ACTIVE ||
         s.status === SubscriptionStatus.PAST_DUE
       ) {
-        mrr += monthlyAmount(s.plan, students.get(s.schoolId) ?? 0);
+        mrr += monthlyAmount(s.plan, students.get(s.schoolId) ?? 0, s);
       }
     }
     const soon = new Date(now.getTime() + 7 * 86_400_000);
@@ -286,7 +290,7 @@ export class PlatformController {
       students: students.get(s.id) ?? 0,
       campuses: s._count.campuses,
       monthly: s.subscription
-        ? monthlyAmount(s.subscription.plan, students.get(s.id) ?? 0)
+        ? monthlyAmount(s.subscription.plan, students.get(s.id) ?? 0, s.subscription)
         : 0,
       balanceDue: due.get(s.id)?.amount ?? 0,
       daysOverdue: daysOverdue(s.id),
@@ -370,6 +374,11 @@ export class PlatformController {
         status: sub.status,
         trialEndsAt: sub.trialEndsAt,
         notes: sub.notes,
+        planPricePerStudent: sub.plan.pricePerStudent,
+        planMinimumMonthly: sub.plan.minimumMonthly,
+        agreedPricePerStudent: sub.agreedPricePerStudent,
+        agreedMinimumMonthly: sub.agreedMinimumMonthly,
+        agreedNote: sub.agreedNote,
         planFeatures: sub.plan.features,
         featuresAdded: sub.featuresAdded,
         featuresRemoved: sub.featuresRemoved,
@@ -378,7 +387,7 @@ export class PlatformController {
           sub.featuresAdded,
           sub.featuresRemoved,
         ),
-        monthly: monthlyAmount(sub.plan, students),
+        monthly: monthlyAmount(sub.plan, students, sub),
         ...accessFor({
           status: sub.status,
           trialEndsAt: sub.trialEndsAt,
@@ -409,6 +418,9 @@ export class PlatformController {
       admin.role !== PlatformRole.OWNER
     )
       throw new ForbiddenException('Only a SchoolSyncer owner can close a school');
+    const pricing = [body.agreedPricePerStudent, body.agreedMinimumMonthly, body.agreedNote];
+    if (pricing.some((v) => v !== undefined) && admin.role !== PlatformRole.OWNER)
+      throw new ForbiddenException('Only a SchoolSyncer owner can set an agreed price');
     let planId: string | undefined;
     if (body.planCode) {
       const plan = await this.prisma.plan.findUnique({
@@ -424,6 +436,9 @@ export class PlatformController {
         status: body.status,
         trialEndsAt: body.trialEndsAt,
         notes: body.notes,
+        agreedPricePerStudent: body.agreedPricePerStudent,
+        agreedMinimumMonthly: body.agreedMinimumMonthly,
+        agreedNote: body.agreedNote,
         // Out of the trial: the nightly bill run starts with next month.
         ...(before.status === SubscriptionStatus.TRIAL &&
         body.status === SubscriptionStatus.ACTIVE
@@ -438,11 +453,15 @@ export class PlatformController {
         plan: before.plan.code,
         status: before.status,
         trialEndsAt: before.trialEndsAt,
+        agreedPricePerStudent: before.agreedPricePerStudent,
+        agreedMinimumMonthly: before.agreedMinimumMonthly,
       },
       after: {
         plan: after.plan.code,
         status: after.status,
         trialEndsAt: after.trialEndsAt,
+        agreedPricePerStudent: after.agreedPricePerStudent,
+        agreedMinimumMonthly: after.agreedMinimumMonthly,
       },
     });
     return after;

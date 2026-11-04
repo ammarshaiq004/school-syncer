@@ -89,6 +89,7 @@ model School {
   platformInvoices  PlatformInvoice[]
   platformPayments  PlatformPayment[]
   paymentClaims     PaymentClaim[]
+  discountUses       PlatformDiscountUse[]
   usageSnapshots     SchoolUsageSnapshot[]
   platformNotices   PlatformNotice[]
   vehicles          Vehicle[]
@@ -1304,6 +1305,10 @@ model Subscription {
   // First month ("YYYY-MM") the nightly bill run charges; null = any month.
   // A school that leaves its trial starts paying from the next month.
   billedFrom      String?
+  // An agreed price for this school that replaces the plan's rate (SCHOOL-154); null = the plan's.
+  agreedPricePerStudent Int?
+  agreedMinimumMonthly  Int?
+  agreedNote            String?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
@@ -1331,6 +1336,9 @@ model PlatformInvoice {
   // Sales tax inside `amount`, at taxPercent; 0 while tax is switched off.
   taxPercent Int                   @default(0)
   taxAmount  Int                   @default(0)
+  // Discount taken off before tax (already inside `amount`), and what it was called.
+  discountAmount Int               @default(0)
+  discountName   String?
   // Paid so far, from PlatformPaymentAllocation; rebuilt after every payment change.
   amountPaid Int                   @default(0)
   status     PlatformInvoiceStatus @default(UNPAID)
@@ -1344,6 +1352,7 @@ model PlatformInvoice {
 
   school      School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   allocations PlatformPaymentAllocation[]
+  discountUse PlatformDiscountUse?
 
   @@unique([schoolId, period])
   @@index([status])
@@ -2677,4 +2686,45 @@ model PlatformMessage {
   createdAt DateTime                @default(now())
 
   @@index([createdAt])
+}
+
+enum DiscountKind {
+  PERCENT
+  FIXED
+}
+
+/// A discount off a school's SchoolSyncer bill: a percent or a fixed rupee amount,
+/// for one school or all, between two dates. Each school gets it on one bill.
+model PlatformDiscount {
+  id        String       @id @default(cuid())
+  name      String
+  kind      DiscountKind
+  /// Percent (1 to 100) or rupees.
+  value     Int
+  /// null = every school.
+  schoolId  String?
+  startsOn  DateTime     @db.Date
+  endsOn    DateTime?    @db.Date
+  isActive  Boolean      @default(true)
+  createdBy String
+  createdAt DateTime     @default(now())
+
+  uses PlatformDiscountUse[]
+
+  @@index([isActive, startsOn])
+}
+
+model PlatformDiscountUse {
+  id         String   @id @default(cuid())
+  discountId String
+  schoolId   String
+  invoiceId  String   @unique
+  amount     Int
+  createdAt  DateTime @default(now())
+
+  discount PlatformDiscount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  school   School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  invoice  PlatformInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([discountId, schoolId])
 }
