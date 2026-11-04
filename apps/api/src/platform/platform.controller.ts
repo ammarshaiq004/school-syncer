@@ -15,11 +15,13 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import {
   PlatformInvoiceStatus,
+  PlatformNoticeSeverity,
   PlatformRole,
   Prisma,
   Role,
   StudentStatus,
   SubscriptionStatus,
+  SupportScope,
 } from '@prisma/client';
 import { z } from 'zod';
 import type { AuthUser, PlatformUser } from '../common/auth-user.js';
@@ -70,6 +72,9 @@ const planSchema = z.object({
 const supportSchema = z.object({
   reason: z.string().trim().min(5).max(500),
 });
+
+/** Starting a support session also picks what it may do; view only unless said otherwise. */
+const supportLoginSchema = supportSchema.extend({ scope: z.enum(['view', 'edit']).default('view') });
 
 const SUPPORT_SESSION_MS = 60 * 60_000;
 
@@ -488,7 +493,7 @@ export class PlatformController {
   async supportLogin(
     @CurrentAdmin() admin: PlatformUser,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(supportSchema)) body: { reason: string },
+    @Body(new ZodValidationPipe(supportLoginSchema)) body: z.infer<typeof supportLoginSchema>,
   ) {
     const owner = await this.prisma.user.findFirst({
       where: {
@@ -503,6 +508,17 @@ export class PlatformController {
       throw new NotFoundException(
         'This school has no active owner to sign in as',
       );
+    const expiresAt = new Date(Date.now() + SUPPORT_SESSION_MS);
+    const session = await this.prisma.supportSession.create({
+      data: {
+        schoolId: id,
+        adminId: admin.sub,
+        adminName: admin.name,
+        reason: body.reason,
+        scope: body.scope === 'edit' ? SupportScope.EDIT : SupportScope.VIEW,
+        expiresAt,
+      },
+    });
     const payload: AuthUser = {
       sub: owner.id,
       schoolId: id,
@@ -512,10 +528,9 @@ export class PlatformController {
         campusId,
         customRoleId,
       })),
-      support: { adminId: admin.sub, adminName: admin.name },
+      support: { adminId: admin.sub, adminName: admin.name, sessionId: session.id, scope: body.scope },
       tv: owner.tokenVersion,
     };
-    const expiresAt = new Date(Date.now() + SUPPORT_SESSION_MS);
     await this.prisma.auditLog.create({
       data: {
         schoolId: id,
@@ -523,19 +538,28 @@ export class PlatformController {
         action: 'platform.support_login',
         entity: 'User',
         entityId: owner.id,
-        after: { by: admin.name, byAdminId: admin.sub, reason: body.reason },
+        after: { by: admin.name, byAdminId: admin.sub, reason: body.reason, scope: body.scope },
       },
     });
     await this.log(admin, 'school.support_login', id, {
       as: owner.id,
       reason: body.reason,
+      scope: body.scope,
       expiresAt,
+    });
+    await this.billing.notify(id, {
+      kind: 'support.session',
+      severity: PlatformNoticeSeverity.INFO,
+      dedupeKey: session.id,
+      title: 'SchoolSyncer support has signed in to your school',
+      body: `${admin.name} from SchoolSyncer support signed in to your school for up to one hour (${body.scope === 'edit' ? 'can make changes' : 'view only'}). Reason: ${body.reason} You can end it from the banner at the top of your dashboard.`,
     });
     return {
       accessToken: this.jwt.sign(payload, {
         expiresIn: SUPPORT_SESSION_MS / 1000,
       }),
       expiresAt,
+      scope: body.scope,
       schoolSlug: owner.school.slug,
       user: payload,
     };
