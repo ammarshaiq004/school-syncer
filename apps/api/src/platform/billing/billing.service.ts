@@ -12,6 +12,7 @@ import { dayStart, localDate } from '../../common/dates.js';
 import { EmailService } from '../../notifications/email.service.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { pickDiscount } from '../discounts.js';
 import { monthlyAmount, nextInvoiceNumber } from '../plans.js';
 import { SubscriptionService } from '../subscription.service.js';
 import { allocate, withTax } from './ledger.js';
@@ -108,21 +109,44 @@ export class BillingService {
       _count: true,
     });
     const students = new Map(counts.map((r) => [r.schoolId, r._count]));
+    const today = localDate(new Date());
+    const rules = await this.prisma.platformDiscount.findMany({
+      where: { isActive: true, OR: [{ schoolId: null }, { schoolId: { in: subs.map((s) => s.schoolId) } }] },
+    });
+    const usedRows = rules.length
+      ? await this.prisma.platformDiscountUse.findMany({
+          where: { schoolId: { in: subs.map((s) => s.schoolId) } },
+          select: { schoolId: true, discountId: true },
+        })
+      : [];
     const [y, m] = period.split('-').map(Number);
     const dueDate = new Date(Date.UTC(y, m - 1, DUE_DAY));
     const created = [];
     for (const s of subs) {
       const count = students.get(s.schoolId) ?? 0;
-      const charge = withTax(monthlyAmount(s.plan, count), settings.salesTaxPercent);
+      const subtotal = monthlyAmount(s.plan, count, s);
+      const used = new Set(usedRows.filter((u) => u.schoolId === s.schoolId).map((u) => u.discountId));
+      const discount = pickDiscount(rules, s.schoolId, today, used, subtotal);
+      const charge = withTax(subtotal - (discount?.amount ?? 0), settings.salesTaxPercent);
       const invoice = await this.createInvoice({
         schoolId: s.schoolId,
         period,
         planName: s.plan.name,
         students: count,
         dueDate,
+        discountAmount: discount?.amount ?? 0,
+        discountName: discount?.rule.name ?? null,
         ...charge,
       });
       if (!invoice) continue;
+      if (discount) {
+        // A discount counts once per school; a clash here means a parallel run already used it.
+        await this.prisma.platformDiscountUse
+          .create({ data: { discountId: discount.rule.id, schoolId: s.schoolId, invoiceId: invoice.id, amount: discount.amount } })
+          .catch((e) => {
+            if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') throw e;
+          });
+      }
       created.push(invoice);
       await this.rebuild(s.schoolId);
       if (opts.notify !== false) await this.billIssued(invoice.id);

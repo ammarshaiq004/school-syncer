@@ -82,12 +82,21 @@ export const TRIAL_DAYS = 30;
 /** Days after an invoice's due date before a school counts as past due. */
 export const GRACE_DAYS = 15;
 
-/** One month's charge: per active student, never below the plan's minimum. */
+/** A price agreed with one school; each part that is null falls back to the plan's. */
+export interface AgreedPrice {
+  agreedPricePerStudent?: number | null;
+  agreedMinimumMonthly?: number | null;
+}
+
+/** One month's charge: per active student, never below the minimum. The school's agreed price, if any, replaces the plan's. */
 export function monthlyAmount(
   plan: { pricePerStudent: number; minimumMonthly: number },
   students: number,
+  agreed?: AgreedPrice | null,
 ): number {
-  return Math.max(plan.minimumMonthly, plan.pricePerStudent * students);
+  const rate = agreed?.agreedPricePerStudent ?? plan.pricePerStudent;
+  const minimum = agreed?.agreedMinimumMonthly ?? plan.minimumMonthly;
+  return Math.max(minimum, rate * students);
 }
 
 export type Access =

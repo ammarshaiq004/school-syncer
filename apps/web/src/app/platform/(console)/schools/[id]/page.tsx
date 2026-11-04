@@ -83,6 +83,11 @@ interface Detail {
         status: string;
         trialEndsAt: string | null;
         notes: string | null;
+        planPricePerStudent: number;
+        planMinimumMonthly: number;
+        agreedPricePerStudent: number | null;
+        agreedMinimumMonthly: number | null;
+        agreedNote: string | null;
         monthly: number;
         access: string;
         reason: string | null;
@@ -389,7 +394,7 @@ export default function SchoolDetailPage() {
             <CardHeader title="Subscription" description="Plan, status and trial date for this school." />
             {sub ? (
               <SubscriptionForm
-                key={`${sub.plan.code}${sub.status}${sub.trialEndsAt}${sub.notes}`}
+                key={`${sub.plan.code}${sub.status}${sub.trialEndsAt}${sub.notes}${sub.agreedPricePerStudent}${sub.agreedMinimumMonthly}${sub.agreedNote}`}
                 schoolId={s.id}
                 sub={sub}
                 plans={plans.data?.plans ?? []}
@@ -482,7 +487,11 @@ function SubscriptionForm({
   onSaved: () => Promise<void>;
 }) {
   const toast = useToast();
+  const canPrice = isOwner(useConsoleAdmin());
   const [form, setForm] = useState({
+    agreedPrice: sub.agreedPricePerStudent?.toString() ?? "",
+    agreedMinimum: sub.agreedMinimumMonthly?.toString() ?? "",
+    agreedNote: sub.agreedNote ?? "",
     planCode: sub.plan.code,
     status: sub.status,
     trialEndsAt: sub.trialEndsAt?.slice(0, 10) ?? "",
@@ -498,7 +507,17 @@ function SubscriptionForm({
     try {
       await platformApi(`/schools/${schoolId}/subscription`, {
         method: "PATCH",
-        body: { ...form, trialEndsAt: form.trialEndsAt || null, notes: form.notes || null },
+        body: {
+          planCode: form.planCode,
+          status: form.status,
+          trialEndsAt: form.trialEndsAt || null,
+          notes: form.notes || null,
+          ...(canPrice && {
+            agreedPricePerStudent: form.agreedPrice === "" ? null : Number(form.agreedPrice),
+            agreedMinimumMonthly: form.agreedMinimum === "" ? null : Number(form.agreedMinimum),
+            agreedNote: form.agreedNote.trim() || null,
+          }),
+        },
       });
       toast.success("Subscription saved", "The school sees the change within a few seconds.");
       await onSaved();
@@ -534,6 +553,32 @@ function SubscriptionForm({
           <StatusPill status={sub.access} {...(ACCESS[sub.access] ?? { tone: "neutral" })} />
         </span>
       </div>
+      <TextField
+        label="Agreed price per student (Rs)"
+        type="number"
+        min={0}
+        value={form.agreedPrice}
+        onChange={(e) => setForm({ ...form, agreedPrice: e.target.value })}
+        disabled={!canPrice}
+        hint={`Plan rate is Rs ${sub.planPricePerStudent}. Leave empty to use it.${canPrice ? "" : " Only an owner can change this."}`}
+      />
+      <TextField
+        label="Agreed minimum per month (Rs)"
+        type="number"
+        min={0}
+        value={form.agreedMinimum}
+        onChange={(e) => setForm({ ...form, agreedMinimum: e.target.value })}
+        disabled={!canPrice}
+        hint={`Plan minimum is Rs ${sub.planMinimumMonthly}. Leave empty to use it.`}
+      />
+      <TextField
+        label="Why this price"
+        value={form.agreedNote}
+        onChange={(e) => setForm({ ...form, agreedNote: e.target.value })}
+        disabled={!canPrice}
+        maxLength={300}
+        wrapperClassName="sm:col-span-2"
+      />
       <TextareaField
         label="Notes (staff only)"
         rows={3}
