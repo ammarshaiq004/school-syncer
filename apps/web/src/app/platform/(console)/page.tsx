@@ -22,6 +22,7 @@ import {
   buttonClass,
   type Column,
 } from "@/components/ui";
+import { FollowUpsCard } from "@/components/platform/school-contacts";
 import { day, rupees } from "@/lib/format";
 import { usePlatformApi } from "@/lib/use-api";
 import { monthName, statusColor, statusLabel, STATUSES, StatusBadge } from "./status";
@@ -235,6 +236,8 @@ export default function OverviewPage() {
               />
             )}
           </Card>
+
+          <FollowUpsCard />
 
           <Card padding="none">
             <div className="px-5 pt-5">

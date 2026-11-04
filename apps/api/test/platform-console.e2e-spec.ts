@@ -487,7 +487,7 @@ describe('Platform console (e2e)', () => {
     const res = await request(server)
       .post(`/api/platform/schools/${schoolA.id}/support-login`)
       .set(support)
-      .send({ reason: 'Fee voucher layout question' })
+      .send({ reason: 'Fee voucher layout question', scope: 'edit' })
       .expect(201);
     expect(res.body.schoolSlug).toBe(schoolA.slug);
     expect(new Date(res.body.expiresAt).getTime()).toBeGreaterThan(Date.now());

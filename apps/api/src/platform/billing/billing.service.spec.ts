@@ -51,8 +51,8 @@ const payment = (over: Record<string, unknown> = {}) => ({
 function setup() {
   const prisma = {
     platformSettings: { upsert: vi.fn().mockResolvedValue({ salesTaxPercent: null }) },
-    subscription: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn() },
-    student: { groupBy: vi.fn().mockResolvedValue([]) },
+    subscription: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn(), update: vi.fn() },
+    student: { groupBy: vi.fn().mockResolvedValue([]), count: vi.fn() },
     school: { findUnique: vi.fn().mockResolvedValue({ id: 's1' }) },
     user: {
       findMany: vi.fn().mockResolvedValue([
@@ -80,6 +80,7 @@ function setup() {
     },
     platformPaymentAllocation: { deleteMany: vi.fn(), createMany: vi.fn() },
     platformDiscount: { findMany: vi.fn().mockResolvedValue([]) },
+    platformAdjustment: { findMany: vi.fn().mockResolvedValue([]), updateMany: vi.fn().mockResolvedValue({}), create: vi.fn().mockResolvedValue({}) },
     platformDiscountUse: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}) },
     platformNotice: { create: vi.fn() },
     $executeRaw: vi.fn(),
@@ -187,6 +188,74 @@ describe('BillingService.issueBills', () => {
     });
     expect(prisma.platformDiscountUse.create).toHaveBeenCalledWith({
       data: { discountId: 'd1', schoolId: 's1', invoiceId: 'inv9', amount: 1_000 },
+    });
+  });
+
+  describe('yearly billing and adjustments', () => {
+    const plan = { name: 'Starter', pricePerStudent: 100, minimumMonthly: 5_000 };
+    const run = async (sub: object, students: number, pending: object[] = []) => {
+      const { service, prisma } = setup();
+      prisma.subscription.findMany.mockResolvedValue([{ schoolId: 's1', plan, ...sub }]);
+      prisma.student.groupBy.mockResolvedValue([{ schoolId: 's1', _count: students }]);
+      prisma.platformAdjustment.findMany.mockResolvedValue(pending);
+      const created = invoice({ id: 'inv9' });
+      prisma.platformInvoice.create.mockResolvedValue(created);
+      prisma.platformInvoice.findUniqueOrThrow.mockResolvedValue(created);
+      await service.issueBills('2026-11', { notify: false });
+      return prisma;
+    };
+
+    it('bills a yearly school ten months for twelve and remembers the year', async () => {
+      const prisma = await run({ billingCycle: 'YEARLY' }, 100);
+      expect(prisma.platformInvoice.create.mock.calls[0][0].data).toMatchObject({ amount: 100_000, monthsCovered: 12 });
+      expect(prisma.subscription.update).toHaveBeenCalledWith({
+        where: { schoolId: 's1' },
+        data: { yearlyUntil: '2027-10', yearlyStudents: 100 },
+      });
+    });
+
+    it('bills only extra students inside a paid year, and nothing when there are none', async () => {
+      const inYear = { billingCycle: 'YEARLY', yearlyUntil: '2027-10', yearlyStudents: 100 };
+      const prisma = await run(inYear, 130);
+      expect(prisma.platformInvoice.create.mock.calls[0][0].data).toMatchObject({ amount: 3_000, monthsCovered: 1, planName: 'Starter (extra students)' });
+      expect((await run(inYear, 100)).platformInvoice.create).not.toHaveBeenCalled();
+    });
+
+    it('starts a new year once the old one has run out', async () => {
+      const prisma = await run({ billingCycle: 'YEARLY', yearlyUntil: '2026-10', yearlyStudents: 100 }, 120);
+      expect(prisma.platformInvoice.create.mock.calls[0][0].data).toMatchObject({ amount: 120_000, monthsCovered: 12 });
+    });
+
+    it('folds waiting charges and credits into the bill before tax and carries what does not fit', async () => {
+      const prisma = await run({}, 100, [
+        { id: 'a1', schoolId: 's1', amount: 1_500 },
+        { id: 'a2', schoolId: 's1', amount: -20_000 },
+      ]);
+      // 1,500 - 20,000 = -18,500 can only take the 10,000 bill to nothing: -8,500 is carried over.
+      expect(prisma.platformInvoice.create.mock.calls[0][0].data).toMatchObject({ amount: 0, adjustmentAmount: -10_000 });
+      expect(prisma.platformAdjustment.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['a1', 'a2'] }, invoiceId: null }, data: { invoiceId: 'inv9' } });
+      expect(prisma.platformAdjustment.create.mock.calls[0][0].data).toMatchObject({ kind: 'CARRIED', amount: -8_500 });
+    });
+  });
+
+  describe('planChanged', () => {
+    const starter = { name: 'Starter', pricePerStudent: 100, minimumMonthly: 0 };
+    const growth = { name: 'Growth', pricePerStudent: 130, minimumMonthly: 0 };
+    const run = async (billed: object | null) => {
+      const { service, prisma } = setup();
+      prisma.platformInvoice.findFirst.mockResolvedValue(billed);
+      prisma.student.count.mockResolvedValue(100);
+      await service.planChanged('s1', { plan: starter }, { plan: growth }, 'Owner', new Date('2026-11-16T05:00:00Z'));
+      return prisma.platformAdjustment.create;
+    };
+
+    it('charges the difference for the days left on a month already billed', async () => {
+      // 100 students: Rs 10,000 -> 13,000; 15 of 30 days left from the 16th.
+      expect((await run({ id: 'inv1' })).mock.calls[0][0].data).toMatchObject({ kind: 'PLAN_CHANGE', amount: 1_500 });
+    });
+
+    it('adds nothing when the month is not billed yet', async () => {
+      expect(await run(null)).not.toHaveBeenCalled();
     });
   });
 

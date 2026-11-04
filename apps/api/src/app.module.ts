@@ -75,10 +75,13 @@ import { SubscriptionGuard } from './common/subscription.guard.js';
 import { BillingScheduler } from './platform/billing/billing.scheduler.js';
 import { PlatformMessagesController } from './platform/platform-messages.controller.js';
 import { BillingService } from './platform/billing/billing.service.js';
+import { PlatformContactsController } from './platform/platform-contacts.controller.js';
 import { PlatformDiscountsController } from './platform/platform-discounts.controller.js';
+import { PlatformCreditsController } from './platform/platform-credits.controller.js';
 import { PlatformWatchController } from './platform/platform-watch.controller.js';
 import { SchoolDeletionService } from './platform/deletion/school-deletion.service.js';
 import { SchoolLifecycleController } from './platform/deletion/school-lifecycle.controller.js';
+import { SupportSessionsController } from './platform/support-sessions.controller.js';
 import { UsageSnapshotsService } from './platform/usage-snapshots.service.js';
 import { PaymentClaimsController, PlatformPaymentClaimsController } from './platform/billing/payment-claims.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
@@ -180,7 +183,10 @@ import { UsersController } from './users/users.controller.js';
     PlatformMessagesController,
     SchoolLifecycleController,
     PlatformWatchController,
+    PlatformContactsController,
+    SupportSessionsController,
     PlatformDiscountsController,
+    PlatformCreditsController,
     PlatformAuthController,
     PlatformController,
     PlatformGatewaysController,
