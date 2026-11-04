@@ -51,6 +51,7 @@ const subscriptionSchema = z.object({
   agreedPricePerStudent: z.number().int().min(0).max(100_000).nullable().optional(),
   agreedMinimumMonthly: z.number().int().min(0).max(10_000_000).nullable().optional(),
   agreedNote: z.string().trim().max(300).nullable().optional(),
+  billingCycle: z.enum(['MONTHLY', 'YEARLY']).optional(),
 });
 
 const planSchema = z.object({
@@ -379,6 +380,8 @@ export class PlatformController {
         agreedPricePerStudent: sub.agreedPricePerStudent,
         agreedMinimumMonthly: sub.agreedMinimumMonthly,
         agreedNote: sub.agreedNote,
+        billingCycle: sub.billingCycle,
+        yearlyUntil: sub.yearlyUntil,
         planFeatures: sub.plan.features,
         featuresAdded: sub.featuresAdded,
         featuresRemoved: sub.featuresRemoved,
@@ -418,7 +421,7 @@ export class PlatformController {
       admin.role !== PlatformRole.OWNER
     )
       throw new ForbiddenException('Only a SchoolSyncer owner can close a school');
-    const pricing = [body.agreedPricePerStudent, body.agreedMinimumMonthly, body.agreedNote];
+    const pricing = [body.agreedPricePerStudent, body.agreedMinimumMonthly, body.agreedNote, body.billingCycle];
     if (pricing.some((v) => v !== undefined) && admin.role !== PlatformRole.OWNER)
       throw new ForbiddenException('Only a SchoolSyncer owner can set an agreed price');
     let planId: string | undefined;
@@ -439,6 +442,7 @@ export class PlatformController {
         agreedPricePerStudent: body.agreedPricePerStudent,
         agreedMinimumMonthly: body.agreedMinimumMonthly,
         agreedNote: body.agreedNote,
+        billingCycle: body.billingCycle,
         // Out of the trial: the nightly bill run starts with next month.
         ...(before.status === SubscriptionStatus.TRIAL &&
         body.status === SubscriptionStatus.ACTIVE
@@ -448,6 +452,11 @@ export class PlatformController {
       include: { plan: true },
     });
     this.subscriptions.forget(id);
+    if (
+      before.planId !== after.planId &&
+      ([SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE] as SubscriptionStatus[]).includes(after.status)
+    )
+      await this.billing.planChanged(id, before, after, admin.name);
     await this.log(admin, 'subscription.update', id, {
       before: {
         plan: before.plan.code,
@@ -455,6 +464,7 @@ export class PlatformController {
         trialEndsAt: before.trialEndsAt,
         agreedPricePerStudent: before.agreedPricePerStudent,
         agreedMinimumMonthly: before.agreedMinimumMonthly,
+        billingCycle: before.billingCycle,
       },
       after: {
         plan: after.plan.code,
@@ -462,6 +472,7 @@ export class PlatformController {
         trialEndsAt: after.trialEndsAt,
         agreedPricePerStudent: after.agreedPricePerStudent,
         agreedMinimumMonthly: after.agreedMinimumMonthly,
+        billingCycle: after.billingCycle,
       },
     });
     return after;

@@ -57,6 +57,7 @@ import { ReasonDialog } from "@/components/platform/reason-dialog";
 import { SchoolFeatures, type FeatureState } from "@/components/platform/school-features";
 import { SchoolUsageCard } from "@/components/platform/watch";
 import { SchoolBilling } from "@/components/platform/school-billing";
+import { SchoolCredits } from "@/components/platform/school-credits";
 import { SchoolPeople } from "@/components/platform/school-people";
 import { isOwner, useConsoleAdmin, when } from "@/components/platform/session";
 import { platformApi } from "@/lib/api";
@@ -87,6 +88,8 @@ interface Detail {
         agreedPricePerStudent: number | null;
         agreedMinimumMonthly: number | null;
         agreedNote: string | null;
+        billingCycle: "MONTHLY" | "YEARLY";
+        yearlyUntil: string | null;
         monthly: number;
         access: string;
         reason: string | null;
@@ -392,7 +395,7 @@ export default function SchoolDetailPage() {
             <CardHeader title="Subscription" description="Plan, status and trial date for this school." />
             {sub ? (
               <SubscriptionForm
-                key={`${sub.plan.code}${sub.status}${sub.trialEndsAt}${sub.notes}${sub.agreedPricePerStudent}${sub.agreedMinimumMonthly}${sub.agreedNote}`}
+                key={`${sub.plan.code}${sub.status}${sub.trialEndsAt}${sub.notes}${sub.agreedPricePerStudent}${sub.agreedMinimumMonthly}${sub.agreedNote}${sub.billingCycle}`}
                 schoolId={s.id}
                 sub={sub}
                 plans={plans.data?.plans ?? []}
@@ -406,7 +409,10 @@ export default function SchoolDetailPage() {
         </TabPanel>
 
         <TabPanel value="billing" className="pt-5">
-          <SchoolBilling schoolId={s.id} schoolName={s.name} onChanged={school.reload} />
+          <div className="flex flex-col gap-5">
+            <SchoolBilling schoolId={s.id} schoolName={s.name} onChanged={school.reload} />
+            <SchoolCredits schoolId={s.id} />
+          </div>
         </TabPanel>
 
         <TabPanel value="audit" className="pt-5">
@@ -490,6 +496,7 @@ function SubscriptionForm({
     agreedPrice: sub.agreedPricePerStudent?.toString() ?? "",
     agreedMinimum: sub.agreedMinimumMonthly?.toString() ?? "",
     agreedNote: sub.agreedNote ?? "",
+    billingCycle: sub.billingCycle,
     planCode: sub.plan.code,
     status: sub.status,
     trialEndsAt: sub.trialEndsAt?.slice(0, 10) ?? "",
@@ -514,6 +521,7 @@ function SubscriptionForm({
             agreedPricePerStudent: form.agreedPrice === "" ? null : Number(form.agreedPrice),
             agreedMinimumMonthly: form.agreedMinimum === "" ? null : Number(form.agreedMinimum),
             agreedNote: form.agreedNote.trim() || null,
+            billingCycle: form.billingCycle,
           }),
         },
       });
@@ -568,6 +576,14 @@ function SubscriptionForm({
         onChange={(e) => setForm({ ...form, agreedMinimum: e.target.value })}
         disabled={!canPrice}
         hint={`Plan minimum is Rs ${sub.planMinimumMonthly}. Leave empty to use it.`}
+      />
+      <SelectField
+        label="Billing"
+        options={[{ value: "MONTHLY", label: "Every month" }, { value: "YEARLY", label: "Yearly (pays 10 months for 12)" }]}
+        value={form.billingCycle}
+        onChange={(e) => setForm({ ...form, billingCycle: e.target.value as "MONTHLY" | "YEARLY" })}
+        disabled={!canPrice}
+        hint={sub.yearlyUntil ? `Paid up to ${sub.yearlyUntil}. Students added later are billed monthly.` : "A yearly school is billed for the year on its next bill."}
       />
       <TextField
         label="Why this price"

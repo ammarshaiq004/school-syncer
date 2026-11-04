@@ -90,6 +90,7 @@ model School {
   platformPayments  PlatformPayment[]
   paymentClaims     PaymentClaim[]
   discountUses       PlatformDiscountUse[]
+  adjustments        PlatformAdjustment[]
   usageSnapshots     SchoolUsageSnapshot[]
   platformNotices   PlatformNotice[]
   vehicles          Vehicle[]
@@ -1309,11 +1310,21 @@ model Subscription {
   agreedPricePerStudent Int?
   agreedMinimumMonthly  Int?
   agreedNote            String?
+  // YEARLY pays 10 months for a year up front (SCHOOL-154). The year runs to yearlyUntil
+  // ("YYYY-MM", last month covered) for yearlyStudents students; extra students are billed monthly.
+  billingCycle   BillingCycle @default(MONTHLY)
+  yearlyUntil    String?
+  yearlyStudents Int?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
 }
 
 enum PlatformInvoiceStatus {
@@ -1339,6 +1350,10 @@ model PlatformInvoice {
   // Discount taken off before tax (already inside `amount`), and what it was called.
   discountAmount Int               @default(0)
   discountName   String?
+  // Plan-change charges and credits folded into this bill (negative = credit), inside `amount`.
+  adjustmentAmount Int             @default(0)
+  // 12 for a yearly bill, 1 otherwise.
+  monthsCovered    Int             @default(1)
   // Paid so far, from PlatformPaymentAllocation; rebuilt after every payment change.
   amountPaid Int                   @default(0)
   status     PlatformInvoiceStatus @default(UNPAID)
@@ -1353,6 +1368,7 @@ model PlatformInvoice {
   school      School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   allocations PlatformPaymentAllocation[]
   discountUse PlatformDiscountUse?
+  adjustments PlatformAdjustment[]
 
   @@unique([schoolId, period])
   @@index([status])
@@ -2727,4 +2743,29 @@ model PlatformDiscountUse {
   invoice  PlatformInvoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@unique([discountId, schoolId])
+}
+
+enum AdjustmentKind {
+  PLAN_CHANGE
+  REFERRAL
+  GOODWILL
+  CARRIED
+}
+
+// A charge (positive) or credit (negative) in rupees that waits for the school's next bill,
+// which takes it in and records the bill on invoiceId.
+model PlatformAdjustment {
+  id        String          @id @default(cuid())
+  schoolId  String
+  kind      AdjustmentKind
+  amount    Int
+  reason    String
+  createdBy String?
+  invoiceId String?
+  createdAt DateTime        @default(now())
+
+  school  School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  invoice PlatformInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, invoiceId])
 }

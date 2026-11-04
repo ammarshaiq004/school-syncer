@@ -40,6 +40,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "discount.create": { label: "Created a discount", icon: Percent },
   "discount.enable": { label: "Switched a discount on", icon: Percent },
   "discount.disable": { label: "Switched a discount off", icon: Percent },
+  "credit.add": { label: "Gave a school a credit", icon: Percent },
+  "credit.remove": { label: "Took back a credit", icon: Percent },
   "subscription.update": { label: "Changed the subscription", icon: CreditCard },
   "invoice.pay": { label: "Recorded a bill payment", icon: Wallet },
   "invoice.void": { label: "Voided a bill", icon: Receipt },
