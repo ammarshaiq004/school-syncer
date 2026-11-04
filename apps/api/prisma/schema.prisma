@@ -2678,3 +2678,30 @@ model PlatformMessage {
 
   @@index([createdAt])
 }
+
+/// A trial school waiting to be deleted, already deleted, or let off (SCHOOL-156).
+/// Not related to School on purpose: this record must outlive the school it describes.
+model SchoolDeletion {
+  id              String             @id @default(cuid())
+  schoolId        String
+  schoolName      String
+  schoolSlug      String
+  reason          String
+  requestedBy     String // PlatformAdmin name
+  requestedAt     DateTime           @default(now())
+  dueAt           DateTime
+  /// The status the school goes back to if the deletion is cancelled.
+  priorStatus     SubscriptionStatus
+  restoredAt      DateTime?
+  restoredBy      String?
+  purgedAt        DateTime?
+  /// Why the last purge failed; the school stays suspended until a purge works.
+  purgeError      String?
+  /// The copy of the school's data kept after the purge, in the storage driver.
+  exportKey       String?
+  exportSize      Int?
+  exportExpiresAt DateTime?
+
+  @@index([schoolId])
+  @@index([dueAt])
+}

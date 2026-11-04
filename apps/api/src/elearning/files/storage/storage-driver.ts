@@ -1,8 +1,12 @@
+import type { Readable } from 'node:stream';
+
 /** Where uploaded files live. Picked by STORAGE_DRIVER (see storage.provider.ts). */
 export interface StorageDriver {
   readonly name: 'local' | 's3';
   /** Stores the file at `sourcePath` (a temp upload) under `key`. */
   put(key: string, sourcePath: string, mimeType: string): Promise<void>;
+  /** The object's bytes, for the API to stream itself (the school data exports). */
+  read(key: string): Promise<Readable>;
   /** Removes the object; missing objects are not an error. */
   delete(key: string): Promise<void>;
   /** A URL the browser can open without the API token, valid for `expiresIn` seconds. */

@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { monthlyAmount, nextInvoiceNumber } from '../plans.js';
 import { SubscriptionService } from '../subscription.service.js';
 import { allocate, withTax } from './ledger.js';
+import { TRIAL_NOTICE_DAYS, trialNoticeDays } from '../deletion/deletion.js';
 import { reminderDue, type ReminderKind } from './reminders.js';
 
 /** Bills fall due on this day of their month. */
@@ -352,7 +353,31 @@ export class BillingService {
     const bills = await this.issueBills(today.slice(0, 7));
     const status = await this.syncAllStatuses(today);
     const reminders = await this.sendReminders(today);
-    return { today, billed: bills.created, ...status, reminders };
+    const trialNotices = await this.sendTrialNotices(new Date(now));
+    return { today, billed: bills.created, ...status, reminders, trialNotices };
+  }
+
+  /** Tells schools on a free trial it is about to end, once per trial end date. */
+  async sendTrialNotices(now: Date) {
+    const trials = await this.prisma.subscription.findMany({
+      where: { status: SubscriptionStatus.TRIAL, trialEndsAt: { gt: now, lte: new Date(+now + TRIAL_NOTICE_DAYS * 86_400_000) } },
+      select: { schoolId: true, trialEndsAt: true },
+    });
+    let sent = 0;
+    for (const t of trials) {
+      const days = trialNoticeDays(t.trialEndsAt, now);
+      if (days === null) continue;
+      const ends = day(t.trialEndsAt!);
+      const ok = await this.notify(t.schoolId, {
+        kind: 'trial.ending',
+        severity: PlatformNoticeSeverity.WARNING,
+        title: days === 1 ? 'Your free trial ends tomorrow' : `Your free trial ends in ${days} days`,
+        body: `Your free trial ends on ${ends}. Contact SchoolSyncer to choose a plan and keep your school running.`,
+        dedupeKey: `${t.schoolId}:trial.ending:${t.trialEndsAt!.toISOString().slice(0, 10)}`,
+      });
+      if (ok) sent += 1;
+    }
+    return sent;
   }
 
   async syncAllStatuses(today: string) {

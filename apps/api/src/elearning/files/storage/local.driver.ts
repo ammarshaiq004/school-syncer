@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import type { StorageDriver } from './storage-driver.js';
@@ -33,6 +34,10 @@ export class LocalStorageDriver implements StorageDriver {
     const target = this.pathOf(key);
     await mkdir(dirname(target), { recursive: true });
     await copyFile(sourcePath, target);
+  }
+
+  async read(key: string) {
+    return createReadStream(this.pathOf(key));
   }
 
   async delete(key: string) {

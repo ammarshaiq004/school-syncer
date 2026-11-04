@@ -22,6 +22,9 @@ import {
   Wallet,
   CircleX,
   Settings,
+  Trash2,
+  CalendarPlus,
+  Download,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +34,11 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "school.suspend": { label: "Suspended the school", icon: Ban },
   "school.reactivate": { label: "Reactivated the school", icon: RotateCcw },
   "school.cancel": { label: "Closed the school", icon: CircleX },
+  "school.deletion_schedule": { label: "Scheduled the school for deletion", icon: Trash2 },
+  "school.deletion_cancel": { label: "Cancelled a school's deletion", icon: RotateCcw },
+  "school.deleted": { label: "Deleted the school (nightly job)", icon: Trash2 },
+  "school.trial_extend": { label: "Extended the free trial", icon: CalendarPlus },
+  "school.data_export": { label: "Downloaded all of the school's data", icon: Download },
   "school.features": { label: "Changed module overrides", icon: SlidersHorizontal },
   "school.support_login": { label: "Started a support session", icon: LogIn },
   "school.user.create": { label: "Added a school user", icon: UserPlus },

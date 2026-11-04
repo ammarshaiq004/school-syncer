@@ -346,7 +346,8 @@ describe('BillingService nightly run', () => {
     prisma.subscription.findMany
       .mockResolvedValueOnce([]) // nothing to bill
       .mockResolvedValueOnce([{ schoolId: 's1' }]) // to past due
-      .mockResolvedValueOnce([{ schoolId: 's2' }]); // back to active
+      .mockResolvedValueOnce([{ schoolId: 's2' }]) // back to active
+      .mockResolvedValueOnce([]); // no trials ending
     prisma.platformInvoice.findMany.mockResolvedValue([
       invoice(), // due 10 Oct: 7 days overdue on the 17th
       invoice({ id: 'b', dueDate: new Date('2026-10-20T00:00:00Z') }), // 3 days to go
@@ -359,7 +360,7 @@ describe('BillingService nightly run', () => {
 
     const result = await service.runDaily(new Date('2026-10-17T03:00:00Z'));
 
-    expect(result).toEqual({ today: '2026-10-17', billed: 0, pastDue: 1, cleared: 1, reminders: 4 });
+    expect(result).toEqual({ today: '2026-10-17', billed: 0, pastDue: 1, cleared: 1, reminders: 4, trialNotices: 0 });
     const kinds = prisma.platformNotice.create.mock.calls.map((c) => c[0].data.kind);
     // The second was already sent (dedupe key taken), so it does not count.
     expect(kinds).toEqual(['bill.overdue', 'bill.due_soon', 'bill.due_today', 'bill.read_only_tomorrow', 'bill.due_today']);
