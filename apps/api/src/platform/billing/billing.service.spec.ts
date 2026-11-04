@@ -79,6 +79,8 @@ function setup() {
       update: vi.fn(),
     },
     platformPaymentAllocation: { deleteMany: vi.fn(), createMany: vi.fn() },
+    platformDiscount: { findMany: vi.fn().mockResolvedValue([]) },
+    platformDiscountUse: { findMany: vi.fn().mockResolvedValue([]), create: vi.fn().mockResolvedValue({}) },
     platformNotice: { create: vi.fn() },
     $executeRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -156,6 +158,36 @@ describe('BillingService.issueBills', () => {
     expect(email.send.mock.calls[0][1]).toEqual([
       expect.objectContaining({ to: 'owner@demo.pk', subject: expect.stringContaining('October 2026 bill') }),
     ]);
+  });
+
+  it("bills at a school's agreed price and takes the best discount off before tax", async () => {
+    const { service, prisma } = setup();
+    const plan = { name: 'Growth', pricePerStudent: 69, minimumMonthly: 10_000 };
+    prisma.subscription.findMany.mockResolvedValue([{ schoolId: 's1', plan, agreedPricePerStudent: 50, agreedMinimumMonthly: 5_000 }]);
+    prisma.platformSettings.upsert.mockResolvedValue({ salesTaxPercent: 10 });
+    prisma.student.groupBy.mockResolvedValue([{ schoolId: 's1', _count: 200 }]);
+    const starts = new Date('2026-01-01T00:00:00Z');
+    prisma.platformDiscount.findMany.mockResolvedValue([
+      { id: 'd1', name: 'Launch', kind: 'PERCENT', value: 10, schoolId: null, startsOn: starts, endsOn: null },
+      { id: 'd2', name: 'Used', kind: 'FIXED', value: 9_000, schoolId: null, startsOn: starts, endsOn: null },
+    ]);
+    prisma.platformDiscountUse.findMany.mockResolvedValue([{ schoolId: 's1', discountId: 'd2' }]);
+    const created = invoice({ id: 'inv9' });
+    prisma.platformInvoice.create.mockResolvedValue(created);
+    prisma.platformInvoice.findUniqueOrThrow.mockResolvedValue(created);
+
+    await service.issueBills('2026-10', { notify: false });
+
+    // 200 students at Rs 50 = 10,000; 10% off = 1,000; 9,000 plus 10% tax = 9,900.
+    expect(prisma.platformInvoice.create.mock.calls[0][0].data).toMatchObject({
+      amount: 9_900,
+      taxAmount: 900,
+      discountAmount: 1_000,
+      discountName: 'Launch',
+    });
+    expect(prisma.platformDiscountUse.create).toHaveBeenCalledWith({
+      data: { discountId: 'd1', schoolId: 's1', invoiceId: 'inv9', amount: 1_000 },
+    });
   });
 
   it('stays quiet when asked not to notify and rethrows other errors', async () => {

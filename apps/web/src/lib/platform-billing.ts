@@ -22,6 +22,9 @@ export interface PlatformBill {
   amount: number;
   taxPercent: number;
   taxAmount: number;
+  /** Taken off before tax and already inside `amount`. */
+  discountAmount: number;
+  discountName: string | null;
   amountPaid: number;
   status: PlatformBillStatus;
   dueDate: string;

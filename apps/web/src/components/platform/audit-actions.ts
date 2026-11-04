@@ -1,5 +1,6 @@
 import {
   Megaphone,
+  Percent,
   Ban,
   Bug,
   Building,
@@ -36,6 +37,9 @@ export const AUDIT_ACTIONS: Record<string, { label: string; icon: LucideIcon }> 
   "school.user.create": { label: "Added a school user", icon: UserPlus },
   "school.user.update": { label: "Changed a school user", icon: UserCog },
   "school.user.reset_password": { label: "Reset a school user's password", icon: KeyRound },
+  "discount.create": { label: "Created a discount", icon: Percent },
+  "discount.enable": { label: "Switched a discount on", icon: Percent },
+  "discount.disable": { label: "Switched a discount off", icon: Percent },
   "subscription.update": { label: "Changed the subscription", icon: CreditCard },
   "invoice.pay": { label: "Recorded a bill payment", icon: Wallet },
   "invoice.void": { label: "Voided a bill", icon: Receipt },
