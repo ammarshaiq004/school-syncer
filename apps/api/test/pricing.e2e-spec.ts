@@ -92,4 +92,32 @@ describe('Pricing flexibility (e2e)', () => {
     const second = await prisma.platformInvoice.findFirstOrThrow({ where: { schoolId, period: '2099-01' } });
     expect(second).toMatchObject({ discountAmount: 0, amount: 5_000 });
   });
+
+  it('gives a referral credit that the next bill takes, and bills a year as ten months', async () => {
+    const credits = `/api/platform/schools/${schoolId}/credits`;
+    const body = { kind: 'REFERRAL', amount: 1_000, reason: 'Referred another school' };
+    await request(server).post(credits).set(support).send(body).expect(403);
+    await request(server).post(credits).set(owner).send({ ...body, amount: 0 }).expect(400);
+    const spare = (await request(server).post(credits).set(owner).send(body).expect(201)).body;
+    await request(server).delete(`${credits}/${spare.id}`).set(owner).expect(200);
+    await request(server).post(credits).set(owner).send(body).expect(201);
+
+    await request(server).patch(`/api/platform/schools/${schoolId}/subscription`).set(support).send({ billingCycle: 'YEARLY' }).expect(403);
+    await request(server).patch(`/api/platform/schools/${schoolId}/subscription`).set(owner).send({ billingCycle: 'YEARLY' }).expect(200);
+
+    await request(server).post('/api/platform/invoices/generate').set(owner).send({ period: '2099-02' }).expect(201);
+    const yearly = await prisma.platformInvoice.findFirstOrThrow({ where: { schoolId, period: '2099-02' } });
+    // Agreed minimum Rs 5,000 x 10 months, less the Rs 1,000 credit.
+    expect(yearly).toMatchObject({ monthsCovered: 12, adjustmentAmount: -1_000, amount: 49_000 });
+    expect(await prisma.subscription.findUniqueOrThrow({ where: { schoolId } })).toMatchObject({ yearlyUntil: '2100-01' });
+
+    const listed = (await request(server).get(credits).set(support).expect(200)).body;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ amount: -1_000, invoice: { number: yearly.number } });
+    await request(server).delete(`${credits}/${listed[0].id}`).set(owner).expect(409);
+
+    // Same student count inside the paid year: no new bill.
+    await request(server).post('/api/platform/invoices/generate').set(owner).send({ period: '2099-03' }).expect(201);
+    expect(await prisma.platformInvoice.count({ where: { schoolId, period: '2099-03' } })).toBe(0);
+  });
 });

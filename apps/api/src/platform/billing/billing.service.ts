@@ -1,5 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
+  AdjustmentKind,
+  BillingCycle,
   PlatformInvoiceStatus,
   PlatformNoticeSeverity,
   PlatformPaymentStatus,
@@ -13,7 +15,8 @@ import { EmailService } from '../../notifications/email.service.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { pickDiscount } from '../discounts.js';
-import { monthlyAmount, nextInvoiceNumber } from '../plans.js';
+import { addMonths, prorate, settleAdjustments, topUpAmount, YEAR_LENGTH, yearlyAmount } from '../pricing.js';
+import { monthlyAmount, nextInvoiceNumber, type AgreedPrice } from '../plans.js';
 import { SubscriptionService } from '../subscription.service.js';
 import { allocate, withTax } from './ledger.js';
 import { reminderDue, type ReminderKind } from './reminders.js';
@@ -121,20 +124,40 @@ export class BillingService {
     const [y, m] = period.split('-').map(Number);
     const dueDate = new Date(Date.UTC(y, m - 1, DUE_DAY));
     const created = [];
+    const pending = await this.prisma.platformAdjustment.findMany({
+      where: { invoiceId: null, schoolId: { in: subs.map((s) => s.schoolId) } },
+      orderBy: { createdAt: 'asc' },
+    });
     for (const s of subs) {
       const count = students.get(s.schoolId) ?? 0;
-      const subtotal = monthlyAmount(s.plan, count, s);
+      // A paid-up year is topped up monthly for extra students; otherwise a yearly school pays a new year.
+      const inYear = !!s.yearlyUntil && period <= s.yearlyUntil;
+      const yearly = !inYear && s.billingCycle === BillingCycle.YEARLY;
+      const mine = pending.filter((a) => a.schoolId === s.schoolId);
+      const subtotal = inYear
+        ? topUpAmount(s.plan, count, s.yearlyStudents ?? 0, s)
+        : yearly
+          ? yearlyAmount(monthlyAmount(s.plan, count, s))
+          : monthlyAmount(s.plan, count, s);
+      if (inYear && !subtotal) continue;
       const used = new Set(usedRows.filter((u) => u.schoolId === s.schoolId).map((u) => u.discountId));
       const discount = pickDiscount(rules, s.schoolId, today, used, subtotal);
-      const charge = withTax(subtotal - (discount?.amount ?? 0), settings.salesTaxPercent);
+      const base = subtotal - (discount?.amount ?? 0);
+      const { applied, carried } = settleAdjustments(
+        mine.reduce((sum, a) => sum + a.amount, 0),
+        base,
+      );
+      const charge = withTax(base + applied, settings.salesTaxPercent);
       const invoice = await this.createInvoice({
         schoolId: s.schoolId,
         period,
-        planName: s.plan.name,
+        planName: inYear ? `${s.plan.name} (extra students)` : s.plan.name,
         students: count,
         dueDate,
         discountAmount: discount?.amount ?? 0,
         discountName: discount?.rule.name ?? null,
+        adjustmentAmount: applied,
+        monthsCovered: yearly ? YEAR_LENGTH : 1,
         ...charge,
       });
       if (!invoice) continue;
@@ -146,11 +169,64 @@ export class BillingService {
             if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== 'P2002') throw e;
           });
       }
+      if (mine.length) {
+        await this.prisma.platformAdjustment.updateMany({
+          where: { id: { in: mine.map((a) => a.id) }, invoiceId: null },
+          data: { invoiceId: invoice.id },
+        });
+        if (carried)
+          await this.prisma.platformAdjustment.create({
+            data: { schoolId: s.schoolId, kind: AdjustmentKind.CARRIED, amount: carried, reason: `Credit left over from bill ${invoice.number}` },
+          });
+      }
+      if (yearly)
+        await this.prisma.subscription.update({
+          where: { schoolId: s.schoolId },
+          data: { yearlyUntil: addMonths(period, YEAR_LENGTH - 1), yearlyStudents: count },
+        });
       created.push(invoice);
       await this.rebuild(s.schoolId);
       if (opts.notify !== false) await this.billIssued(invoice.id);
     }
     return { created: created.length, total: created.reduce((sum, i) => sum + i.amount, 0), invoices: created };
+  }
+
+  /**
+   * A school changed plan part-way through a month that is already billed: the
+   * difference for the days left waits as a charge or credit on its next bill.
+   * Nothing is added when this month is not billed yet (the bill will use the new
+   * plan), when it is on a paid year, or when the figures are the same.
+   */
+  async planChanged(
+    schoolId: string,
+    from: { plan: { pricePerStudent: number; minimumMonthly: number; name: string } } & AgreedPrice,
+    to: { plan: { pricePerStudent: number; minimumMonthly: number; name: string } } & AgreedPrice,
+    by: string,
+    now = new Date(),
+  ) {
+    const today = localDate(now);
+    const billed = await this.prisma.platformInvoice.findFirst({
+      where: { schoolId, period: today.slice(0, 7), status: { not: PlatformInvoiceStatus.VOID }, monthsCovered: 1 },
+    });
+    if (!billed) return null;
+    const count = await this.prisma.student.count({ where: { schoolId, status: StudentStatus.ACTIVE } });
+    const [y, m, d] = today.split('-').map(Number);
+    const amount = prorate(
+      monthlyAmount(from.plan, count, from),
+      monthlyAmount(to.plan, count, to),
+      d,
+      new Date(Date.UTC(y, m, 0)).getUTCDate(),
+    );
+    if (!amount) return null;
+    return this.prisma.platformAdjustment.create({
+      data: {
+        schoolId,
+        kind: AdjustmentKind.PLAN_CHANGE,
+        amount,
+        reason: `Plan changed from ${from.plan.name} to ${to.plan.name} on ${today}`,
+        createdBy: by,
+      },
+    });
   }
 
   /** Creates one bill with the next number; null if the school already has one for the month. */
@@ -185,6 +261,9 @@ export class BillingService {
       where: { id },
       data: { status: PlatformInvoiceStatus.VOID, voidReason: reason },
     });
+    // shortcut: plan-change and referral amounts on a voided bill are not re-applied, staff add them again.
+    if (invoice.monthsCovered > 1)
+      await this.prisma.subscription.updateMany({ where: { schoolId: invoice.schoolId }, data: { yearlyUntil: null, yearlyStudents: null } });
     await this.rebuild(invoice.schoolId);
     return this.prisma.platformInvoice.findUniqueOrThrow({ where: { id } });
   }
@@ -329,7 +408,7 @@ export class BillingService {
         kind: 'bill' as const,
         id: i.id,
         number: i.number,
-        description: `${monthName(i.period)} bill, ${i.students} students on ${i.planName}`,
+        description: `${i.monthsCovered > 1 ? `Yearly bill from ${monthName(i.period)}` : `${monthName(i.period)} bill`}, ${i.students} students on ${i.planName}`,
         charge: i.status === PlatformInvoiceStatus.VOID ? 0 : i.amount,
         credit: 0,
         balance: 0,
