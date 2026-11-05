@@ -176,6 +176,7 @@ export function ShortLeaves() {
   const [date, setDate] = useState(todayIso());
   const [open, setOpen] = useState(false);
   const list = useApi<ShortLeave[]>(`/front-office/short-leaves?date=${date}`);
+  const act = useRowAction(list.reload);
   const columns: Column<ShortLeave>[] = [
     { id: "student", header: "Student", cell: (l) => <span><span className="font-medium">{l.studentName}</span> <span className="text-fg-muted">{l.className}</span></span>, sortValue: (l) => l.studentName },
     { id: "reason", header: "Reason", cell: (l) => l.reason, hideBelow: "sm" },
