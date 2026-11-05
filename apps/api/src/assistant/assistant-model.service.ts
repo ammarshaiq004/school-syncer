@@ -5,6 +5,8 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { openSecrets, secretKeys } from '../fees/gateways/school-accounts.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 
@@ -18,35 +20,74 @@ const FALLBACK_MODELS = new Set([
 
 export type ModelRequest = Omit<MessageCreateParamsNonStreaming, 'model' | 'betas' | 'fallbacks'>;
 
+/** Where the API key comes from: the one saved in the console wins over the server's environment. */
+export type KeySource = 'console' | 'env' | null;
+
+const KEY_CACHE_MS = 30_000;
+
 /**
- * The Claude client. Configured by ANTHROPIC_API_KEY (and optionally
- * ASSISTANT_MODEL); without a key `enabled` is false and the assistant falls
+ * The Claude client. The key is the one saved in the console (sealed in
+ * PlatformAiKey) or else ANTHROPIC_API_KEY; ASSISTANT_MODEL optionally picks
+ * the model. Without a key `available()` is false and the assistant falls
  * back to what it can do without a model (at-risk lists, template drafts).
  */
 @Injectable()
 export class AssistantModel {
   private readonly log = new Logger(AssistantModel.name);
-  private readonly client: Anthropic | null;
+  private readonly envKey: string | null;
+  private cached: { key: string | null; source: KeySource; at: number } | null = null;
+  private client: { key: string; sdk: Anthropic } | null = null;
   readonly model: string;
 
-  constructor(config: ConfigService) {
-    const apiKey = config.get<string>('ANTHROPIC_API_KEY')?.trim();
+  constructor(
+    config: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {
+    this.envKey = config.get<string>('ANTHROPIC_API_KEY')?.trim() || null;
     this.model = config.get<string>('ASSISTANT_MODEL')?.trim() || DEFAULT_MODEL;
-    this.client = apiKey ? new Anthropic({ apiKey, maxRetries: 2, timeout: 90_000 }) : null;
   }
 
-  get enabled(): boolean {
-    return this.client !== null;
+  /** The key in use and where it came from (cached for a few seconds). */
+  async keySource(): Promise<{ key: string | null; source: KeySource }> {
+    if (this.cached && Date.now() - this.cached.at < KEY_CACHE_MS) return this.cached;
+    let key: string | null = null;
+    let source: KeySource = null;
+    const row = await this.prisma.platformAiKey.findUnique({ where: { id: 'default' } });
+    if (row) {
+      try {
+        key = openSecrets(row.sealed, secretKeys().all).key?.trim() || null;
+        if (key) source = 'console';
+      } catch (e) {
+        this.log.error(`The console AI key cannot be opened (${(e as Error).message}); using the server setting`);
+      }
+    }
+    if (!key && this.envKey) {
+      key = this.envKey;
+      source = 'env';
+    }
+    this.cached = { key, source, at: Date.now() };
+    return this.cached;
+  }
+
+  /** Forget the cached key, after the console saved or removed one. */
+  refresh() {
+    this.cached = null;
+  }
+
+  async available(): Promise<boolean> {
+    return (await this.keySource()).key !== null;
   }
 
   async create(params: ModelRequest): Promise<BetaMessage> {
-    if (!this.client)
+    const { key } = await this.keySource();
+    if (!key)
       throw new ServiceUnavailableException(
         'The AI assistant is not switched on for this server yet. Ask SchoolSyncer support to add an API key.',
       );
+    if (this.client?.key !== key) this.client = { key, sdk: new Anthropic({ apiKey: key, maxRetries: 2, timeout: 90_000 }) };
     const fallback = FALLBACK_MODELS.has(this.model);
     try {
-      return await this.client.beta.messages.create({
+      return await this.client.sdk.beta.messages.create({
         ...params,
         model: this.model,
         ...(fallback ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),

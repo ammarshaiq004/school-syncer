@@ -67,8 +67,13 @@ model School {
   admissionFeeHeadId   String?
   /// Monthly runs move an earlier voucher's unpaid balance onto the new voucher.
   carryForwardArrears  Boolean        @default(false)
+  /// Aon, the in-app assistant panel: the school's own switch, and the
+  /// monthly token budget SchoolSyncer staff set for it (null = server default).
+  aonEnabled           Boolean        @default(true)
+  aiMonthlyTokens      Int?
 
   students          Student[]
+  aonMemory         AonMemoryNote[]
   guardians         Guardian[]
   applications      Application[]
   feeHeads          FeeHead[]
@@ -1503,6 +1508,30 @@ enum PlatformRole {
 }
 
 // SchoolSyncer's own staff, who run the platform. Not tied to any school.
+/// The Anthropic API key set in the console (one row), sealed like school
+/// secrets. It wins over ANTHROPIC_API_KEY in the environment.
+model PlatformAiKey {
+  id        String   @id @default("default")
+  sealed    String
+  /// Last four characters, so staff can tell which key is set.
+  hint      String
+  setById   String?
+  updatedAt DateTime @updatedAt
+}
+
+/// What a school asked Aon to remember (short plain notes).
+model AonMemoryNote {
+  id          String   @id @default(cuid())
+  schoolId    String
+  note        String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+}
+
 model PlatformAdmin {
   id                 String       @id @default(cuid())
   name               String

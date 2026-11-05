@@ -31,7 +31,7 @@ the same value as another secret (including its own `_PREVIOUS`). All problems a
 | `WHATSAPP_TOKEN` | Platform WhatsApp Cloud API sender. | Messages can be sent from our number. Revoke in Meta Business settings. | Platform messages are marked "Not delivered". |
 | `SMS_GATEWAY_API_KEY` | Platform SMS gateway. | SMS sent (and billed) in our name. Rotate with the aggregator. | SMS fail. |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Uploaded files in S3-compatible storage. | Read and delete access to every uploaded file. Rotate in the provider's console. | Uploads and downloads fail. |
-| `ANTHROPIC_API_KEY` | The AI assistant. | Usage billed to us. Rotate in the Anthropic console. | Assistant questions are off; templates still work. |
+| `ANTHROPIC_API_KEY` | The AI assistant (Aon). A key saved in the console (AI and Aon) wins over this one; that saved key is encrypted with `PAYMENTS_SECRET_KEY` and `secrets:reencrypt` reseals it. | Usage billed to us. Rotate in the Anthropic console, then replace it in the console or here. | Assistant questions are off; templates still work. |
 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Error tracking (Sentry or GlitchTip). Not very secret: the web one is in the browser bundle, and a DSN only allows sending events. | Junk events can be sent to the project. Rotate the project key. | Errors go to the log only. |
 | `ALERT_WEBHOOK_URL` | Where alerts are posted (Slack-compatible). The URL is the credential. | Anyone can post to that channel. Regenerate the webhook. | Alerts go to staff phones and the log only. |
 | `PLATFORM_ADMIN_PASSWORD` | One-off: the first console owner's password for `platform:create-admin`. Must be changed at first sign-in. | Unset it after use. | Nothing. |
@@ -108,7 +108,7 @@ database user or password first, switch, then remove the old one.
 | `PAYMENTS_MODE`, `PAYMENTS_CHECKOUT_MINUTES`, `ONEBILL_VALID_DAYS`, `EASYPAISA_BASE_URL`, `JAZZCASH_CHECKOUT_URL`, `JAZZCASH_INQUIRY_URL` | API | Online payments (see [online-payments.md](online-payments.md)). |
 | `RECONCILE_AT` | API | Nightly reconciliation time, school-local (`02:00`), or `off`. |
 | `SCHOOL_TIMEZONE` | API | Time zone for school dates (`Asia/Karachi`). |
-| `ASSISTANT_MODEL`, `ASSISTANT_DAILY_LIMIT` | API | AI assistant model and per-user daily limit. |
+| `ASSISTANT_MODEL`, `ASSISTANT_DAILY_LIMIT`, `ASSISTANT_MONTHLY_TOKENS` | API | AI assistant model, per-user daily limit, and the default monthly token budget per school. |
 | `NEXT_PUBLIC_API_URL` | web | The API's public address, baked in at build time; the build fails without it. |
 | `EXPO_PUBLIC_API_URL` | mobile | The API's public address for the app. |
 | `RATE_LIMIT_NAMESPACE` | API | Tests only: prefixes rate-limit counters. |

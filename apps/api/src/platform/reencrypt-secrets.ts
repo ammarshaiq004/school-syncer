@@ -27,8 +27,9 @@ async function main() {
     line('School merchant accounts', report.paymentAccounts);
     line('School WhatsApp senders', report.messagingSenders);
     line('Messages waiting to be sent', report.queuedMessages);
+    line('Console AI key', report.aiKey);
     console.log(`Student photo links: ${report.studentPhotos.checked} checked, ${values.apply ? 're-signed' : 'would re-sign'} ${report.studentPhotos.resigned}`);
-    const failed = report.paymentAccounts.failed.length + report.messagingSenders.failed.length + report.queuedMessages.failed.length;
+    const failed = report.paymentAccounts.failed.length + report.messagingSenders.failed.length + report.queuedMessages.failed.length + report.aiKey.failed.length;
     if (failed) {
       console.log('\nSome values open with none of the keys: keep the key that sealed them in PAYMENTS_SECRET_KEY_PREVIOUS, or have the school enter them again.');
       process.exitCode = 2;

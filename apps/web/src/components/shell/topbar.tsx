@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Bug, ChevronDown, KeyRound, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
+import { Bell, Bug, Sparkles, ChevronDown, KeyRound, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
 import { Avatar } from "@/components/kit/avatar";
 import { IconButton } from "@/components/kit/button";
 import { DropdownItem, DropdownLabel, DropdownMenu, DropdownSeparator, Tooltip } from "@/components/kit/overlay";
@@ -28,6 +28,8 @@ export interface TopBarProps {
   onSignOut: () => void;
   /** Opens "Report a problem" (SCHOOL-150). */
   onReportProblem: () => void;
+  /** Opens Aon; omitted when the user does not get Aon. */
+  onOpenAon?: () => void;
   /** Where "Change password" goes; omitted to hide it (support sessions). */
   changePasswordHref?: string;
   showBell: boolean;
@@ -35,7 +37,7 @@ export interface TopBarProps {
   searchLabel?: string;
 }
 
-export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, onReportProblem, changePasswordHref, showBell, searchLabel = "Search pages" }: TopBarProps) {
+export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu, onOpenPalette, onSignOut, onReportProblem, onOpenAon, changePasswordHref, showBell, searchLabel = "Search pages" }: TopBarProps) {
   const current = viewDef(view);
   const [theme, setTheme] = useTheme();
   const CurrentIcon = current.icon;
@@ -96,6 +98,14 @@ export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu,
         </DropdownMenu>
 
         <ThemeToggle className="hidden sm:inline-flex" />
+
+        {onOpenAon && (
+          <Tooltip content="Ask Aon (Ctrl+/)" side="bottom">
+            <IconButton aria-label="Ask Aon" aria-keyshortcuts="Control+/ Meta+/" onClick={onOpenAon}>
+              <Sparkles />
+            </IconButton>
+          </Tooltip>
+        )}
 
         <Tooltip content="Report a problem" side="bottom">
           <IconButton aria-label="Report a problem" onClick={onReportProblem}>

@@ -24,7 +24,18 @@ const SUGGESTIONS = [
 const FEE_SUGGESTION = "How much fee is still outstanding this month?";
 
 /** Plain-language questions about school data (SCHOOL-105). */
-export function AskPanel({ status, onUsed, canFees }: { status: AssistantStatus; onUsed: () => void; canFees: boolean }) {
+export function AskPanel({
+  status,
+  onUsed,
+  canFees,
+  compact,
+}: {
+  status: AssistantStatus;
+  onUsed: () => void;
+  canFees: boolean;
+  /** Inside the Aon side panel: fills the panel instead of sitting in a card. */
+  compact?: boolean;
+}) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
@@ -34,7 +45,8 @@ export function AskPanel({ status, onUsed, canFees }: { status: AssistantStatus;
     end.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [turns, busy]);
 
-  const atLimit = status.usedToday >= status.dailyLimit;
+  const monthDone = status.aon.monthUsed >= status.aon.monthLimit;
+  const atLimit = status.usedToday >= status.dailyLimit || monthDone;
 
   async function ask(text: string) {
     const q = text.trim();
@@ -66,6 +78,18 @@ export function AskPanel({ status, onUsed, canFees }: { status: AssistantStatus;
     }
   }
 
+  if (!status.aon.enabled) {
+    return (
+      <Card>
+        <EmptyState
+          icon={<Sparkles />}
+          title="Aon is switched off for your school"
+          description={status.aon.canManage ? "You can switch it on again in Settings, under Aon." : "The school owner can switch it on in Settings."}
+        />
+      </Card>
+    );
+  }
+
   if (!status.ai) {
     return (
       <Card>
@@ -81,7 +105,7 @@ export function AskPanel({ status, onUsed, canFees }: { status: AssistantStatus;
   const suggestions = canFees ? [...SUGGESTIONS, FEE_SUGGESTION] : SUGGESTIONS;
 
   return (
-    <Card padding="none" className="flex min-h-[28rem] flex-col">
+    <Card padding="none" className={compact ? "flex h-full min-h-0 flex-col border-0 shadow-none" : "flex min-h-[28rem] flex-col"}>
       <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5" aria-live="polite">
         {!turns.length && (
           <div className="flex flex-col gap-3">
@@ -135,7 +159,7 @@ export function AskPanel({ status, onUsed, canFees }: { status: AssistantStatus;
           maxLength={2000}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={atLimit ? "Daily limit reached. It resets at midnight." : "Ask a question… (Enter to send, Shift+Enter for a new line)"}
+          placeholder={monthDone ? "Your school's AI allowance for this month is used up." : atLimit ? "Daily limit reached. It resets at midnight." : "Ask a question… (Enter to send, Shift+Enter for a new line)"}
           disabled={atLimit}
           className="flex-1 resize-none"
           dir="auto"
