@@ -748,10 +748,27 @@ model Invoice {
   payments     Payment[]
   libraryFines BookLoan[]
   checkouts    OnlinePayment[]
+  installments Installment[]
 
   @@unique([studentId, monthlyPeriod])
   @@index([schoolId, period, status])
   @@index([schoolId, status, dueDate])
+}
+
+/// One instalment of a voucher's payment plan. Payments are taken against the voucher
+/// as usual; they fill the instalments in order, so nothing is stored per instalment.
+model Installment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  seq       Int
+  dueDate   DateTime @db.Date
+  amount    Int
+  createdAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, seq])
+  @@index([dueDate])
 }
 
 enum VoucherRunStatus {
