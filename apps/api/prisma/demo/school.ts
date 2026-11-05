@@ -630,6 +630,14 @@ export async function seedSchool(
     });
   });
 
+  // A few deliberate gaps in the second school so Data health has findings to show; the demo school stays clean.
+  if (!plan.demoFamily && !online && students.length > 4) {
+    await prisma.student.update({ where: { id: students[0].id }, data: { dateOfBirth: null } });
+    await prisma.student.update({ where: { id: students[1].id }, data: { bFormNo: '123' } });
+    await prisma.studentGuardian.deleteMany({ where: { studentId: students[2].id } });
+    await prisma.section.update({ where: { id: pending[3].section.id }, data: { classTeacherId: null } });
+  }
+
   // Parent logins for a handful of families, the demo family first.
   const loginFamilies = families.slice(0, plan.demoFamily ? 1 : 0).concat(rng.shuffle(families.slice(1)).slice(0, 5));
   for (const f of loginFamilies) {
