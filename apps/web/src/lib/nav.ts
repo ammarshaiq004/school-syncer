@@ -8,6 +8,7 @@ import {
   CalendarClock,
   ChartColumn,
   ClipboardCheck,
+  ConciergeBell,
   Contact,
   CreditCard,
   FileCheck,
@@ -173,6 +174,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/transport", label: "Transport", icon: Bus, module: "transport", roles: STAFF, feature: "transport", modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "routes vans buses" },
       { href: "/library", label: "Library", icon: Library, module: "library", roles: STAFF, feature: "library", modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "books loans" },
+      { href: "/front-office", label: "Front office", icon: ConciergeBell, module: "front_office", roles: STAFF, modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "visitors post short leave complaints phone book birthdays slips reception" },
     ],
   },
   {

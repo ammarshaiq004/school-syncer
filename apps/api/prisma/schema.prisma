@@ -46,6 +46,12 @@ model School {
   updatedAt DateTime   @updatedAt
 
   campuses             Campus[]
+  visitors             Visitor[]
+  postalRecords        PostalRecord[]
+  shortLeaves          ShortLeave[]
+  complaints           Complaint[]
+  contactEntries       ContactEntry[]
+  localities           Locality[]
   academicYears        AcademicYear[]
   classes              Class[]
   subjects             Subject[]
@@ -97,19 +103,19 @@ model School {
   platformInvoices  PlatformInvoice[]
   platformPayments  PlatformPayment[]
   paymentClaims     PaymentClaim[]
-  discountUses       PlatformDiscountUse[]
-  adjustments        PlatformAdjustment[]
-  usageSnapshots     SchoolUsageSnapshot[]
-  supportSessions     SupportSession[]
-  contactNotes        SchoolContact[]
+  discountUses      PlatformDiscountUse[]
+  adjustments       PlatformAdjustment[]
+  usageSnapshots    SchoolUsageSnapshot[]
+  supportSessions   SupportSession[]
+  contactNotes      SchoolContact[]
   platformNotices   PlatformNotice[]
   vehicles          Vehicle[]
   transportRoutes   TransportRoute[]
   books             Book[]
   certificates      Certificate[]
-  libraryLoanDays   Int               @default(14)
-  libraryFinePerDay Int               @default(5)
-  libraryMaxLoans   Int               @default(2)
+  libraryLoanDays   Int                   @default(14)
+  libraryFinePerDay Int                   @default(5)
+  libraryMaxLoans   Int                   @default(2)
 
   customRoles     CustomRole[]
   rolePermissions BuiltinRolePermission[]
@@ -466,6 +472,8 @@ model Student {
   /// The uploaded photo behind photoUrl; replacing or removing it deletes the old file.
   photoFileId  String?       @unique
   address      String?
+  /// The area the family lives in (Setup > Localities), for mailing lists and transport planning.
+  localityId   String?
   medicalNotes String?
   status       StudentStatus @default(ACTIVE)
   admittedOn   DateTime      @default(now()) @db.Date
@@ -476,6 +484,7 @@ model Student {
 
   school      School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   campus      Campus             @relation(fields: [campusId], references: [id], onDelete: Restrict)
+  locality    Locality?          @relation(fields: [localityId], references: [id], onDelete: SetNull)
   user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
   photoFile   StoredFile?        @relation("StudentPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   guardians   StudentGuardian[]
@@ -491,6 +500,8 @@ model Student {
   bookLoans    BookLoan[]
   certificates Certificate[]
   promotions   Promotion[]
+  shortLeaves  ShortLeave[]
+  complaints   Complaint[]
 
   lessonProgress LessonProgress[]
   liveAttendance LiveAttendance[]
@@ -1413,30 +1424,30 @@ enum SubscriptionStatus {
 }
 
 model Subscription {
-  id              String             @id @default(cuid())
-  schoolId        String             @unique
-  planId          String
-  status          SubscriptionStatus @default(TRIAL)
-  trialEndsAt     DateTime?
-  notes           String? // SchoolSyncer staff notes, never shown to the school
+  id                    String             @id @default(cuid())
+  schoolId              String             @unique
+  planId                String
+  status                SubscriptionStatus @default(TRIAL)
+  trialEndsAt           DateTime?
+  notes                 String? // SchoolSyncer staff notes, never shown to the school
   // Per-school feature overrides (keys from src/platform/plans.ts FEATURES).
   // Effective features = plan.features + featuresAdded - featuresRemoved.
-  featuresAdded   String[]           @default([])
-  featuresRemoved String[]           @default([])
+  featuresAdded         String[]           @default([])
+  featuresRemoved       String[]           @default([])
   // First month ("YYYY-MM") the nightly bill run charges; null = any month.
   // A school that leaves its trial starts paying from the next month.
-  billedFrom      String?
+  billedFrom            String?
   // An agreed price for this school that replaces the plan's rate (SCHOOL-154); null = the plan's.
   agreedPricePerStudent Int?
   agreedMinimumMonthly  Int?
   agreedNote            String?
   // YEARLY pays 10 months for a year up front (SCHOOL-154). The year runs to yearlyUntil
   // ("YYYY-MM", last month covered) for yearlyStudents students; extra students are billed monthly.
-  billingCycle   BillingCycle @default(MONTHLY)
-  yearlyUntil    String?
-  yearlyStudents Int?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  billingCycle          BillingCycle       @default(MONTHLY)
+  yearlyUntil           String?
+  yearlyStudents        Int?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   plan   Plan   @relation(fields: [planId], references: [id], onDelete: Restrict)
@@ -1456,34 +1467,34 @@ enum PlatformInvoiceStatus {
 // What SchoolSyncer bills a school for a month. A bill stays UNPAID until
 // payments cover it in full; amountPaid shows how much has been applied.
 model PlatformInvoice {
-  id         String                @id @default(cuid())
-  number     String                @unique // "SS-202610-0007"
-  schoolId   String
-  period     String // "YYYY-MM"
-  planName   String
-  students   Int
+  id               String                @id @default(cuid())
+  number           String                @unique // "SS-202610-0007"
+  schoolId         String
+  period           String // "YYYY-MM"
+  planName         String
+  students         Int
   // Total due, tax included.
-  amount     Int
+  amount           Int
   // Sales tax inside `amount`, at taxPercent; 0 while tax is switched off.
-  taxPercent Int                   @default(0)
-  taxAmount  Int                   @default(0)
+  taxPercent       Int                   @default(0)
+  taxAmount        Int                   @default(0)
   // Discount taken off before tax (already inside `amount`), and what it was called.
-  discountAmount Int               @default(0)
-  discountName   String?
+  discountAmount   Int                   @default(0)
+  discountName     String?
   // Plan-change charges and credits folded into this bill (negative = credit), inside `amount`.
-  adjustmentAmount Int             @default(0)
+  adjustmentAmount Int                   @default(0)
   // 12 for a yearly bill, 1 otherwise.
-  monthsCovered    Int             @default(1)
+  monthsCovered    Int                   @default(1)
   // Paid so far, from PlatformPaymentAllocation; rebuilt after every payment change.
-  amountPaid Int                   @default(0)
-  status     PlatformInvoiceStatus @default(UNPAID)
-  dueDate    DateTime              @db.Date
+  amountPaid       Int                   @default(0)
+  status           PlatformInvoiceStatus @default(UNPAID)
+  dueDate          DateTime              @db.Date
   // When the last of it was paid, and how (from the payment that settled it).
-  paidAt     DateTime?
-  method     String?
-  reference  String?
-  voidReason String?
-  createdAt  DateTime              @default(now())
+  paidAt           DateTime?
+  method           String?
+  reference        String?
+  voidReason       String?
+  createdAt        DateTime              @default(now())
 
   school      School                      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   allocations PlatformPaymentAllocation[]
@@ -1532,22 +1543,22 @@ enum PaymentClaimStatus {
 /// A school saying "we paid", with proof, waiting for the console to check it
 /// against the bank. Approving it records a PlatformPayment (and its receipt).
 model PaymentClaim {
-  id           String             @id @default(cuid())
-  schoolId     String
-  amount       Int
-  method       String
-  reference    String?
-  paidOn       DateTime           @db.Date
-  note         String?
-  proofId      String?            @unique
-  status       PaymentClaimStatus @default(PENDING)
-  rejectReason String?
-  reviewedBy   String? // PlatformAdmin name
-  reviewedAt   DateTime?
-  paymentId    String?            @unique
-  createdById  String?
+  id            String             @id @default(cuid())
+  schoolId      String
+  amount        Int
+  method        String
+  reference     String?
+  paidOn        DateTime           @db.Date
+  note          String?
+  proofId       String?            @unique
+  status        PaymentClaimStatus @default(PENDING)
+  rejectReason  String?
+  reviewedBy    String? // PlatformAdmin name
+  reviewedAt    DateTime?
+  paymentId     String?            @unique
+  createdById   String?
   createdByName String
-  createdAt    DateTime           @default(now())
+  createdAt     DateTime           @default(now())
 
   school  School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   proof   StoredFile?      @relation("PaymentClaimProof", fields: [proofId], references: [id], onDelete: SetNull)
@@ -2958,17 +2969,148 @@ enum AdjustmentKind {
 // A charge (positive) or credit (negative) in rupees that waits for the school's next bill,
 // which takes it in and records the bill on invoiceId.
 model PlatformAdjustment {
-  id        String          @id @default(cuid())
+  id        String         @id @default(cuid())
   schoolId  String
   kind      AdjustmentKind
   amount    Int
   reason    String
   createdBy String?
   invoiceId String?
-  createdAt DateTime        @default(now())
+  createdAt DateTime       @default(now())
 
   school  School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   invoice PlatformInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, invoiceId])
+}
+
+// ----- Front office: visitor book, post register, short leave, complaints, phone book, localities -----
+// campusId on these is a plain column (no relation): it only scopes who sees a row.
+
+/// One visit at the gate or reception desk.
+model Visitor {
+  id           String    @id @default(cuid())
+  schoolId     String
+  campusId     String?
+  name         String
+  phone        String?
+  cnic         String?
+  purpose      String
+  meetingWith  String? // who they came to see
+  headcount    Int       @default(1)
+  cardNo       String? // visitor pass handed out
+  note         String?
+  checkedInAt  DateTime  @default(now())
+  checkedOutAt DateTime?
+  createdById  String?
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, checkedInAt])
+}
+
+enum PostalDirection {
+  RECEIVED
+  SENT
+}
+
+/// Letters, parcels and couriers in or out of the school.
+model PostalRecord {
+  id          String          @id @default(cuid())
+  schoolId    String
+  campusId    String?
+  direction   PostalDirection
+  date        DateTime        @db.Date
+  party       String // sender when received, addressee when sent
+  subject     String
+  referenceNo String? // courier tracking or diary number
+  mode        String? // "TCS", "By hand", "Registered post"
+  note        String?
+  createdById String?
+  createdAt   DateTime        @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, date])
+}
+
+/// A student leaving school early in the day.
+model ShortLeave {
+  id           String    @id @default(cuid())
+  schoolId     String
+  campusId     String
+  studentId    String
+  date         DateTime  @db.Date
+  leftAt       DateTime  @default(now())
+  reason       String
+  pickedUpBy   String // who collected the child
+  relation     String?
+  returnedAt   DateTime? // set if the student came back the same day
+  approvedById String?
+  createdAt    DateTime  @default(now())
+
+  school  School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, date])
+  @@index([studentId])
+}
+
+enum ComplaintStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+/// A complaint or suggestion from a parent, student or visitor.
+model Complaint {
+  id          String          @id @default(cuid())
+  schoolId    String
+  campusId    String?
+  complainant String
+  phone       String?
+  studentId   String? // the child it concerns, if any
+  category    String // "Academics", "Fees", "Transport", "Staff conduct"...
+  description String
+  status      ComplaintStatus @default(OPEN)
+  resolution  String?
+  resolvedAt  DateTime?
+  createdById String?
+  createdAt   DateTime        @default(now())
+
+  school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, status])
+}
+
+/// The school's phone book: vendors, board offices, doctors, anyone the office calls.
+model ContactEntry {
+  id           String   @id @default(cuid())
+  schoolId     String
+  name         String
+  organisation String?
+  category     String? // "Vendor", "Board office", "Medical"
+  phone        String
+  email        String?
+  address      String?
+  note         String?
+  createdAt    DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, name])
+}
+
+/// An area or neighbourhood students live in.
+model Locality {
+  id       String  @id @default(cuid())
+  schoolId String
+  name     String
+  note     String?
+
+  school   School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  students Student[]
+
+  @@unique([schoolId, name])
 }

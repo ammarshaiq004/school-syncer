@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   ConflictException,
   Controller,
@@ -59,6 +60,7 @@ const createStudentSchema = z.object({
   dateOfBirth: z.coerce.date().optional(),
   bFormNo: bFormField.optional(),
   address: z.string().trim().max(250).optional(),
+  localityId: z.string().min(1).nullable().optional(),
   medicalNotes: z.string().trim().max(500).optional(),
   guardians: z.array(guardianInputSchema).min(1).max(4),
   /** Save despite a guardian name clash or likely duplicate (the 409 NEEDS_CONFIRMATION answer lists them). */
@@ -169,6 +171,13 @@ export class StudentsController {
         office.includes(s.campusId) ||
         s.enrollments.some((e) => e.status === 'ACTIVE' && own.has(e.sectionId)),
     };
+  }
+
+  /** A locality must be one of this school's own. */
+  private async assertLocality(schoolId: string, localityId?: string | null) {
+    if (!localityId) return;
+    const found = await this.prisma.locality.findFirst({ where: { id: localityId, schoolId }, select: { id: true } });
+    if (!found) throw new BadRequestException('No such locality');
   }
 
   /** Which fee/exam/attendance data this viewer may see in the directory and drawer. */
@@ -321,6 +330,7 @@ export class StudentsController {
     @Body(new ZodValidationPipe(createStudentSchema)) body: CreateStudentInput,
   ) {
     await this.subscriptions.assertStudentRoom(user.schoolId, 1);
+    await this.assertLocality(user.schoolId, body.localityId);
     const student = await this.prisma.$transaction(async (tx) => {
       const created = await createStudentRecord(tx, { ...body, schoolId: user.schoolId, campuses: adminScope(user) });
       // The school's admission fee, if it bills one, on its own voucher.
@@ -431,6 +441,7 @@ export class StudentsController {
     if (scope && !scope.includes(before.campusId)) {
       throw new ForbiddenException('Student is at another campus');
     }
+    await this.assertLocality(user.schoolId, body.localityId);
     // Bringing a student back counts against the plan like admitting one.
     if (body.status === StudentStatus.ACTIVE && before.status !== StudentStatus.ACTIVE) {
       await this.subscriptions.assertStudentRoom(user.schoolId, 1);
