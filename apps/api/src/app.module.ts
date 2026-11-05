@@ -1,3 +1,5 @@
+import { LibraryExtrasController } from './library/library-extras.controller.js';
+import { ParentLoginsController } from './parent/parent-logins.controller.js';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
@@ -142,6 +144,7 @@ import { UsersController } from './users/users.controller.js';
     StudentsController,
     StudentChangesController,
     StudentPhotoController,
+    ParentLoginsController,
     StudentPhotoContentController,
     AdmissionsController,
     AttendanceController,
@@ -152,6 +155,7 @@ import { UsersController } from './users/users.controller.js';
     TimetableController,
     TransportController,
     LibraryController,
+    LibraryExtrasController,
     CertificatesController,
     VerifyController,
     PromotionsController,

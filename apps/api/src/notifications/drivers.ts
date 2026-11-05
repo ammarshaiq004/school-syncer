@@ -102,7 +102,26 @@ export class WhatsAppDriver implements MessageDriver {
       return {};
     }
   }
+
+  /** A plain reply inside the 24-hour window after the parent wrote (the inbox). */
+  async sendText(to: string, text: string): Promise<DriverResult> {
+    const res = await post(`https://graph.facebook.com/v21.0/${encodeURIComponent(this.config.phoneNumberId)}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.config.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } }),
+    });
+    const body = await res.text();
+    if (!res.ok) throw new DeliveryError(`WhatsApp API ${res.status}: ${body.slice(0, 400)}`, permanentStatus(res.status));
+    try {
+      return { providerMessageId: (JSON.parse(body) as { messages?: { id?: string }[] }).messages?.[0]?.id };
+    } catch {
+      return {};
+    }
+  }
 }
+
+/** Free-text WhatsApp is allowed only this long after the parent's last message. */
+export const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface SmsGatewayConfig {
   url: string;
