@@ -4,6 +4,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { AdmissionsController } from './admissions/admissions.controller.js';
 import { AnnouncementsController } from './announcements/announcements.controller.js';
+import { AttendanceQrController } from './attendance/attendance-qr.controller.js';
 import { AttendanceController } from './attendance/attendance.controller.js';
 import { DashboardController } from './dashboard/dashboard.controller.js';
 import { ExamsController } from './exams/exams.controller.js';
@@ -145,6 +146,7 @@ import { UsersController } from './users/users.controller.js';
     StudentPhotoContentController,
     AdmissionsController,
     AttendanceController,
+    AttendanceQrController,
     FeesController,
     FeeHeadsController,
     FeeCorrectionsController,

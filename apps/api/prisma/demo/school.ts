@@ -127,6 +127,17 @@ export interface SeedSummary {
 const DAY = 86_400_000;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const day = (s: string) => new Date(`${s}T00:00:00.000Z`);
+
+/**
+ * When a QR scan marked someone, for the demo: on-time arrivals land before the
+ * 08:30 cut-off (03:30 UTC in Karachi), late ones after it. Derived from a
+ * counter, not the random stream, so the rest of the seed data does not move.
+ */
+const scannedAt = (date: string, status: AttendanceStatus, n: number) => {
+  if (status !== AttendanceStatus.PRESENT && status !== AttendanceStatus.LATE) return null;
+  const minutes = status === AttendanceStatus.PRESENT ? 160 + ((n * 7) % 45) : 215 + ((n * 7) % 40);
+  return new Date(day(date).getTime() + minutes * 60_000);
+};
 const addDays = (s: string, n: number) => iso(new Date(day(s).getTime() + n * DAY));
 const weekday = (s: string) => day(s).getUTCDay();
 const monthOf = (s: string) => s.slice(0, 7);
@@ -878,6 +889,7 @@ export async function seedSchool(
         studentId: k.id,
         status,
         note: status === AttendanceStatus.LEAVE ? rng.pick(['Sick', 'Family wedding', 'Doctor’s appointment']) : null,
+        scannedAt: scannedAt(date, status, records.length),
       });
       if (status === AttendanceStatus.ABSENT) absences.push({ kid: k, date });
     }
@@ -1094,7 +1106,7 @@ export async function seedSchool(
       const leave = onLeave.get(`${s.id}|${d}`);
       const r = rng.next();
       const status = leave ? AttendanceStatus.LEAVE : r < 0.02 ? AttendanceStatus.ABSENT : r < 0.07 ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
-      staffAttendance.push({ schoolId, userId: s.id, date: day(d), status, markedById: admin?.id ?? null });
+      staffAttendance.push({ schoolId, userId: s.id, date: day(d), status, markedById: admin?.id ?? null, scannedAt: scannedAt(d, status, staffAttendance.length) });
       if (status === AttendanceStatus.ABSENT || leave === LeaveType.UNPAID) {
         unpaid.set(`${s.id}|${monthOf(d)}`, (unpaid.get(`${s.id}|${monthOf(d)}`) ?? 0) + 1);
       }

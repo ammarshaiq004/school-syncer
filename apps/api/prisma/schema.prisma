@@ -71,6 +71,8 @@ model School {
   /// monthly token budget SchoolSyncer staff set for it (null = server default).
   aonEnabled           Boolean        @default(true)
   aiMonthlyTokens      Int?
+  /// QR scans after this local time (HH:MM) count as late.
+  attendanceLateAfter  String         @default("08:30")
 
   students          Student[]
   aonMemory         AonMemoryNote[]
@@ -626,6 +628,8 @@ model AttendanceRecord {
   studentId String
   status    AttendanceStatus
   note      String?
+  /// When a QR scan marked the student, so lateness can be judged and shown.
+  scannedAt DateTime?
 
   session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   student Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -1133,6 +1137,8 @@ model StaffAttendance {
   status     AttendanceStatus
   note       String?
   markedById String?
+  /// When a QR scan marked the staff member.
+  scannedAt  DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

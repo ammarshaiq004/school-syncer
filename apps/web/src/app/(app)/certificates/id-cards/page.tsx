@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, type CSSProperties, type ReactNode } from "react";
 import { IdCard, Printer } from "lucide-react";
+import { QrCode } from "@/components/qr-code";
 import { Alert, Button, buttonClass, Card, EmptyState, ErrorState, PageHeader, Skeleton } from "@/components/ui";
 import { day } from "@/lib/format";
 import { formatCnic } from "@/lib/identity";
@@ -220,6 +221,7 @@ function StudentIdCard({ school, card }: { school: Letterhead; card: StudentCard
         <Row label="Parent">{card.guardianName}</Row>
         <Row label="Phone">{card.guardianPhone}</Row>
       </div>
+      <QrCode value={`SS:S:${card.admissionNo}`} size={56} className="mt-1 self-start" />
     </CardFrame>
   );
 }
@@ -238,6 +240,7 @@ function StaffIdCard({ school, card }: { school: Letterhead; card: StaffCard }) 
         <Row label="Phone">{card.phone}</Row>
         <Row label="CNIC">{card.cnic ? formatCnic(card.cnic) : null}</Row>
       </div>
+      <QrCode value={`SS:E:${card.employeeNo}`} size={56} className="mt-1 self-start" />
     </CardFrame>
   );
 }

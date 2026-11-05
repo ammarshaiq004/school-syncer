@@ -23,6 +23,8 @@ const updateSchoolSchema = z.object({
   lateFeePerDay: z.number().int().min(0).max(100_000).optional(),
   // Day of the month monthly invoices fall due; capped to the month's last day.
   feeDueDay: z.number().int().min(1).max(31).optional(),
+  // QR attendance: scans after this local time (HH:MM) count as late.
+  attendanceLateAfter: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM').optional(),
   // School mode tab: drives which modules the app shows (e-school vs campus-only).
   mode: z.enum(SchoolMode).optional(),
 });
