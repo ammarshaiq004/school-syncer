@@ -9,8 +9,13 @@ import {
   CalendarOff,
   Check,
   CheckCheck,
+  Award,
+  Clock,
   FileText,
   Lock,
+  Scale,
+  Upload,
+  UserSearch,
   Pencil,
   Plus,
   ReceiptText,
@@ -56,8 +61,12 @@ import { cn } from "@/lib/cn";
 import { day, rupees, thisMonth, todayIso } from "@/lib/format";
 import { FEES, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
+import { CvBankTab } from "./cv-bank-tab";
+import { ExperienceCertificateDialog } from "./experience-certificate-dialog";
+import { PayrollRulesTab } from "./rules-tab";
+import { ShortLeaveTab } from "./short-leave-tab";
 
-type Tab = "staff" | "attendance" | "leave" | "payroll" | "payslips";
+type Tab = "staff" | "attendance" | "leave" | "shortleave" | "payroll" | "rules" | "cv" | "payslips";
 
 export default function HrPage() {
   const user = useSession();
@@ -72,7 +81,10 @@ export default function HrPage() {
     ...(isPayroll ? [{ value: "staff", label: "Staff", icon: <Users />, count: staff.data?.length }] : []),
     ...(isAdmin ? [{ value: "attendance", label: "Staff attendance", icon: <CalendarCheck /> }] : []),
     { value: "leave", label: "Leave", icon: <CalendarOff />, count: isAdmin && pendingLeave ? pendingLeave : undefined },
+    { value: "shortleave", label: "Short leave", icon: <Clock /> },
     ...(isPayroll ? [{ value: "payroll", label: "Payroll", icon: <Wallet /> }] : []),
+    ...(isAdmin ? [{ value: "rules", label: "Pay rules", icon: <Scale /> }] : []),
+    ...(isAdmin ? [{ value: "cv", label: "CV bank", icon: <UserSearch /> }] : []),
     { value: "payslips", label: "My payslips", icon: <ReceiptText /> },
   ];
   const [tab, setTab] = useState<Tab>(tabs[0].value as Tab);
@@ -125,9 +137,22 @@ export default function HrPage() {
         <TabPanel value="leave">
           <LeaveTab isAdmin={isAdmin} leave={leave} />
         </TabPanel>
+        <TabPanel value="shortleave">
+          <ShortLeaveTab isAdmin={isAdmin} />
+        </TabPanel>
         {isPayroll && (
           <TabPanel value="payroll">
             <PayrollTab runs={runs} />
+          </TabPanel>
+        )}
+        {isAdmin && (
+          <TabPanel value="rules">
+            <PayrollRulesTab editable />
+          </TabPanel>
+        )}
+        {isAdmin && (
+          <TabPanel value="cv">
+            <CvBankTab />
           </TabPanel>
         )}
         <TabPanel value="payslips">
@@ -171,6 +196,7 @@ const roleText = (s: StaffMember) => [...new Set(s.roles.map((r) => r.role.toLow
 
 function StaffTab({ editable, staff }: { editable: boolean; staff: Loaded<StaffMember[]> }) {
   const [editing, setEditing] = useState<StaffMember | null>(null);
+  const [certifying, setCertifying] = useState<StaffMember | null>(null);
   const [open, setOpen] = useState(false);
   const toast = useToast();
 
@@ -211,9 +237,15 @@ function StaffTab({ editable, staff }: { editable: boolean; staff: Loaded<StaffM
           {
             id: "actions",
             header: <span className="sr-only">Actions</span>,
-            width: "120px",
+            width: "220px",
             align: "right" as const,
             cell: (s: StaffMember) => (
+              <span className="inline-flex gap-1">
+              {s.staffProfile && (
+                <Button type="button" size="sm" variant="ghost" icon={<Award />} aria-label={`Experience certificate for ${s.name}`} onClick={() => setCertifying(s)}>
+                  Certificate
+                </Button>
+              )}
               <Button
                 type="button"
                 size="sm"
@@ -227,6 +259,7 @@ function StaffTab({ editable, staff }: { editable: boolean; staff: Loaded<StaffM
               >
                 {s.staffProfile ? "Edit" : "Add details"}
               </Button>
+              </span>
             ),
           },
         ]
@@ -256,7 +289,23 @@ function StaffTab({ editable, staff }: { editable: boolean; staff: Loaded<StaffM
         }
         getRowLabel={(s) => `Edit ${s.name}`}
       />
-      <p className="text-xs text-fg-muted">Staff logins are added under Users and roles; salary details are kept here.</p>
+      <p className="text-xs text-fg-muted">
+        Staff logins are added under Users and roles; salary details are kept here.
+        {editable && (
+          <>
+            {" "}
+            <Link href="/hr/import" className="inline-flex items-center gap-1 font-medium text-brand hover:underline">
+              <Upload className="size-3.5" aria-hidden /> Import many staff from Excel
+            </Link>
+          </>
+        )}
+      </p>
+      {certifying && (
+        <ExperienceCertificateDialog
+          member={{ id: certifying.id, name: certifying.name, left: certifying.staffProfile?.status === "LEFT", joinedOn: certifying.staffProfile?.joinedOn ?? null }}
+          onClose={() => setCertifying(null)}
+        />
+      )}
       {editing && (
         <ProfileForm
           key={editing.id}
@@ -384,7 +433,7 @@ function ProfileForm({ member, open, onOpenChange, onSaved }: { member: StaffMem
 // ---- Staff attendance ------------------------------------------------------
 
 type Status = "PRESENT" | "ABSENT" | "LATE" | "LEAVE";
-interface Register { taken: boolean; staff: { id: string; name: string; designation: string | null; status: Status | null }[] }
+interface Register { taken: boolean; staff: { id: string; name: string; designation: string | null; status: Status | null; checkIn: string | null }[] }
 const BUTTONS: { status: Status; short: string; label: string; on: string }[] = [
   { status: "PRESENT", short: "P", label: "Present", on: "bg-success text-white" },
   { status: "ABSENT", short: "A", label: "Absent", on: "bg-danger text-white" },
@@ -397,6 +446,7 @@ function AttendanceTab() {
   const [date, setDate] = useState(todayIso());
   const [register, setRegister] = useState<Register | null>(null);
   const [marks, setMarks] = useState<Record<string, Status>>({});
+  const [times, setTimes] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -409,6 +459,7 @@ function AttendanceTab() {
         if (cancelled) return;
         setRegister(r);
         setMarks(Object.fromEntries(r.staff.map((s) => [s.id, s.status ?? "PRESENT"])));
+        setTimes(Object.fromEntries(r.staff.flatMap((s) => (s.checkIn ? [[s.id, s.checkIn]] : []))));
         setLoadError("");
       })
       .catch((e: Error) => !cancelled && setLoadError(e.message));
@@ -422,7 +473,7 @@ function AttendanceTab() {
     try {
       const res = await api<{ saved: number }>("/hr/attendance", {
         method: "PUT",
-        body: { date, records: Object.entries(marks).map(([userId, status]) => ({ userId, status })) },
+        body: { date, records: Object.entries(marks).map(([userId, status]) => ({ userId, status, checkIn: status === "PRESENT" || status === "LATE" ? times[userId] || null : null })) },
       });
       toast.success("Register saved", `Saved the register for ${res.saved} staff.`);
       setRegister((r) => (r ? { ...r, taken: true } : r));
@@ -501,6 +552,17 @@ function AttendanceTab() {
                   {s.designation && <div className="truncate text-xs text-fg-muted">{s.designation}</div>}
                 </div>
               </div>
+              <div className="flex shrink-0 items-center gap-2">
+              {(marks[s.id] === "PRESENT" || marks[s.id] === "LATE") && (
+                <input
+                  type="time"
+                  value={times[s.id] ?? ""}
+                  onChange={(e) => setTimes((t) => ({ ...t, [s.id]: e.target.value }))}
+                  aria-label={`Arrival time for ${s.name}`}
+                  title="Arrival time (optional)"
+                  className="h-9 w-[7.5rem] rounded-lg border border-border bg-surface px-2 text-sm tabular-nums"
+                />
+              )}
               <div className="flex shrink-0 gap-1" role="group" aria-label={`Attendance for ${s.name}`}>
                 {BUTTONS.map((b) => (
                   <button
@@ -518,6 +580,7 @@ function AttendanceTab() {
                     {b.short}
                   </button>
                 ))}
+              </div>
               </div>
             </li>
           ))}

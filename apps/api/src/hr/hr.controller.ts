@@ -37,6 +37,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { campusScopeViolation, holdsOwner, ownerRuleViolation } from '../users/user-rules.js';
 import { daysBetween } from './payroll-calculator.js';
+import { TIME_PATTERN } from './payroll-rules.js';
 import { staffWhere } from './staff-where.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
@@ -64,6 +65,7 @@ const attendanceSchema = z.object({
         userId: z.string().min(1),
         status: z.enum(AttendanceStatus),
         note: z.string().trim().max(200).optional(),
+        checkIn: z.string().regex(TIME_PATTERN, 'Use HH:MM, for example 08:30').nullish(),
       }),
     )
     .min(1),
@@ -191,6 +193,7 @@ export class HrController {
           designation: s.staffProfile?.designation ?? null,
           status: r?.status ?? null,
           note: r?.note ?? null,
+          checkIn: r?.checkIn ?? null,
         };
       }),
     };
@@ -211,13 +214,14 @@ export class HrController {
       body.records.map((r) =>
         this.prisma.staffAttendance.upsert({
           where: { userId_date: { userId: r.userId, date } },
-          update: { status: r.status, note: r.note, markedById: user.sub },
+          update: { status: r.status, note: r.note, checkIn: r.checkIn ?? null, markedById: user.sub },
           create: {
             schoolId: user.schoolId,
             userId: r.userId,
             date,
             status: r.status,
             note: r.note,
+            checkIn: r.checkIn ?? null,
             markedById: user.sub,
           },
         }),
