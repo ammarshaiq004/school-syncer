@@ -34,6 +34,7 @@ import { ridesDuring } from '../../src/transport/transport-rules.js';
 import { seedCertificates } from './certificates.js';
 import { seedEschool, type EschoolPlan, type EschoolSummary } from './eschool.js';
 import { seedLibrary } from './library.js';
+import { seedFrontOffice } from './front-office.js';
 import {
   BOY_NAMES,
   FATHER_NAMES,
@@ -1290,6 +1291,9 @@ export async function seedSchool(
     today,
     { loanDays: 14, finePerDay: 5 },
   );
+
+  // ----- Front office (not for online schools) -----
+  if (!online) await seedFrontOffice(prisma, rng, schoolId, today, schoolDays);
 
   // ----- Certificates -----
   const office =
