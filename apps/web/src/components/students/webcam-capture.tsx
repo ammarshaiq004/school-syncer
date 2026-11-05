@@ -13,16 +13,18 @@ function cameraProblem(e: unknown): string {
   return "The camera could not be started.";
 }
 
+const hasCamera = () => typeof navigator !== "undefined" && typeof navigator.mediaDevices?.getUserMedia === "function";
+
 const UNSUPPORTED = "This browser cannot use the camera. Use Chrome, Edge or Safari over a secure (https) connection.";
 
 /** The live picture and the shutter button; mounted only while the dialog is open, so the camera is off otherwise. */
 function CameraView({ onCapture, onClose }: { onCapture: (file: File) => void; onClose: () => void }) {
   const video = useRef<HTMLVideoElement>(null);
-  const [error, setError] = useState(() => (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia ? "" : UNSUPPORTED));
+  const [error, setError] = useState(() => (hasCamera() ? "" : UNSUPPORTED));
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!navigator.mediaDevices?.getUserMedia) return;
+    if (!hasCamera()) return;
     let stream: MediaStream | undefined;
     let cancelled = false;
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 1280 } }, audio: false }).then(
