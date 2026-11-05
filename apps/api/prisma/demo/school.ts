@@ -906,9 +906,21 @@ export async function seedSchool(
       endsOn: day(addDays(today, 4)),
     },
   });
+  // An earlier, shorter published test so the multi-exam report has something to compare.
+  const unitTest = await prisma.exam.create({
+    data: {
+      schoolId,
+      academicYearId: year.id,
+      name: `Unit Test 1 ${startYear}`,
+      startsOn: day(addDays(firstTermEnd, -60)),
+      endsOn: day(addDays(firstTermEnd, -57)),
+      status: ExamStatus.PUBLISHED,
+      publishedAt: at(addDays(firstTermEnd, -50), 15),
+    },
+  });
   const resultRows: Prisma.ExamResultCreateManyInput[] = [];
   const markRows: Prisma.MarkCreateManyInput[] = [];
-  for (const cls of classIds.values()) {
+  for (const [classIndex, cls] of [...classIds.values()].entries()) {
     const clsSections = sections.filter((s) => s.classId === cls.id);
     const subjectList = subjectsFor(cls.level).map(([s]) => s).sort();
     const termPapers = await prisma.examPaper.createManyAndReturn({
@@ -919,20 +931,85 @@ export async function seedSchool(
         maxMarks: 100,
         passMarks: 33,
         date: day(addDays(firstTermEnd, -11 + i)),
+        startTime: '09:00',
+        endTime: '11:00',
+        // One hall per class, so no two classes share a room.
+        room: `Room ${classIndex + 1}`,
+        syllabus: `Chapters 1 to ${3 + (i % 4)} of the ${subject} textbook\nClass notes and exercises\nRevision of the unit tests`,
+      })),
+    });
+    const unitPapers = await prisma.examPaper.createManyAndReturn({
+      data: subjectList.slice(0, 4).map((subject, i) => ({
+        examId: unitTest.id,
+        classId: cls.id,
+        subjectId: subjectId.get(subject)!,
+        maxMarks: 50,
+        passMarks: 17,
+        date: day(addDays(firstTermEnd, -60 + i)),
+        startTime: '09:00',
+        endTime: '10:00',
+        room: `Room ${classIndex + 1}`,
       })),
     });
     const monthlyPapers = await prisma.examPaper.createManyAndReturn({
-      data: subjectList.slice(0, 3).map((subject) => ({
+      data: subjectList.slice(0, 3).map((subject, i) => ({
         examId: monthly.id,
         classId: cls.id,
         subjectId: subjectId.get(subject)!,
         maxMarks: 25,
         passMarks: 9,
+        date: day(addDays(today, i)),
+        startTime: '10:00',
+        endTime: '10:45',
+        room: `Room ${classIndex + 1}`,
       })),
     });
     const subjectOfPaper = new Map(termPapers.map((p) => [p.id, subjects.find((s) => s.id === p.subjectId)!.name]));
+    const unitSubject = new Map(unitPapers.map((p) => [p.id, subjects.find((x) => x.id === p.subjectId)!.name]));
     for (const s of clsSections) {
       const sectionKids = kidsBySection.get(s.id) ?? [];
+      const unitMarks = sectionKids.map((k) => ({
+        kid: k,
+        marks: unitPapers.map((p) => ({
+          paperId: p.id,
+          marks: Math.round(Math.min(50, Math.max(4, 50 * rng.normal(k.ability, 0.1)))),
+          isAbsent: false,
+        })),
+      }));
+      const unitResults = unitMarks.map((m) => ({
+        kid: m.kid,
+        ...studentResult(
+          unitPapers.map((p) => ({ id: p.id, subject: unitSubject.get(p.id)!, maxMarks: p.maxMarks, passMarks: p.passMarks })),
+          m.marks,
+          DEFAULT_BANDS,
+        ),
+      }));
+      const unitRanks = positions(unitResults.map((r) => ({ id: r.kid.id, percent: r.percent })));
+      for (const m of unitMarks) {
+        for (const x of m.marks) {
+          markRows.push({
+            paperId: x.paperId,
+            studentId: m.kid.id,
+            marks: x.marks,
+            isAbsent: false,
+            enteredById: teacherOf.get(`${s.id}|${unitSubject.get(x.paperId)}`)?.id,
+          });
+        }
+      }
+      for (const r of unitResults) {
+        resultRows.push({
+          examId: unitTest.id,
+          studentId: r.kid.id,
+          sectionId: s.id,
+          obtained: r.obtained,
+          maxTotal: r.maxTotal,
+          percent: r.percent,
+          grade: r.grade,
+          position: unitRanks.get(r.kid.id)!,
+          passed: r.passed,
+          subjects: r.subjects as unknown as Prisma.InputJsonValue,
+        });
+      }
       const sectionMarks = sectionKids.map((k) => ({
         kid: k,
         marks: termPapers.map((p) => {

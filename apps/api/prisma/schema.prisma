@@ -964,6 +964,12 @@ model ExamPaper {
   maxMarks  Float
   passMarks Float
   date      DateTime? @db.Date
+  /// "HH:MM", campus local time; with room, they make up the datesheet and roll number slips.
+  startTime String?
+  endTime   String?
+  room      String?
+  /// What the paper covers, one topic per line; editable after publishing.
+  syllabus  String?   @db.Text
 
   exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
   class   Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
