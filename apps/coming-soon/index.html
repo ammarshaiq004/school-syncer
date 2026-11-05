@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SchoolSyncer — Every part of your school, in sync. Coming soon.</title>
+<meta name="description" content="SchoolSyncer is the all-in-one school platform for Pakistan: admissions, attendance, exams, fees, e-school and a parent app. Launching soon.">
+<meta name="theme-color" content="#070b17">
+<meta name="color-scheme" content="dark">
+<meta property="og:type" content="website">
+<meta property="og:title" content="SchoolSyncer — Coming soon">
+<meta property="og:description" content="Every part of your school, in sync. Management, fees, e-school and a parent app in one platform.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%234F46E5'/%3E%3Cpath d='M9 14a7 7 0 0 1 12-3.5M23 18a7 7 0 0 1-12 3.5' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3Cpath d='M22 6v5h-5M10 26v-5h5' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#070b17; --bg2:#0d1226; --ink:#f1f5f9; --mut:#a3aec2; --dim:#7d8aa3;
+  --line:rgba(255,255,255,.09); --glass:rgba(255,255,255,.045);
+  --brand:#4F46E5; --brand2:#818cf8; --brand3:#c7d2fe; --teal:#2dd4bf; --amber:#fbbf24; --rose:#fb7185;
+  --font:"Inter",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --gutter:clamp(16px,5vw,40px);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.6 var(--font);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+svg{display:block}
+:focus-visible{outline:2px solid var(--brand3);outline-offset:3px;border-radius:8px}
+.wrap{width:100%;max-width:1160px;margin:0 auto;padding-inline:var(--gutter)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- backdrop ---------- */
+.bg{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;
+  background:
+    radial-gradient(60% 50% at 80% 0%,rgba(79,70,229,.35),transparent 70%),
+    radial-gradient(50% 45% at 0% 30%,rgba(45,212,191,.12),transparent 70%),
+    radial-gradient(60% 50% at 50% 110%,rgba(79,70,229,.25),transparent 70%),
+    var(--bg)}
+.bg::after{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.14) 1px,transparent 1.2px);background-size:28px 28px;
+  -webkit-mask-image:radial-gradient(ellipse 70% 60% at 50% 30%,#000,transparent 75%);mask-image:radial-gradient(ellipse 70% 60% at 50% 30%,#000,transparent 75%)}
+.spot{position:absolute;width:560px;height:560px;left:0;top:0;border-radius:50%;
+  background:radial-gradient(circle,rgba(129,140,248,.18),transparent 65%);
+  transform:translate(calc(var(--mx,70vw) - 280px),calc(var(--my,20vh) - 280px));transition:transform .25s ease-out}
+
+/* ---------- nav ---------- */
+header{padding-block:20px}
+.nav{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:700;font-size:19px;letter-spacing:-.02em}
+.brand svg{width:34px;height:34px}
+.brand b{color:var(--brand2);font-weight:700}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 20px;border-radius:12px;border:1px solid var(--line);background:var(--glass);color:var(--ink);font:600 15px var(--font);text-decoration:none;cursor:pointer;transition:transform .15s,background .2s,border-color .2s,box-shadow .2s}
+.btn:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2)}
+.btn:active{transform:translateY(1px)}
+.btn.pri{background:linear-gradient(180deg,#5b53f0,var(--brand));border-color:rgba(255,255,255,.18);box-shadow:0 8px 20px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.25)}
+.btn.pri:hover{background:linear-gradient(180deg,#6a62ff,#5249ee);box-shadow:0 10px 24px -10px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.3)}
+.btn.wa{background:rgba(37,211,102,.12);border-color:rgba(37,211,102,.4);color:#b9f5d0}
+.btn.wa:hover{background:rgba(37,211,102,.2)}
+.btn svg{width:18px;height:18px}
+
+/* ---------- hero ---------- */
+.hero{display:grid;gap:48px;align-items:center;padding-block:clamp(28px,6vw,72px) clamp(48px,8vw,96px)}
+.pill{display:inline-flex;align-items:center;gap:10px;padding:7px 14px 7px 10px;border:1px solid var(--line);border-radius:999px;background:var(--glass);font-size:13.5px;font-weight:500;color:var(--brand3)}
+.dot{position:relative;width:8px;height:8px;border-radius:50%;background:var(--teal)}
+.dot::after{content:"";position:absolute;inset:-5px;border-radius:50%;border:1.5px solid var(--teal);animation:ping 2s ease-out infinite}
+h1{margin:22px 0 0;font-size:clamp(40px,7.4vw,78px);line-height:1.02;letter-spacing:-.04em;font-weight:800;text-wrap:balance}
+.grad{color:#a5b4fc}
+.lead{margin:22px 0 0;max-width:34em;font-size:clamp(17px,2.1vw,20px);color:var(--mut)}
+.lead em{font-style:normal;color:var(--ink);font-weight:600;display:inline-block;transition:opacity .3s,transform .3s}
+.lead em.out{opacity:0;transform:translateY(6px)}
+.notify{margin-top:32px;max-width:520px}
+.field{display:flex;gap:8px;padding:6px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.05);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:border-color .2s,box-shadow .2s}
+.field:focus-within{border-color:var(--brand2);box-shadow:0 0 0 3px rgba(129,140,248,.3)}
+.field input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:500 16px var(--font);padding:0 14px}
+.field input::placeholder{color:var(--dim)}
+.field input:focus{outline:none}
+.field .btn{min-height:48px;white-space:nowrap}
+.alt{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin-top:16px;font-size:14px;color:var(--dim)}
+.status{min-height:1.5em;margin:10px 4px 0;font-size:14px;color:var(--teal)}
+.stats{display:flex;flex-wrap:wrap;gap:12px 32px;margin:34px 0 0;padding:0;list-style:none}
+.stats li{font-size:14px;color:var(--dim)}
+.stats b{display:block;font-size:22px;letter-spacing:-.02em;color:var(--ink)}
+
+/* ---------- orbit ---------- */
+.orbit-w{overflow:hidden;padding:56px 0}
+.orbit{position:relative;width:min(calc(100% - 64px),520px);aspect-ratio:1;margin-inline:auto}
+.core{position:absolute;left:50%;top:50%;width:27%;aspect-ratio:1;transform:translate(-50%,-50%);display:grid;place-items:center;border-radius:28%;
+  background:linear-gradient(145deg,#6d65ff,var(--brand) 55%,#3730a3);box-shadow:0 0 0 1px rgba(255,255,255,.2) inset,0 28px 50px -20px rgba(0,0,0,.8)}
+.core svg{width:58%;height:58%}
+.core::before,.core::after{content:"";position:absolute;inset:-14%;border-radius:36%;border:1.5px solid rgba(129,140,248,.5);animation:pulse 3.6s ease-out infinite}
+.core::after{animation-delay:1.8s}
+.ring{position:absolute;border-radius:50%;border:1px dashed rgba(165,180,252,.28);animation:spin var(--t) linear infinite}
+.ring.a{inset:19%;--t:48s}
+.ring.b{inset:0;--t:84s;animation-direction:reverse}
+.chip{position:absolute;width:0;height:0}
+.chip i{position:absolute;left:0;top:0;translate:-50% -50%;display:grid;justify-items:center;gap:6px;animation:spin var(--t) linear infinite reverse;font-style:normal}
+.ring.b .chip i{animation-direction:normal}
+.chip span{display:grid;place-items:center;width:clamp(42px,10.5vw,58px);aspect-ratio:1;border-radius:32%;border:1px solid var(--line);background:linear-gradient(160deg,rgba(255,255,255,.14),rgba(255,255,255,.04));backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 10px 30px -10px rgba(0,0,0,.7)}
+.chip svg{width:46%;height:46%;stroke:var(--c,#c7d2fe)}
+.chip small{font-size:11px;font-weight:600;color:var(--mut);letter-spacing:.02em;white-space:nowrap}
+.float{position:absolute;display:flex;align-items:center;gap:10px;padding:10px 14px 10px 10px;border:1px solid var(--line);border-radius:14px;background:rgba(13,18,38,.75);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);font-size:12.5px;line-height:1.3;box-shadow:0 20px 40px -16px rgba(0,0,0,.8);animation:bob 6s ease-in-out infinite}
+.float b{display:block;font-size:14px}
+.float em{font-style:normal;color:var(--dim)}
+.float .ic{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;font-size:15px}
+.f1{left:-2%;top:6%}
+.f1 .ic{background:rgba(45,212,191,.16);color:var(--teal)}
+.f2{right:-2%;bottom:8%;animation-delay:-3s}
+.f2 .ic{background:rgba(251,191,36,.16);color:var(--amber)}
+
+/* ---------- marquee ---------- */
+.strip{border-block:1px solid var(--line);background:rgba(255,255,255,.02);overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.track{display:flex;width:max-content;gap:48px;padding:18px 24px;animation:slide 38s linear infinite}
+.track span{display:inline-flex;align-items:center;gap:48px;color:var(--mut);font-weight:600;font-size:15px;white-space:nowrap}
+.track span::after{content:"✦";color:var(--brand2);font-size:11px}
+
+/* ---------- features ---------- */
+section{padding-block:clamp(64px,9vw,112px)}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--brand2)}
+h2{margin:12px 0 0;font-size:clamp(30px,4.6vw,48px);line-height:1.08;letter-spacing:-.035em;font-weight:800;text-wrap:balance;max-width:16em}
+.sub{margin:16px 0 0;max-width:36em;color:var(--mut);font-size:18px}
+.bento{display:grid;gap:16px;margin-top:48px}
+.card{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:22px;padding:26px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(170deg,rgba(255,255,255,.06),rgba(255,255,255,.02));transition:transform .3s,border-color .3s}
+.card::before{content:"";position:absolute;inset:0;background:radial-gradient(420px 220px at var(--gx,100%) var(--gy,0%),var(--glow,rgba(129,140,248,.18)),transparent 70%);pointer-events:none}
+.card:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.2)}
+.card h3{margin:0;font-size:22px;letter-spacing:-.02em;line-height:1.2}
+.card p{margin:8px 0 0;color:var(--mut);font-size:15.5px}
+.tag{display:inline-block;margin-bottom:12px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;background:rgba(129,140,248,.14);color:var(--brand3)}
+.art{position:relative;flex:1;min-height:150px;display:grid;align-content:center}
+.c-fee{--glow:rgba(251,191,36,.14)}.c-fee .tag{background:rgba(251,191,36,.14);color:#fde68a}
+.c-es{--glow:rgba(45,212,191,.14)}.c-es .tag{background:rgba(45,212,191,.14);color:#99f6e4}
+.c-par{--glow:rgba(251,113,133,.14)}.c-par .tag{background:rgba(251,113,133,.14);color:#fecdd3}
+
+/* art: attendance grid */
+.grid{display:grid;grid-template-columns:repeat(14,1fr);gap:6px}
+.grid i{aspect-ratio:1;border-radius:6px;background:rgba(129,140,248,.55);animation:blink 4s ease-in-out infinite;animation-delay:calc(var(--n)*.17s)}
+.grid i.x{background:rgba(251,113,133,.65)}
+.grid i.l{background:rgba(255,255,255,.12)}
+/* art: voucher */
+.vch{padding:16px;border:1px dashed rgba(255,255,255,.22);border-radius:16px;background:rgba(7,11,23,.5);font-size:13px;color:var(--mut);position:relative}
+.vch b{display:block;font-size:26px;letter-spacing:-.03em;color:var(--ink);margin-top:2px}
+.vch .row{display:flex;justify-content:space-between;gap:8px}
+.stamp{position:absolute;right:14px;top:34px;transform:rotate(-12deg);padding:3px 12px;border:2px solid var(--teal);border-radius:8px;color:var(--teal);font-weight:800;letter-spacing:.12em;font-size:15px;animation:stamp 5s ease-in-out infinite}
+.pay{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.pay u{text-decoration:none;font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;background:rgba(255,255,255,.07);color:var(--ink)}
+/* art: lesson */
+.les{padding:14px;border-radius:16px;background:rgba(7,11,23,.5);border:1px solid var(--line)}
+.vid{position:relative;aspect-ratio:16/8;border-radius:10px;background:linear-gradient(135deg,#312e81,#0f766e);display:grid;place-items:center}
+.vid svg{width:34px;height:34px;fill:#fff;stroke:none;opacity:.95}
+.live{position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:6px;padding:2px 8px;border-radius:6px;background:rgba(0,0,0,.45);font-size:11px;font-weight:700}
+.live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--rose);animation:blink 1.4s infinite}
+.bar{height:6px;border-radius:9px;background:rgba(255,255,255,.1);margin-top:12px;overflow:hidden}
+.bar i{display:block;height:100%;width:68%;border-radius:9px;background:linear-gradient(90deg,var(--teal),var(--brand2));animation:fill 5s ease-in-out infinite alternate}
+.les small{display:flex;justify-content:space-between;margin-top:8px;color:var(--dim);font-size:12px}
+/* art: phone */
+.phone{width:min(210px,70%);margin-inline:auto;padding:10px;border-radius:30px;background:#0b1020;border:1px solid rgba(255,255,255,.18);box-shadow:0 30px 60px -20px rgba(0,0,0,.9)}
+.scr{padding:14px 12px;border-radius:22px;background:linear-gradient(180deg,#1a2147,#0d1226);display:grid;gap:9px;font-size:12px}
+.scr .hi{color:var(--dim)}.scr .hi b{display:block;color:var(--ink);font-size:14px}
+.tile{display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.07)}
+.tile b{font-size:13px}
+.ok{color:var(--teal)}.warn{color:var(--amber)}
+.mini{padding:9px 10px;border-radius:12px;background:var(--brand);font-weight:700;text-align:center}
+
+/* ---------- audience ---------- */
+.roles{display:grid;gap:12px;margin:44px 0 0;padding:0;list-style:none}
+.roles li{display:flex;gap:16px;align-items:flex-start;padding:20px;border:1px solid var(--line);border-radius:18px;background:var(--glass)}
+.roles .em{flex:none;display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:rgba(129,140,248,.14);font-size:22px}
+.roles b{display:block;font-size:17px;letter-spacing:-.01em}
+.roles span{color:var(--mut);font-size:15px}
+
+/* ---------- final cta ---------- */
+.cta{position:relative;overflow:hidden;text-align:center;padding:clamp(40px,7vw,80px) var(--gutter);border:1px solid rgba(255,255,255,.14);border-radius:32px;
+  background:radial-gradient(80% 120% at 50% 0%,rgba(79,70,229,.55),transparent 70%),linear-gradient(180deg,#141a3a,#0b1020)}
+.cta h2{margin-inline:auto}
+.cta .sub{margin-inline:auto}
+.cta .notify{margin-inline:auto;text-align:left}
+.cta .alt{justify-content:center}
+footer{padding:40px 0 56px;color:var(--dim);font-size:14px}
+.foot{display:flex;flex-wrap:wrap;gap:12px 24px;justify-content:space-between;align-items:center}
+
+/* ---------- motion ---------- */
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes ping{0%{transform:scale(.6);opacity:.9}100%{transform:scale(1.8);opacity:0}}
+@keyframes pulse{0%{transform:scale(.85);opacity:.9}100%{transform:scale(1.5);opacity:0}}
+@keyframes bob{50%{transform:translateY(-8px)}}
+@keyframes slide{to{transform:translateX(-50%)}}
+@keyframes blink{50%{opacity:.45}}
+@keyframes stamp{0%,25%{opacity:0;transform:rotate(-12deg) scale(1.6)}35%,100%{opacity:1;transform:rotate(-12deg) scale(1)}}
+@keyframes fill{from{width:42%}to{width:86%}}
+.js .rv{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease;transition-delay:var(--d,0s)}
+.js .rv.in{opacity:1;transform:none}
+.js .card.rv.in:hover{transform:translateY(-4px)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  html{scroll-behavior:auto}
+  .js .rv{opacity:1;transform:none}
+  .stamp{opacity:1}
+}
+
+/* ---------- breakpoints ---------- */
+@media (min-width:560px){.roles{grid-template-columns:1fr 1fr}.chip small{font-size:12px}}
+@media (min-width:760px){
+  .bento{grid-template-columns:repeat(6,1fr)}
+  .c-mgmt{grid-column:span 6}.c-fee,.c-es,.c-par{grid-column:span 3}
+}
+@media (min-width:980px){
+  .hero{grid-template-columns:1.05fr .95fr;gap:32px}
+  .bento{grid-template-columns:repeat(12,1fr)}
+  .c-mgmt{grid-column:span 7}.c-fee{grid-column:span 5}.c-es{grid-column:span 5}.c-par{grid-column:span 7}
+  .roles{grid-template-columns:repeat(4,1fr)}
+  .roles li{flex-direction:column}
+}
+@media (max-width:420px){
+  .field{flex-direction:column;border-radius:18px}
+  .field input{min-height:48px}
+  .field .btn{width:100%}
+  .f1{left:0}.f2{right:0}
+  .float{font-size:11.5px;padding:8px 10px 8px 8px}
+}
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><div class="spot"></div></div>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top" aria-label="SchoolSyncer home">
+      <svg viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#4F46E5"/><path d="M9.5 15a7.5 7.5 0 0 1 12.8-3.6M24.5 19a7.5 7.5 0 0 1-12.8 3.6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M23.5 6.5v5.2h-5.2M10.5 27.5v-5.2h5.2" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>School<b>Syncer</b></span>
+    </a>
+    <a class="btn" href="#notify">Get notified</a>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div>
+      <span class="pill rv"><span class="dot" aria-hidden="true"></span>Launching soon in Pakistan</span>
+      <h1 class="rv" style="--d:.08s">Every part of your school, in&nbsp;<span class="grad">sync.</span></h1>
+      <p class="lead rv" style="--d:.16s">One beautiful platform for <em id="word">attendance</em> and everything else a school runs on, from the first admission form to the last report card, on the web and in every parent's pocket.</p>
+
+      <div class="notify rv" id="notify" style="--d:.24s">
+        <form class="field" data-notify novalidate>
+          <label class="sr" for="email1">Your email</label>
+          <input id="email1" type="email" name="email" placeholder="you@school.edu.pk" autocomplete="email" required>
+          <button class="btn pri" type="submit">Notify me</button>
+        </form>
+        <p class="status" role="status" aria-live="polite"></p>
+        <div class="alt"><span>Prefer chat?</span>
+          <a class="btn wa" data-wa href="#" hidden target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm5.3 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7a11.600 11.600 0 0 1-4.800-4.200c-.4-.5-1.200-1.700-1.200-3.200s.8-2.200 1-2.500.6-.4.800-.4h.6c.2 0 .5 0 .7.600l.9 2.200c.1.200.1.400 0 .6l-.4.600-.5.500c-.2.200-.3.400-.1.700a8 8 0 0 0 3.700 3.200c.3.200.5.100.7-.1l.8-1c.2-.3.400-.2.700-.1l2 1c.3.100.5.200.6.300.1.200.1.800-.1 1.400Z"/></svg>
+            Message us on WhatsApp</a>
+        </div>
+      </div>
+
+      <ul class="stats rv" style="--d:.32s">
+        <li><b>5 dashboards</b>Owner, teacher, parent, student, admin</li>
+        <li><b>Rs-first</b>Fees in PKR, paid online</li>
+        <li><b>iOS &amp; Android</b>Parent and teacher app</li>
+      </ul>
+    </div>
+
+    <div class="orbit-w rv" style="--d:.2s" aria-hidden="true"><div class="orbit">
+      <div class="ring a">
+        <div class="chip" style="left:50%;top:0"><i><span><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="--c:#a5b4fc"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="m9 16 2 2 4-4"/></svg></span><small>Attendance</small></i></div>
+        <div class="chip" style="left:93.3%;top:75%"><i><span><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="--c:#fcd34d"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg></span><small>Fees</small></i></div>
+        <div class="chip" style="left:6.7%;top:75%"><i><span><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="--c:#5eead4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg></span><small>Exams</small></i></div>
+      </div>
+      <div class="ring b">
+        <div class="chip" style="left:93.3%;top:25%"><i><span><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="--c:#fda4af"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></svg></span><small>Parent app</small></i></div>
+        <div class="chip" style="left:50%;top:100%"><i><span><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="--c:#5eead4"><circle cx="12" cy="12" r="10"/><path d="m10 8 6 4-6 4z"/></svg></span><small>E-school</small></i></div>
+        <div class="chip" style="left:6.7%;top:25%"><i><span><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="--c:#c7d2fe"><path d="M5 17V6a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v11M5 12h14"/><rect x="4" y="17" width="16" height="3" rx="1"/><path d="M8 20v1.500M16 20v1.500"/></svg></span><small>Transport</small></i></div>
+      </div>
+      <div class="core"><svg viewBox="0 0 34 34"><path d="M9.5 15a7.5 7.5 0 0 1 12.8-3.6M24.5 19a7.5 7.5 0 0 1-12.8 3.6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M23.5 6.5v5.2h-5.2M10.5 27.5v-5.2h5.2" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="float f1"><span class="ic">✓</span><span><b>98% present</b><em>Class 7-B · today</em></span></div>
+      <div class="float f2"><span class="ic">Rs</span><span><b>Fee received</b><em>Ayesha · Nov voucher</em></span></div>
+    </div></div>
+  </div>
+
+  <div class="strip" aria-hidden="true">
+    <div class="track">
+      <span>Admissions</span><span>Attendance</span><span>Timetable</span><span>Exams &amp; report cards</span><span>Fees &amp; online payments</span><span>Payroll</span><span>E-school &amp; live classes</span><span>Parent chat</span><span>Transport</span><span>Library</span><span>Certificates &amp; ID cards</span><span>School website</span>
+      <span>Admissions</span><span>Attendance</span><span>Timetable</span><span>Exams &amp; report cards</span><span>Fees &amp; online payments</span><span>Payroll</span><span>E-school &amp; live classes</span><span>Parent chat</span><span>Transport</span><span>Library</span><span>Certificates &amp; ID cards</span><span>School website</span>
+    </div>
+  </div>
+
+  <section id="features">
+    <div class="wrap">
+      <div class="eyebrow rv">What's coming</div>
+      <h2 class="rv" style="--d:.06s">The whole school day, on one screen.</h2>
+      <p class="sub rv" style="--d:.12s">Stop juggling registers, spreadsheets, WhatsApp groups and fee diaries. SchoolSyncer keeps everyone looking at the same truth.</p>
+
+      <div class="bento">
+        <article class="card c-mgmt rv">
+          <div><span class="tag">School management</span><h3>From admission to graduation</h3><p>Admissions pipeline, student records, classes, timetables, exams, report cards, staff and payroll, all connected so nothing is typed twice.</p></div>
+          <div class="art" aria-hidden="true"><div class="grid" id="grid"></div></div>
+        </article>
+
+        <article class="card c-fee rv" style="--d:.08s">
+          <div><span class="tag">Fees &amp; payments</span><h3>Fees that collect themselves</h3><p>Vouchers, reminders and online payment by JazzCash, Easypaisa and 1Bill, with live reconciliation.</p></div>
+          <div class="art" aria-hidden="true">
+            <div class="vch"><div class="row"><span>Fee voucher · Nov 2026</span><span>#2048</span></div><b>Rs 12,500</b><span class="stamp">PAID</span>
+              <div class="pay"><u>JazzCash</u><u>Easypaisa</u><u>1Bill</u></div></div>
+          </div>
+        </article>
+
+        <article class="card c-es rv">
+          <div><span class="tag">E-school</span><h3>Teach from anywhere</h3><p>Courses, live classes, assignments and quizzes for fully online or hybrid schools.</p></div>
+          <div class="art" aria-hidden="true">
+            <div class="les"><div class="vid"><span class="live">LIVE</span><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+              <div class="bar"><i></i></div><small><span>Maths · Fractions</span><span>Lesson 4 of 6</span></small></div>
+          </div>
+        </article>
+
+        <article class="card c-par rv" style="--d:.08s">
+          <div><span class="tag">Parent app</span><h3>Parents stay in the loop</h3><p>Attendance, results, homework, fee dues and chat with teachers, on a simple app that works on any phone.</p></div>
+          <div class="art" aria-hidden="true">
+            <div class="phone"><div class="scr">
+              <div class="hi">Assalam o Alaikum<b>Ayesha's dashboard</b></div>
+              <div class="tile"><span>Attendance</span><b class="ok">96%</b></div>
+              <div class="tile"><span>Fee due</span><b class="warn">Rs 12,500</b></div>
+              <div class="mini">Pay now</div>
+            </div></div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="eyebrow rv">One platform</div>
+      <h2 class="rv" style="--d:.06s">Built for everyone who makes a school work.</h2>
+      <ul class="roles">
+        <li class="rv"><span class="em" aria-hidden="true">🏫</span><div><b>Owners &amp; principals</b><span>See fees, attendance and staff across every campus.</span></div></li>
+        <li class="rv" style="--d:.06s"><span class="em" aria-hidden="true">📚</span><div><b>Teachers</b><span>Mark attendance, set homework and enter marks in seconds.</span></div></li>
+        <li class="rv" style="--d:.12s"><span class="em" aria-hidden="true">👨‍👩‍👧</span><div><b>Parents</b><span>Know how your child is doing, and pay fees without a queue.</span></div></li>
+        <li class="rv" style="--d:.18s"><span class="em" aria-hidden="true">🎒</span><div><b>Students</b><span>Timetable, grades, assignments and live classes in one place.</span></div></li>
+      </ul>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <div class="cta rv">
+        <div class="eyebrow">Be first in line</div>
+        <h2>We're putting the finishing touches on it.</h2>
+        <p class="sub">Leave your email and we'll tell you the moment SchoolSyncer opens its doors. No spam, just one message.</p>
+        <div class="notify">
+          <form class="field" data-notify novalidate>
+            <label class="sr" for="email2">Your email</label>
+            <input id="email2" type="email" name="email" placeholder="you@school.edu.pk" autocomplete="email" required>
+            <button class="btn pri" type="submit">Notify me</button>
+          </form>
+          <p class="status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>© <span id="yr">2026</span> SchoolSyncer. All rights reserved.</span>
+    <span>Made with care in Pakistan 🇵🇰</span>
+  </div>
+</footer>
+
+<script>
+/* ===== Edit these two lines before uploading ===== */
+var CONFIG = {
+  email: "hello@schoolsyncer.pk",   // where "Notify me" emails are sent (opens the visitor's mail app)
+  whatsapp: ""                       // e.g. "923001234567" (country code, no + or spaces); empty hides the button
+};
+
+(function(){
+  var d = document, root = d.documentElement;
+  root.classList.add("js");
+  d.getElementById("yr").textContent = new Date().getFullYear();
+  var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // WhatsApp button
+  if (CONFIG.whatsapp) {
+    var wa = d.querySelector("[data-wa]");
+    wa.href = "https://wa.me/" + CONFIG.whatsapp.replace(/\D/g,"") + "?text=" + encodeURIComponent("Hi! Please tell me when SchoolSyncer launches.");
+    wa.hidden = false;
+  } else {
+    var lbl = d.querySelector(".alt");
+    if (lbl) lbl.remove();
+  }
+
+  // Notify form (no backend: opens the visitor's email app)
+  d.querySelectorAll("[data-notify]").forEach(function(f){
+    f.addEventListener("submit", function(e){
+      e.preventDefault();
+      var input = f.querySelector("input"), out = f.parentNode.querySelector(".status");
+      var v = input.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { out.style.color = "#fda4af"; out.textContent = "Please enter a valid email address."; input.focus(); return; }
+      out.style.color = ""; out.textContent = "Thank you! Your email app will open so you can send us a note.";
+      location.href = "mailto:" + CONFIG.email + "?subject=" + encodeURIComponent("Notify me when SchoolSyncer launches") + "&body=" + encodeURIComponent("Please notify me at: " + v);
+    });
+  });
+
+  // Attendance grid art
+  var g = d.getElementById("grid"), html = "";
+  for (var i = 0; i < 42; i++) html += '<i class="' + (i % 13 === 5 ? "x" : i % 11 === 7 ? "l" : "") + '" style="--n:' + i + '"></i>';
+  g.innerHTML = html;
+
+  // Rotating word
+  var words = ["attendance","fees","exams","homework","report cards","parent chat","live classes"], w = d.getElementById("word"), k = 0;
+  if (!reduce) setInterval(function(){
+    w.classList.add("out");
+    setTimeout(function(){ k = (k + 1) % words.length; w.textContent = words[k]; w.classList.remove("out"); }, 300);
+  }, 2200);
+
+  // Reveal on scroll
+  var els = d.querySelectorAll(".rv");
+  if ("IntersectionObserver" in window && !reduce) {
+    var io = new IntersectionObserver(function(es){ es.forEach(function(x){ if (x.isIntersecting) { x.target.classList.add("in"); io.unobserve(x.target); } }); }, { threshold: .12 });
+    els.forEach(function(el){ io.observe(el); });
+  } else els.forEach(function(el){ el.classList.add("in"); });
+
+  // Cursor spotlight + card glow
+  if (!reduce && matchMedia("(pointer:fine)").matches) {
+    var spot = d.querySelector(".spot");
+    addEventListener("pointermove", function(e){ spot.style.setProperty("--mx", e.clientX + "px"); spot.style.setProperty("--my", e.clientY + "px"); }, { passive: true });
+    d.querySelectorAll(".card").forEach(function(c){
+      c.addEventListener("pointermove", function(e){ var r = c.getBoundingClientRect(); c.style.setProperty("--gx", (e.clientX - r.left) + "px"); c.style.setProperty("--gy", (e.clientY - r.top) + "px"); });
+    });
+  }
+})();
+</script>
+</body>
+</html>
