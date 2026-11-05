@@ -55,6 +55,12 @@ export class AssistantController {
     };
   }
 
+  /** The director's 90-day comparison (works without an API key). School leaders only. */
+  @Get('changes')
+  async changes(@CurrentUser() user: AuthUser) {
+    return this.data.changesReport(await this.data.reach(user));
+  }
+
   /** What the school asked Aon to remember. */
   @Get('memory')
   memory(@CurrentUser() user: AuthUser) {

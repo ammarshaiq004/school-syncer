@@ -5,6 +5,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Post,
   Put,
   Query,
 } from '@nestjs/common';
@@ -16,6 +17,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { busyKey, generateTimetable } from './timetable-rules.js';
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM');
 
@@ -46,6 +48,17 @@ const slotsSchema = z.object({
       room: z.string().trim().max(30).optional(),
     }),
   ),
+});
+
+const generateSchema = z.object({
+  campusId: z.string().min(1),
+  /** Leave out to plan every section of the campus this year. */
+  sectionIds: z.array(z.string().min(1)).max(200).optional(),
+  days: z.array(z.number().int().min(1).max(7)).min(1).max(7).default([1, 2, 3, 4, 5]),
+  /** Lessons per week for a subject; subjects left out share the free periods evenly. */
+  perWeek: z.record(z.string(), z.number().int().min(0).max(40)).default({}),
+  /** false = preview only. */
+  apply: z.boolean().default(false),
 });
 
 const slotInclude = {
@@ -209,6 +222,64 @@ export class TimetableController {
     ]);
     await this.audit.record(user, 'update', 'TimetableSlot', sectionId, { before, after: rows });
     return this.sectionWeek(section);
+  }
+
+  /**
+   * Plans timetables for a campus's sections from their subjects and teachers.
+   * A preview unless `apply` is set; applying replaces those sections' weeks.
+   * Sections left out keep their slots and still block their teachers.
+   */
+  @Post('generate')
+  @Roles(...SETUP_ROLES)
+  async generate(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(generateSchema)) body: z.infer<typeof generateSchema>,
+  ) {
+    await this.campusInSchool(user, body.campusId, adminScope(user));
+    const [periods, allSections] = await Promise.all([
+      this.prisma.period.findMany({ where: { campusId: body.campusId, isBreak: false }, orderBy: { sortOrder: 'asc' } }),
+      this.prisma.section.findMany({
+        where: { schoolId: user.schoolId, class: { campusId: body.campusId }, academicYear: { isCurrent: true } },
+        include: { class: { select: { name: true, sortOrder: true } }, subjects: { orderBy: { id: 'asc' }, include: { subject: { select: { name: true } } } } },
+      }),
+    ]);
+    if (!periods.length) throw new ConflictException('Set the bell schedule for this campus first');
+    const chosen = allSections.filter((s) => !body.sectionIds || body.sectionIds.includes(s.id));
+    if (!chosen.length) throw new NotFoundException('No sections to plan');
+    chosen.sort((a, b) => a.class.sortOrder - b.class.sortOrder || a.name.localeCompare(b.name));
+
+    const chosenIds = chosen.map((s) => s.id);
+    const others = await this.prisma.timetableSlot.findMany({
+      where: { schoolId: user.schoolId, teacherId: { not: null }, sectionId: { notIn: chosenIds } },
+      select: { teacherId: true, dayOfWeek: true, periodId: true },
+    });
+    const { slots, unplaced } = generateTimetable({
+      days: [...new Set(body.days)].sort(),
+      periodIds: periods.map((p) => p.id),
+      busy: others.map((o) => busyKey(o.teacherId as string, o.dayOfWeek, o.periodId)),
+      sections: chosen.map((s) => ({
+        id: s.id,
+        subjects: s.subjects.map((x) => ({ subjectId: x.subjectId, teacherId: x.teacherId, perWeek: body.perWeek[x.subjectId] })),
+      })),
+    });
+
+    const sectionsWithoutSubjects = chosen.filter((s) => !s.subjects.length).map((s) => `${s.class.name} ${s.name}`);
+    if (body.apply) {
+      await this.prisma.$transaction([
+        this.prisma.timetableSlot.deleteMany({ where: { sectionId: { in: chosenIds } } }),
+        this.prisma.timetableSlot.createMany({ data: slots.map((s) => ({ ...s, schoolId: user.schoolId })) }),
+      ]);
+      await this.audit.record(user, 'update', 'TimetableSlot', body.campusId, { after: { generated: slots.length, sections: chosenIds } });
+    }
+    const name = new Map(chosen.map((s) => [s.id, `${s.class.name} ${s.name}`]));
+    const subjectName = new Map(chosen.flatMap((s) => s.subjects.map((x) => [x.subjectId, x.subject.name] as const)));
+    return {
+      applied: body.apply,
+      placed: slots.length,
+      sections: chosen.map((s) => ({ id: s.id, name: name.get(s.id), lessons: slots.filter((x) => x.sectionId === s.id).length })),
+      sectionsWithoutSubjects,
+      unplaced: unplaced.map((u) => ({ ...u, section: name.get(u.sectionId), subject: subjectName.get(u.subjectId) })),
+    };
   }
 
   /** The signed-in teacher's week across all sections. */

@@ -24,6 +24,7 @@ const inputs = {
   exam_report: z.object({ examId: id.optional(), sectionId: id.optional() }),
   fee_report: z.object({ period: z.string().regex(/^\d{4}-\d{2}$/).optional() }),
   at_risk_students: z.object({ sectionId: id.optional() }),
+  changes_90_days: z.object({}),
 };
 
 export type ToolName = keyof typeof inputs;
@@ -96,6 +97,12 @@ export const ASSISTANT_TOOLS: BetaTool[] = [
       'Students flagged at risk from low attendance, failing or falling results, and long-overdue fees, highest risk first, with the reasons.',
     input_schema: { type: 'object', properties: { sectionId } },
   },
+  {
+    name: 'changes_90_days',
+    description:
+      'The last 90 days against the 90 days before: new admissions, students who left, admission enquiries, attendance and fees collected, with the change and whether each is good or bad news. Only for school leaders.',
+    input_schema: { type: 'object', properties: {} },
+  },
 ];
 
 /** Offered only to school managers (see AssistantService.canManage): saves one short note to the school's memory. */
@@ -133,6 +140,8 @@ export async function runTool(data: AssistantData, reach: Reach, name: string, r
       return data.feeReport(reach, input);
     case 'at_risk_students':
       return data.atRisk(reach, (parsed.data as { sectionId?: string }).sectionId);
+    case 'changes_90_days':
+      return data.changesReport(reach);
   }
 }
 

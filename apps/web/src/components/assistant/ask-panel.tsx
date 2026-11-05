@@ -21,6 +21,12 @@ const SUGGESTIONS = [
   "Who is at risk and why?",
 ];
 
+const LEADER_SUGGESTIONS = [
+  "Which students may withdraw soon, and why?",
+  "What changed in the last 90 days?",
+  "Which classes need attention this month?",
+];
+
 const FEE_SUGGESTION = "How much fee is still outstanding this month?";
 
 /** Plain-language questions about school data (SCHOOL-105). */
@@ -28,11 +34,14 @@ export function AskPanel({
   status,
   onUsed,
   canFees,
+  leader,
   compact,
 }: {
   status: AssistantStatus;
   onUsed: () => void;
   canFees: boolean;
+  /** School leaders get the director's preset questions. */
+  leader?: boolean;
   /** Inside the Aon side panel: fills the panel instead of sitting in a card. */
   compact?: boolean;
 }) {
@@ -102,7 +111,7 @@ export function AskPanel({
     );
   }
 
-  const suggestions = canFees ? [...SUGGESTIONS, FEE_SUGGESTION] : SUGGESTIONS;
+  const suggestions = [...(leader ? LEADER_SUGGESTIONS : []), ...SUGGESTIONS, ...(canFees ? [FEE_SUGGESTION] : [])];
 
   return (
     <Card padding="none" className={compact ? "flex h-full min-h-0 flex-col border-0 shadow-none" : "flex min-h-[28rem] flex-col"}>
