@@ -107,6 +107,8 @@ model School {
   libraryLoanDays   Int               @default(14)
   libraryFinePerDay Int               @default(5)
   libraryMaxLoans   Int               @default(2)
+  /// The school's own list of fathers' occupations, offered when a guardian is entered.
+  occupations       String[]          @default([])
 
   customRoles     CustomRole[]
   rolePermissions BuiltinRolePermission[]
@@ -120,6 +122,12 @@ model School {
   chatThreads ChatThread[]
 
   files StoredFile[]
+
+  posItems      PosItem[]
+  posVendors    PosVendor[]
+  posWarehouses PosWarehouse[]
+  posPurchases  PosPurchase[]
+  posSales      PosSale[]
 
   assistantUsage AssistantUsage[]
 
@@ -463,6 +471,8 @@ model Student {
   medicalNotes String?
   status       StudentStatus @default(ACTIVE)
   admittedOn   DateTime      @default(now()) @db.Date
+  /// The day the student left (status LEFT); null while enrolled or graduated. Feeds the admissions and withdrawals report.
+  leftOn       DateTime?     @db.Date
   /// The student's own sign-in (a User with the STUDENT role), if one was created.
   userId       String?       @unique
   createdAt    DateTime      @default(now())
@@ -2855,4 +2865,186 @@ model PlatformAdjustment {
   invoice PlatformInvoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
 
   @@index([schoolId, invoiceId])
+}
+
+// ----- Point of sale and canteen -----
+// studentId, campusId and the user ids below are plain columns on purpose: a sale
+// or a stock movement is a record that outlives the person it names.
+
+enum PosMovementType {
+  OPENING // stock counted when the product was added
+  PURCHASE
+  SALE
+  SALE_VOID // a cancelled sale put back
+  ADJUSTMENT // a count correction, breakage or expiry
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+enum PosPayment {
+  CASH
+  ON_ACCOUNT // a student's tab, collected later
+}
+
+model PosItem {
+  id           String   @id @default(cuid())
+  schoolId     String
+  name         String
+  barcode      String?
+  category     String? // "Snacks", "Stationery", "Uniform"
+  brand        String?
+  unit         String   @default("pcs")
+  costPrice    Int      @default(0) // PKR, the last purchase cost
+  salePrice    Int // PKR
+  reorderLevel Int      @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  stock     PosStock[]
+  movements PosMovement[]
+
+  @@unique([schoolId, barcode])
+  @@index([schoolId, name])
+}
+
+model PosVendor {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  phone     String?
+  address   String?
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  purchases PosPurchase[]
+
+  @@unique([schoolId, name])
+}
+
+// A place stock is kept: the canteen counter, the store room, the uniform shop.
+model PosWarehouse {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  campusId  String? // null = school-wide
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  stock     PosStock[]
+  movements PosMovement[]
+  purchases PosPurchase[]
+  sales     PosSale[]
+
+  @@unique([schoolId, name])
+}
+
+model PosStock {
+  itemId      String
+  warehouseId String
+  qty         Int    @default(0)
+
+  item      PosItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  warehouse PosWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@id([itemId, warehouseId])
+}
+
+// Every change to stock, signed: the stock table is just their running sum.
+model PosMovement {
+  id          String          @id @default(cuid())
+  schoolId    String
+  itemId      String
+  warehouseId String
+  type        PosMovementType
+  qty         Int
+  unitCost    Int? // PKR, for purchases
+  refId       String? // the sale or purchase behind it
+  note        String?
+  userId      String?
+  createdAt   DateTime        @default(now())
+
+  item      PosItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  warehouse PosWarehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+  @@index([itemId, createdAt])
+}
+
+model PosPurchase {
+  id          String   @id @default(cuid())
+  schoolId    String
+  number      String // PUR-0001
+  vendorId    String
+  warehouseId String
+  purchasedOn DateTime @db.Date
+  total       Int // PKR
+  paid        Int      @default(0) // PKR paid to the vendor so far
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  school    School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  vendor    PosVendor         @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  warehouse PosWarehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  lines     PosPurchaseLine[]
+
+  @@unique([schoolId, number])
+  @@index([schoolId, purchasedOn])
+}
+
+model PosPurchaseLine {
+  id         String @id @default(cuid())
+  purchaseId String
+  itemId     String
+  qty        Int
+  unitCost   Int
+
+  purchase PosPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId])
+}
+
+model PosSale {
+  id           String     @id @default(cuid())
+  schoolId     String
+  number       String // S-000001
+  warehouseId  String
+  payment      PosPayment @default(CASH)
+  studentId    String? // whose tab, for ON_ACCOUNT
+  customerName String? // walk-in
+  subtotal     Int // PKR
+  discount     Int        @default(0)
+  total        Int
+  settledAt    DateTime? // when an ON_ACCOUNT sale was paid
+  voidedAt     DateTime?
+  voidReason   String?
+  cashierId    String
+  createdAt    DateTime   @default(now())
+
+  school    School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  warehouse PosWarehouse  @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  lines     PosSaleLine[]
+
+  @@unique([schoolId, number])
+  @@index([schoolId, createdAt])
+  @@index([schoolId, studentId, settledAt])
+}
+
+model PosSaleLine {
+  id        String @id @default(cuid())
+  saleId    String
+  itemId    String
+  itemName  String // as sold, so reports survive a rename
+  qty       Int
+  unitPrice Int
+  unitCost  Int // cost when sold, for profit
+
+  sale PosSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([itemId])
 }

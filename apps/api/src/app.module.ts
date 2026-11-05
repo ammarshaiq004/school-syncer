@@ -11,6 +11,7 @@ import { HomeworkController } from './homework/homework.controller.js';
 import { TimetableController } from './timetable/timetable.controller.js';
 import { TransportController } from './transport/transport.controller.js';
 import { LibraryController } from './library/library.controller.js';
+import { PosController } from './pos/pos.controller.js';
 import {
   CertificatesController,
   VerifyController,
@@ -152,6 +153,7 @@ import { UsersController } from './users/users.controller.js';
     TimetableController,
     TransportController,
     LibraryController,
+    PosController,
     CertificatesController,
     VerifyController,
     PromotionsController,

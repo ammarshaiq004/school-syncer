@@ -16,6 +16,7 @@ import {
   Scale,
   Users,
   Wallet,
+  UserPlus,
 } from "lucide-react";
 import { DateRange } from "@/components/date-range";
 import {
@@ -42,12 +43,13 @@ import {
   type Column,
   type Tone,
 } from "@/components/ui";
+import { AdmissionsReport } from "@/components/reports/admissions-report";
 import { downloadCsv } from "@/lib/csv";
 import { day, rupees, thisMonth, todayIso } from "@/lib/format";
 import { FEES, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
-type Tab = "income" | "collection" | "outstanding" | "attendance";
+type Tab = "income" | "collection" | "outstanding" | "attendance" | "admissions";
 interface Total { name: string; total: number }
 type Range = { from: string; to: string };
 
@@ -56,6 +58,7 @@ const TAB_META: Record<Tab, { label: string; icon: ReactNode }> = {
   collection: { label: "Fee collection", icon: <Banknote /> },
   outstanding: { label: "Outstanding fees", icon: <Wallet /> },
   attendance: { label: "Attendance", icon: <CalendarCheck /> },
+  admissions: { label: "Admissions and withdrawals", icon: <UserPlus /> },
 };
 
 /** Short rupee figures for chart axes: Rs 950, Rs 12k, Rs 1.4M. */
@@ -79,7 +82,7 @@ export default function ReportsPage() {
   const school = useApi<{ name: string }>("/school");
   const tabs: Tab[] = [
     ...(hasRole(user, FEES) ? (["income", "collection", "outstanding"] as const) : []),
-    ...(hasRole(user, SETUP) ? (["attendance"] as const) : []),
+    ...(hasRole(user, SETUP) ? (["attendance", "admissions"] as const) : []),
   ];
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [range, setRange] = useState({ from: `${todayIso().slice(0, 7)}-01`, to: todayIso() });
@@ -136,6 +139,9 @@ export default function ReportsPage() {
           </TabPanel>
           <TabPanel value="attendance">
             <AttendanceReport />
+          </TabPanel>
+          <TabPanel value="admissions">
+            <AdmissionsReport />
           </TabPanel>
         </Tabs>
       )}

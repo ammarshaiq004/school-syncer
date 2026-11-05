@@ -7,6 +7,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { cleanPickList } from './pick-list.js';
 
 /** An optional field the form can clear: "" or null stores null. */
 const clearable = <T extends z.ZodType>(schema: T) =>
@@ -25,6 +26,8 @@ const updateSchoolSchema = z.object({
   feeDueDay: z.number().int().min(1).max(31).optional(),
   // School mode tab: drives which modules the app shows (e-school vs campus-only).
   mode: z.enum(SchoolMode).optional(),
+  // Occupations offered when entering a guardian.
+  occupations: z.array(z.string().max(60)).max(200).transform(cleanPickList).optional(),
 });
 type UpdateSchoolInput = z.infer<typeof updateSchoolSchema>;
 

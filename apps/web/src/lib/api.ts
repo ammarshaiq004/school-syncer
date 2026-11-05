@@ -66,6 +66,7 @@ export type PermissionModule =
   | "hr"
   | "transport"
   | "library"
+  | "pos"
   | "announcements"
   | "messages"
   | "chat"
@@ -87,6 +88,7 @@ export type Feature =
   | "reports"
   | "transport"
   | "library"
+  | "pos"
   | "certificates"
   | "elearning"
   | "ai_assistant";

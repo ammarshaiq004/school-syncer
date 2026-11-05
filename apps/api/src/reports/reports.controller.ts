@@ -11,6 +11,7 @@ import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decor
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { feeOutstanding, OPEN_INVOICE } from '../fees/outstanding.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { admissionsByMonth } from './admissions-report.js';
 import {
   ADJUSTMENTS,
   ARREARS,
@@ -203,6 +204,58 @@ export class ReportsController {
       total: owed.outstanding.amount,
       byClass: totalsBy(students, (s) => s.class, (s) => s.balance),
       students,
+    };
+  }
+
+  /** Students admitted and students who left in a period (a school year, usually), month by month. */
+  @Get('admissions-withdrawals')
+  @Roles(...SETUP_ROLES)
+  async admissionsWithdrawals(
+    @CurrentUser() user: AuthUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const range = dateRange(from, to);
+    if (dayStart(range.to).getTime() - dayStart(range.from).getTime() > 800 * 86_400_000) {
+      throw new BadRequestException('Choose at most two years');
+    }
+    const scope = adminScope(user);
+    const withCampus = (scope?.length ?? 2) > 1 && (await this.hasCampuses(user.schoolId));
+    const inRange = { gte: dayStart(range.from), lte: dayStart(range.to) };
+    const students = await this.prisma.student.findMany({
+      where: {
+        schoolId: user.schoolId,
+        ...(scope ? { campusId: { in: scope } } : {}),
+        OR: [{ admittedOn: inRange }, { leftOn: inRange }],
+      },
+      select: {
+        firstName: true,
+        lastName: true,
+        admissionNo: true,
+        gender: true,
+        admittedOn: true,
+        leftOn: true,
+        enrollments: { orderBy: { createdAt: 'desc' }, take: 1, select: { section: sectionSelect } },
+      },
+      take: 5000,
+    });
+    const row = (s: (typeof students)[number], on: Date) => ({
+      name: [s.firstName, s.lastName].filter(Boolean).join(' '),
+      admissionNo: s.admissionNo,
+      gender: s.gender,
+      class: className(withCampus, s.enrollments[0]),
+      on: on.toISOString().slice(0, 10),
+    });
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    const within = (d: Date | null) => d !== null && iso(d) >= range.from && iso(d) <= range.to;
+    const admitted = students.filter((s) => within(s.admittedOn)).map((s) => row(s, s.admittedOn));
+    const withdrawn = students.filter((s) => within(s.leftOn)).map((s) => row(s, s.leftOn!));
+    return {
+      ...range,
+      totals: { admitted: admitted.length, withdrawn: withdrawn.length },
+      months: admissionsByMonth(admitted.map((r) => r.on), withdrawn.map((r) => r.on), range.from, range.to),
+      admitted: admitted.sort((a, b) => a.on.localeCompare(b.on)),
+      withdrawn: withdrawn.sort((a, b) => a.on.localeCompare(b.on)),
     };
   }
 
