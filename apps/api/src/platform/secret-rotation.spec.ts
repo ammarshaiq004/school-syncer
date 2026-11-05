@@ -33,6 +33,7 @@ function fakeDb() {
       { id: 'j1', status: 'PENDING', payload: { logId: 'l1', sealed: seal({ code: '123456' }, oldKey) } as Record<string, unknown> },
       { id: 'j2', status: 'PENDING', payload: { logId: 'l2' } as Record<string, unknown> },
     ],
+    aiKeys: [{ id: 'default', sealed: seal({ key: 'sk-test-0123456789abcdef' }, oldKey) }],
     students: [
       { id: 'st1', photoFileId: 'f1', photoUrl: oldPhotoUrl('f1') },
       { id: 'st2', photoFileId: 'f2', photoUrl: '' },
@@ -49,6 +50,7 @@ function fakeDb() {
     schoolPaymentGateway: { findMany: async () => db.gateways.map((g) => ({ ...g })), updateMany: casUpdate(db.gateways, 'id', 'secrets') },
     schoolMessagingSender: { findMany: async () => db.senders.map((s) => ({ ...s })), updateMany: casUpdate(db.senders, 'schoolId', 'secrets') },
     job: { findMany: async () => db.jobs.map((j) => ({ ...j })), updateMany: casUpdate(db.jobs, 'id', 'status') },
+    platformAiKey: { findUnique: async () => (db.aiKeys[0] ? { ...db.aiKeys[0] } : null), updateMany: casUpdate(db.aiKeys, 'id', 'sealed') },
     student: {
       findMany: async ({ cursor }: { cursor?: { id: string } }) => (cursor ? [] : db.students.map((s) => ({ ...s }))),
       updateMany: casUpdate(db.students, 'id', 'photoFileId'),
@@ -65,6 +67,7 @@ describe('rotateSecrets', () => {
     expect(report.paymentAccounts).toEqual({ checked: 3, resealed: 1, failed: [{ id: 'g-lost', error: expect.stringContaining('No key') }] });
     expect(report.messagingSenders).toMatchObject({ checked: 1, resealed: 1 });
     expect(report.queuedMessages).toMatchObject({ checked: 1, resealed: 1 });
+    expect(report.aiKey).toMatchObject({ checked: 1, resealed: 1 });
     expect(report.studentPhotos).toEqual({ checked: 2, resigned: 2 });
     expect(JSON.stringify(db)).toBe(before);
   });
@@ -77,6 +80,7 @@ describe('rotateSecrets', () => {
     expect(openSecrets(db.gateways[0].secrets, current)).toEqual({ hashKey: 'h1' });
     expect(openSecrets(db.senders[0].secrets, current)).toEqual({ token: 'wa' });
     expect(openSecrets(db.jobs[0].payload.sealed as string, current)).toEqual({ code: '123456' });
+    expect(openSecrets(db.aiKeys[0].sealed, current)).toEqual({ key: 'sk-test-0123456789abcdef' });
     expect(db.jobs[0].payload.logId).toBe('l1');
     // The unreadable one is left alone for a person to deal with.
     expect(sealedWith(db.gateways[2].secrets, current)).toBe(false);
@@ -85,7 +89,7 @@ describe('rotateSecrets', () => {
     expect(after.verify('f1', new URL(db.students[0].photoUrl).searchParams.get('sig') ?? '')).toBe(true);
 
     const again = await rotateSecrets(prisma, { env, apply: true });
-    expect(again.paymentAccounts.resealed + again.messagingSenders.resealed + again.queuedMessages.resealed + again.studentPhotos.resigned).toBe(0);
+    expect(again.paymentAccounts.resealed + again.messagingSenders.resealed + again.queuedMessages.resealed + again.aiKey.resealed + again.studentPhotos.resigned).toBe(0);
   });
 
   it('needs the new key', async () => {

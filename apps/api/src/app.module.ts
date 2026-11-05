@@ -76,6 +76,7 @@ import { BillingScheduler } from './platform/billing/billing.scheduler.js';
 import { PlatformMessagesController } from './platform/platform-messages.controller.js';
 import { BillingService } from './platform/billing/billing.service.js';
 import { PlatformContactsController } from './platform/platform-contacts.controller.js';
+import { PlatformAiController } from './platform/platform-ai.controller.js';
 import { PlatformDiscountsController } from './platform/platform-discounts.controller.js';
 import { PlatformCreditsController } from './platform/platform-credits.controller.js';
 import { PlatformWatchController } from './platform/platform-watch.controller.js';
@@ -183,6 +184,7 @@ import { UsersController } from './users/users.controller.js';
     PlatformContactsController,
     SupportSessionsController,
     PlatformDiscountsController,
+    PlatformAiController,
     PlatformCreditsController,
     PlatformAuthController,
     PlatformController,
