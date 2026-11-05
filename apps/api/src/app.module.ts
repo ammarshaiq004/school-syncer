@@ -18,6 +18,10 @@ import {
 import { PromotionsController } from './promotions/promotions.controller.js';
 import { HrController } from './hr/hr.controller.js';
 import { PayrollController } from './hr/payroll.controller.js';
+import { StaffCertificatesController } from './hr/staff-certificates.controller.js';
+import { StaffImportController } from './hr/staff-import.controller.js';
+import { CandidatesController } from './hr/candidates.controller.js';
+import { PayrollRulesController } from './hr/payroll-rules.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { FeeCorrectionsController } from './fees/fee-corrections.controller.js';
@@ -158,6 +162,10 @@ import { UsersController } from './users/users.controller.js';
     HomeworkController,
     HrController,
     PayrollController,
+    PayrollRulesController,
+    CandidatesController,
+    StaffImportController,
+    StaffCertificatesController,
     AccountsController,
     ReportsController,
     PaymentWebhookController,

@@ -1,4 +1,5 @@
 import { PayItemType } from '@prisma/client';
+import { DEFAULT_RULES, ruleDeductions, type Rules } from './payroll-rules.js';
 
 /** Every YYYY-MM-DD in a month that is a working day (Sunday off by default). */
 export function workingDays(period: string, weeklyOff: number[] = [0]): string[] {
@@ -33,18 +34,31 @@ export interface PayslipLine {
 
 /**
  * One month's pay: basic plus allowances, less fixed deductions and a
- * day's basic for each unpaid day (absent, or on unpaid leave).
+ * day's basic for each unpaid day (absent, or on unpaid leave), and what the
+ * school's rules take off for late arrivals and short leaves.
  */
 export function calculatePayslip(input: {
   basic: number;
   items: PayItem[];
   unpaidDays: number;
   workingDays: number;
+  lateDays?: number;
+  shortLeaves?: number;
+  rules?: Rules;
 }) {
   const allowances = input.items.filter((i) => i.type === PayItemType.ALLOWANCE).reduce((s, i) => s + i.amount, 0);
   const deductions = input.items.filter((i) => i.type === PayItemType.DEDUCTION).reduce((s, i) => s + i.amount, 0);
   const days = Math.min(input.unpaidDays, input.workingDays);
   const unpaidDeduction = input.workingDays ? Math.round((input.basic / input.workingDays) * days) : 0;
+  const lateDays = input.lateDays ?? 0;
+  const shortLeaves = input.shortLeaves ?? 0;
+  const rule = ruleDeductions({
+    basic: input.basic,
+    workingDays: input.workingDays,
+    lateDays,
+    shortLeaves,
+    rules: input.rules ?? DEFAULT_RULES,
+  });
   const lines: PayslipLine[] = [
     { name: 'Basic salary', type: PayItemType.ALLOWANCE, amount: input.basic },
     ...input.items.map(({ name, type, amount }) => ({ name, type, amount })),
@@ -56,13 +70,32 @@ export function calculatePayslip(input: {
       amount: unpaidDeduction,
     });
   }
+  if (rule.lateDeduction) {
+    lines.push({
+      name: `Late arrivals (${lateDays} late, ${rule.lateStrikes} deducted)`,
+      type: PayItemType.DEDUCTION,
+      amount: rule.lateDeduction,
+    });
+  }
+  if (rule.shortLeaveDeduction) {
+    lines.push({
+      name: `Short leaves (${shortLeaves}, ${rule.chargeableShortLeaves} over the free limit)`,
+      type: PayItemType.DEDUCTION,
+      amount: rule.shortLeaveDeduction,
+    });
+  }
   return {
     basic: input.basic,
     allowances,
     deductions,
     unpaidDays: days,
     unpaidDeduction,
-    net: Math.max(0, input.basic + allowances - deductions - unpaidDeduction),
+    lateDeduction: rule.lateDeduction,
+    shortLeaveDeduction: rule.shortLeaveDeduction,
+    net: Math.max(
+      0,
+      input.basic + allowances - deductions - unpaidDeduction - rule.lateDeduction - rule.shortLeaveDeduction,
+    ),
     lines,
   };
 }

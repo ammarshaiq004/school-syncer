@@ -29,6 +29,8 @@ import {
 import { DEFAULT_BANDS, positions, studentResult } from '../../src/exams/result-calculator.js';
 import { invoiceLines, type InvoiceLineDraft } from '../../src/fees/fee-calculator.js';
 import { calculatePayslip, workingDays } from '../../src/hr/payroll-calculator.js';
+import { DEFAULT_RULES, isLate } from '../../src/hr/payroll-rules.js';
+import { seedHr } from './hr.js';
 import { daysBefore } from '../../src/common/dates.js';
 import { ridesDuring } from '../../src/transport/transport-rules.js';
 import { seedCertificates } from './certificates.js';
@@ -1087,6 +1089,7 @@ export async function seedSchool(
 
   const staffAttendance: Prisma.StaffAttendanceCreateManyInput[] = [];
   const unpaid = new Map<string, number>(); // `${userId}|${period}`
+  const lates = new Map<string, number>(); // `${userId}|${period}`
   const admin = staff.find((s) => plan.staff.some((p) => p.role === Role.ADMIN && p.name === s.name));
   for (const d of schoolDays) {
     if (d === today) continue;
@@ -1094,13 +1097,29 @@ export async function seedSchool(
       const leave = onLeave.get(`${s.id}|${d}`);
       const r = rng.next();
       const status = leave ? AttendanceStatus.LEAVE : r < 0.02 ? AttendanceStatus.ABSENT : r < 0.07 ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
-      staffAttendance.push({ schoolId, userId: s.id, date: day(d), status, markedById: admin?.id ?? null });
+      // Arrival times, so the payroll rules have lates to count: most are on time, a few just inside the grace period.
+      const checkIn =
+        status === AttendanceStatus.LATE
+          ? `08:${String(rng.int(11, 59)).padStart(2, '0')}`
+          : status === AttendanceStatus.PRESENT
+            ? `07:${String(rng.int(35, 59)).padStart(2, '0')}`
+            : null;
+      staffAttendance.push({ schoolId, userId: s.id, date: day(d), status, checkIn, markedById: admin?.id ?? null });
+      if (isLate(status, checkIn, DEFAULT_RULES)) lates.set(`${s.id}|${monthOf(d)}`, (lates.get(`${s.id}|${monthOf(d)}`) ?? 0) + 1);
       if (status === AttendanceStatus.ABSENT || leave === LeaveType.UNPAID) {
         unpaid.set(`${s.id}|${monthOf(d)}`, (unpaid.get(`${s.id}|${monthOf(d)}`) ?? 0) + 1);
       }
     }
   }
   for (const part of chunk(staffAttendance, 10000)) await prisma.staffAttendance.createMany({ data: part });
+
+  const hr = await seedHr(prisma, rng, {
+    schoolId,
+    issuedById: (admin ?? staff[0]).id,
+    today,
+    staff: staff.map((s) => ({ id: s.id, joinedOn: s.joinedOn })),
+    schoolDays,
+  });
 
   for (const period of months.filter((m) => m < monthOf(today))) {
     const [y, m] = period.split('-').map(Number);
@@ -1116,6 +1135,8 @@ export async function seedSchool(
           items: p.payItems,
           unpaidDays: unpaid.get(`${p.userId}|${period}`) ?? 0,
           workingDays: total,
+          lateDays: lates.get(`${p.userId}|${period}`) ?? 0,
+          shortLeaves: hr.shortLeaveCounts.get(`${p.userId}|${period}`) ?? 0,
         });
         return {
           runId: run.id,
@@ -1125,6 +1146,8 @@ export async function seedSchool(
           deductions: slip.deductions,
           unpaidDays: slip.unpaidDays,
           unpaidDeduction: slip.unpaidDeduction,
+          lateDeduction: slip.lateDeduction,
+          shortLeaveDeduction: slip.shortLeaveDeduction,
           net: slip.net,
           lines: slip.lines as unknown as Prisma.InputJsonValue,
           paidAt: paidOn <= today ? at(paidOn, 11) : null,

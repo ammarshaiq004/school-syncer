@@ -86,6 +86,9 @@ model School {
   gradeBands        GradeBand[]
   exams             Exam[]
   payrollRuns       PayrollRun[]
+  payrollRules      PayrollRules?
+  candidates        Candidate[]
+  staffCertificates StaffCertificate[]
   accountCategories AccountCategory[]
   accountEntries    AccountEntry[]
 
@@ -316,6 +319,9 @@ model User {
   staffProfile       StaffProfile?
   staffAttendance    StaffAttendance[]
   leaveRequests      LeaveRequest[]
+  shortLeaves             ShortLeave[]
+  staffCertificates       StaffCertificate[] @relation("StaffCertificateSubject")
+  staffCertificatesIssued StaffCertificate[] @relation("StaffCertificateIssuer")
   payslips           Payslip[]
   bookLoans          BookLoan[]        @relation("BookLoans")
   certificatesIssued Certificate[]
@@ -1133,11 +1139,109 @@ model StaffAttendance {
   status     AttendanceStatus
   note       String?
   markedById String?
+  /// Arrival time "HH:MM" (school local time); payroll rules count it as late past the grace period.
+  checkIn    String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
   @@index([schoolId, date])
+}
+
+/// A few hours off within one working day (e.g. leaving for a dentist).
+model ShortLeave {
+  id          String      @id @default(cuid())
+  schoolId    String
+  userId      String
+  date        DateTime    @db.Date
+  fromTime    String // "HH:MM"
+  toTime      String // "HH:MM"
+  reason      String?
+  status      LeaveStatus @default(PENDING)
+  decidedById String?
+  decidedAt   DateTime?
+  createdAt   DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, status])
+  @@index([userId, date])
+}
+
+/// How payroll treats late arrivals and short leaves; one row per school
+/// (defaults apply until it is saved).
+model PayrollRules {
+  schoolId                   String   @id
+  shiftStart                 String   @default("08:00")
+  graceMinutes               Int      @default(10)
+  /// Every this-many late arrivals in a month cost one deduction; 0 turns it off.
+  latesPerDeduction          Int      @default(3)
+  /// Each deduction, as a percent of one day's pay.
+  lateDeductionPercent       Int      @default(100)
+  /// Short leaves a month with no deduction.
+  freeShortLeaves            Int      @default(2)
+  /// Each short leave beyond the free ones, as a percent of one day's pay.
+  shortLeaveDeductionPercent Int      @default(50)
+  updatedAt                  DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+enum CandidateStatus {
+  NEW
+  SHORTLISTED
+  INTERVIEWED
+  OFFERED
+  HIRED
+  REJECTED
+}
+
+/// A job applicant in the HR CV bank, kept for the next vacancy.
+model Candidate {
+  id              String          @id @default(cuid())
+  schoolId        String
+  name            String
+  phone           String?
+  email           String?
+  position        String // role applied for, e.g. "Maths teacher"
+  qualification   String?
+  experienceYears Int             @default(0)
+  expectedSalary  Int?
+  source          String? // referral, walk-in, Rozee, ...
+  status          CandidateStatus @default(NEW)
+  notes           String?
+  cvId            String?         @unique
+  createdById     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  school School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  cv     StoredFile? @relation("CandidateCv", fields: [cvId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, status])
+  @@index([schoolId, position])
+}
+
+/// An experience certificate for a staff member, kept as issued (like student certificates).
+model StaffCertificate {
+  id           String    @id @default(cuid())
+  schoolId     String
+  userId       String
+  serialNo     String // e.g. "EXP-2026-0003"
+  verifyCode   String    @unique
+  issuedOn     DateTime  @db.Date
+  details      Json
+  issuedById   String
+  cancelledAt  DateTime?
+  cancelReason String?
+  createdAt    DateTime  @default(now())
+
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user     User   @relation("StaffCertificateSubject", fields: [userId], references: [id], onDelete: Cascade)
+  issuedBy User   @relation("StaffCertificateIssuer", fields: [issuedById], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, serialNo])
+  @@index([userId])
 }
 
 enum LeaveType {
@@ -1202,6 +1306,9 @@ model Payslip {
   deductions      Int
   unpaidDays      Int
   unpaidDeduction Int
+  /// Payroll rules: late arrivals and short leaves (SCHOOL HR rules).
+  lateDeduction       Int       @default(0)
+  shortLeaveDeduction Int       @default(0)
   net             Int
   // [{ name, type, amount }] as calculated
   lines           Json
@@ -2388,6 +2495,7 @@ enum FilePurpose {
   STUDENT_PHOTO
   PROBLEM_REPORT
   PAYMENT_PROOF
+  CANDIDATE_CV
 }
 
 /// A file uploaded to the school's storage (S3-compatible bucket or local
@@ -2416,6 +2524,8 @@ model StoredFile {
   problemReport ProblemReport? @relation("ProblemReportScreenshot")
   /// Proof of a payment to SchoolSyncer (purpose PAYMENT_PROOF).
   paymentClaim  PaymentClaim?  @relation("PaymentClaimProof")
+  /// A job candidate's CV in the HR CV bank (purpose CANDIDATE_CV).
+  candidateCv   Candidate?     @relation("CandidateCv")
 
   @@index([schoolId])
   @@index([uploadedById])

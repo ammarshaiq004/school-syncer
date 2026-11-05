@@ -19,6 +19,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { staffWhere } from './staff-where.js';
 import { calculatePayslip, daysBetween, workingDays, type PayItem } from './payroll-calculator.js';
+import { DEFAULT_RULES, isLate } from './payroll-rules.js';
 
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
 const runSchema = z.object({ period });
@@ -97,6 +98,7 @@ export class PayrollController {
     const days = workingDays(body.period);
     const monthStart = dayStart(`${body.period}-01`);
     const monthEnd = dayStart(days.at(-1) ?? `${body.period}-28`);
+    const rules = (await this.prisma.payrollRules.findUnique({ where: { schoolId: user.schoolId } })) ?? DEFAULT_RULES;
     const profiles = await this.prisma.staffProfile.findMany({
       where: { schoolId: user.schoolId, status: StaffStatus.ACTIVE, user: { isActive: true } },
       include: {
@@ -105,7 +107,7 @@ export class PayrollController {
           select: {
             staffAttendance: {
               where: { date: { gte: monthStart, lte: monthEnd } },
-              select: { date: true, status: true },
+              select: { date: true, status: true, checkIn: true },
             },
             leaveRequests: {
               where: {
@@ -115,6 +117,10 @@ export class PayrollController {
                 toDate: { gte: monthStart },
               },
               select: { fromDate: true, toDate: true },
+            },
+            shortLeaves: {
+              where: { status: LeaveStatus.APPROVED, date: { gte: monthStart, lte: monthEnd } },
+              select: { id: true },
             },
           },
         },
@@ -139,6 +145,9 @@ export class PayrollController {
         items: p.payItems as PayItem[],
         unpaidDays: [...unpaid].filter((d) => working.has(d)).length,
         workingDays: days.length,
+        lateDays: p.user.staffAttendance.filter((a) => isLate(a.status, a.checkIn, rules)).length,
+        shortLeaves: p.user.shortLeaves.length,
+        rules,
       });
       return { userId: p.userId, ...slip, lines: slip.lines as unknown as Prisma.InputJsonValue };
     });
