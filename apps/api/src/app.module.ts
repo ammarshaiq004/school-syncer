@@ -6,6 +6,8 @@ import { AdmissionsController } from './admissions/admissions.controller.js';
 import { AnnouncementsController } from './announcements/announcements.controller.js';
 import { AttendanceController } from './attendance/attendance.controller.js';
 import { DashboardController } from './dashboard/dashboard.controller.js';
+import { DatesheetController } from './exams/datesheet.controller.js';
+import { ExamReportsController } from './exams/exam-reports.controller.js';
 import { ExamsController } from './exams/exams.controller.js';
 import { HomeworkController } from './homework/homework.controller.js';
 import { TimetableController } from './timetable/timetable.controller.js';
@@ -153,6 +155,8 @@ import { UsersController } from './users/users.controller.js';
     FeeHeadsController,
     FeeCorrectionsController,
     ExamsController,
+    DatesheetController,
+    ExamReportsController,
     TimetableController,
     TransportController,
     LibraryController,

@@ -6,15 +6,18 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import {
   Award,
   BookOpen,
+  CalendarRange,
   CircleAlert,
   CircleCheck,
   ClipboardList,
   FileText,
+  ListChecks,
   Lock,
   Percent,
   Plus,
   Save,
   Send,
+  Ticket,
   Trash2,
   Trophy,
   Undo2,
@@ -53,6 +56,7 @@ import {
   useToast,
   type Column,
 } from "@/components/ui";
+import { DatesheetTab, SlipsTab, SyllabusTab, timeRange } from "@/components/exams/exam-sheets";
 import { ChangeHistory, type ChangeLine } from "@/components/change-history";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -68,6 +72,9 @@ interface Paper {
   maxMarks: number;
   passMarks: number;
   date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  room: string | null;
   class: { name: string };
   subject: { name: string };
 }
@@ -91,7 +98,7 @@ interface ProgressRow {
   canEnter: boolean;
 }
 
-type TabId = "marks" | "results" | "papers";
+type TabId = "marks" | "results" | "papers" | "datesheet" | "slips" | "syllabus";
 
 export default function ExamPage() {
   const { id } = useParams<{ id: string }>();
@@ -107,6 +114,9 @@ export default function ExamPage() {
     { value: "marks", label: "Marks", icon: <ClipboardList /> },
     { value: "results", label: "Results", icon: <Award /> },
     ...(canManage ? [{ value: "papers", label: "Papers", icon: <BookOpen />, count: exam.data?.papers.length }] : []),
+    { value: "datesheet", label: "Datesheet", icon: <CalendarRange /> },
+    { value: "slips", label: "Roll slips", icon: <Ticket /> },
+    { value: "syllabus", label: "Syllabus", icon: <ListChecks /> },
   ];
 
   return (
@@ -143,6 +153,15 @@ export default function ExamPage() {
           </TabPanel>
           <TabPanel value="results">
             <ResultsTab exam={exam.data} canManage={canManage} onChange={exam.reload} />
+          </TabPanel>
+          <TabPanel value="datesheet">
+            <DatesheetTab exam={exam.data} />
+          </TabPanel>
+          <TabPanel value="slips">
+            <SlipsTab exam={exam.data} />
+          </TabPanel>
+          <TabPanel value="syllabus">
+            <SyllabusTab exam={exam.data} canManage={canManage} />
           </TabPanel>
           {canManage && (
             <TabPanel value="papers">
@@ -901,6 +920,9 @@ function PapersTab({ exam, onChange }: { exam: Exam; onChange: () => Promise<voi
             maxMarks: Number(f.get("maxMarks")),
             passMarks: Number(f.get("passMarks")),
             date: f.get("date") || undefined,
+            startTime: f.get("startTime") || undefined,
+            endTime: f.get("endTime") || undefined,
+            room: f.get("room") || undefined,
           })),
         },
       });
@@ -941,6 +963,7 @@ function PapersTab({ exam, onChange }: { exam: Exam; onChange: () => Promise<voi
     { id: "total", header: "Total", align: "right", sortValue: (p) => p.maxMarks, cell: (p) => p.maxMarks },
     { id: "pass", header: "Pass", align: "right", sortValue: (p) => p.passMarks, cell: (p) => p.passMarks },
     { id: "date", header: "Date", sortValue: (p) => p.date, cell: (p) => (p.date ? day(p.date) : <span className="text-fg-muted">Not set</span>), hideBelow: "sm" },
+    { id: "time", header: "Time and room", cell: (p) => [timeRange(p), p.room].filter(Boolean).join(", ") || <span className="text-fg-muted">Not set</span>, hideBelow: "md" },
     {
       id: "actions",
       header: <span className="sr-only">Actions</span>,
@@ -1044,6 +1067,11 @@ function PapersTab({ exam, onChange }: { exam: Exam; onChange: () => Promise<voi
             <TextField label="Pass marks" name="passMarks" type="number" min={0} defaultValue={33} required />
           </div>
           <TextField label="Date" hint="Optional" name="date" type="date" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField label="Starts" hint="Optional" name="startTime" type="time" />
+            <TextField label="Ends" hint="Optional" name="endTime" type="time" />
+          </div>
+          <TextField label="Room" hint="Optional, e.g. Hall A" name="room" maxLength={40} />
           {error && <Alert tone="danger">{error}</Alert>}
         </form>
       </Drawer>
