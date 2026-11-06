@@ -63,6 +63,7 @@ export interface StudentProfile {
   dateOfBirth: string | null;
   bFormNo: string | null;
   address: string | null;
+  localityId?: string | null;
   medicalNotes: string | null;
   status: StudentStatus;
   admittedOn: string;
