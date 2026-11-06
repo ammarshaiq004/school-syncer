@@ -66,6 +66,7 @@ export type PermissionModule =
   | "hr"
   | "transport"
   | "library"
+  | "front_office"
   | "announcements"
   | "messages"
   | "chat"
@@ -129,6 +130,8 @@ const SUPPORT_INFO_KEY = "schoolsyncer.support-info";
 export interface SupportInfo {
   schoolName: string | null;
   expiresAt: string | null;
+  /** What the session may do; "view" can only read. */
+  scope?: string | null;
 }
 
 export function getSupportToken(): string | null {

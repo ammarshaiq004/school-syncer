@@ -21,6 +21,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { RISK_LABELS, type PlatformReports } from "@/components/platform/reports";
+import { type ReportHistory } from "@/components/platform/watch";
 import { when } from "@/components/platform/session";
 import { downloadCsv } from "@/lib/csv";
 import { rupees } from "@/lib/format";
@@ -63,6 +64,8 @@ const planColumns: Column<PlanRow>[] = [
 export default function ReportsPage() {
   const { data, error, reload } = usePlatformApi<PlatformReports>("/reports");
   const loading = !data && !error;
+  const history = usePlatformApi<ReportHistory>("/reports/history");
+  const latest = history.data?.at(-1);
 
   function exportRevenue() {
     if (!data) return;
@@ -132,6 +135,39 @@ export default function ReportsPage() {
               loading={loading}
             />
           </StatGrid>
+
+          <Card>
+            <CardHeader
+              title="Monthly recurring revenue over time"
+              description="As on the last nightly snapshot of each month. History starts the night snapshots were first taken."
+            />
+            {!history.data ? (
+              <Skeleton className="h-[220px] w-full" />
+            ) : history.data.length < 2 ? (
+              <EmptyState icon={<Wallet />} title="History is still building" description="A snapshot is taken each night, so this fills in over the coming weeks." compact />
+            ) : (
+              <AreaChart
+                label="Monthly recurring revenue by month in rupees"
+                categories={history.data.map((h) => monthName(h.month))}
+                series={[{ name: "Monthly recurring revenue", values: history.data.map((h) => h.mrr) }]}
+                formatValue={rupees}
+                height={220}
+              />
+            )}
+            {latest && (
+              <DescriptionList
+                columns={2}
+                className="mt-4"
+                items={[
+                  {
+                    label: `Churn in ${monthName(latest.month)}`,
+                    value: latest.churnRate == null ? "Not enough history yet" : `${latest.churnRate}% (${latest.churned} of ${latest.payingAtStart} paying schools)`,
+                  },
+                  { label: "Net revenue retention", value: latest.nrr == null ? "Not enough history yet" : `${latest.nrr}% of last month's revenue kept` },
+                ]}
+              />
+            )}
+          </Card>
 
           <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">

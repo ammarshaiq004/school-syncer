@@ -3,6 +3,7 @@ import {
   byMonth,
   fallingStudents,
   monthKeys,
+  retention,
   trialConversion,
   trialRisk,
 } from './reports.js';
@@ -86,5 +87,19 @@ describe('trialRisk', () => {
     });
     expect(trialRisk(new Date('2026-10-20'), now)).toBeNull();
     expect(trialRisk(null, now)).toBeNull();
+  });
+});
+
+describe('retention', () => {
+  const rows = (...m: [string, number][]) => m.map(([schoolId, mrr]) => ({ schoolId, mrr }));
+
+  it('counts schools that stopped paying and what the rest still pay', () => {
+    const r = retention(rows(['a', 10_000], ['b', 10_000], ['c', 20_000], ['t', 0]), rows(['a', 12_000], ['c', 0], ['t', 5_000], ['new', 9_000]));
+    // b has no row and c pays nothing: 2 of 3 churned. The trial school t and the new school do not count.
+    expect(r).toEqual({ payingAtStart: 3, churned: 2, churnRate: 66.7, nrr: 30 });
+  });
+
+  it('is null when nobody was paying at the start', () => {
+    expect(retention(rows(['t', 0]), rows(['t', 8_000]))).toEqual({ payingAtStart: 0, churned: 0, churnRate: null, nrr: null });
   });
 });

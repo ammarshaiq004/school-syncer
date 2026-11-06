@@ -3,8 +3,9 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { API_DIR, SEED_FILE } from './env';
 
-// The Prisma client is generated for the API package, so load it (and the
-// API's bcrypt) from there rather than adding a second copy here.
+// The Prisma client is generated for the API package, so load it (with its
+// Postgres driver adapter and the API's bcrypt) from there rather than adding
+// a second copy here.
 const requireFromApi = createRequire(path.join(API_DIR, 'package.json'));
 
 interface Delegate {
@@ -30,8 +31,9 @@ export type Db = Record<
 > & { $disconnect(): Promise<void> };
 
 export async function withDb<T>(fn: (db: Db) => Promise<T>): Promise<T> {
-  const { PrismaClient } = requireFromApi('@prisma/client') as { PrismaClient: new () => Db };
-  const db = new PrismaClient();
+  const { PrismaClient } = requireFromApi('@prisma/client') as { PrismaClient: new (options: { adapter: unknown }) => Db };
+  const { PrismaPg } = requireFromApi('@prisma/adapter-pg') as { PrismaPg: new (config: { connectionString?: string }) => unknown };
+  const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
   try {
     return await fn(db);
   } finally {

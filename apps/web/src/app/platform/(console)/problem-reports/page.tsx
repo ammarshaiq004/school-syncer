@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { Bug, ExternalLink, StickyNote } from "lucide-react";
+import { Bug, ExternalLink, MessageSquare, StickyNote } from "lucide-react";
 import {
   Badge,
   Button,
@@ -30,7 +30,8 @@ interface InboxReport extends ProblemReport {
   schoolId: string;
   updatedAt: string;
   school: { id: string; name: string; slug: string };
-  activity: { id: string; at: string; adminName: string; status: ProblemStatus | null; fromStatus: ProblemStatus | null; note: string | null }[];
+  assignedTo: { id: string; name: string } | null;
+  activity: { id: string; at: string; adminName: string; status: ProblemStatus | null; fromStatus: ProblemStatus | null; note: string | null; reply: string | null }[];
 }
 
 interface InboxPage {
@@ -72,6 +73,7 @@ const columns: Column<InboxReport>[] = [
     ),
     hideBelow: "md",
   },
+  { id: "assignee", header: "Looks after it", cell: (r) => r.assignedTo?.name ?? <span className="text-fg-muted">Nobody</span>, hideBelow: "lg" },
   { id: "when", header: "Sent", cell: (r) => <time dateTime={r.createdAt} className="whitespace-nowrap text-fg-secondary">{when(r.createdAt)}</time>, hideBelow: "lg" },
   { id: "status", header: "Status", cell: (r) => <StatusPill status={r.status} tone={PROBLEM_STATUS_TONE[r.status]} label={PROBLEM_STATUS_LABEL[r.status]} /> },
 ];
@@ -86,17 +88,20 @@ export default function ProblemReportsInbox() {
   const [schoolId, setSchoolId] = useState(() => new URLSearchParams(window.location.search).get("schoolId") ?? "");
   const [filter, setFilter] = useState<Filter>("open");
   const [q, setQ] = useState("");
+  const [assigned, setAssigned] = useState("");
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const query = new URLSearchParams({
     page: String(page),
     ...(schoolId && { schoolId }),
+    ...(assigned && { assigned }),
     ...(filter === "open" ? { open: "true" } : filter !== "all" ? { status: filter } : {}),
     ...(q.trim() && { q: q.trim() }),
   });
   const inbox = usePlatformApi<InboxPage>(`/problem-reports?${query}`);
   const schools = usePlatformApi<{ id: string; name: string }[]>("/schools");
+  const staff = usePlatformApi<{ id: string; name: string }[]>("/problem-reports/assignees");
   const counts = inbox.data?.counts;
   const reset = <T,>(set: (v: T) => void) => (v: T) => {
     set(v);
@@ -105,7 +110,7 @@ export default function ProblemReportsInbox() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Problem reports" description="What schools sent with Report a problem, newest first. Status changes are shown to the reporter; notes are not." />
+      <PageHeader title="Problem reports" description="What schools sent with Report a problem, newest first. Replies and status changes are shown to the reporter; notes are not." />
       <DataTable
         label="Problem reports"
         columns={columns}
@@ -141,10 +146,18 @@ export default function ProblemReportsInbox() {
               onChange={(e) => reset(setSchoolId)(e.target.value)}
               wrapperClassName="w-52"
             />
+            <NativeSelect
+              aria-label="Looks after it"
+              placeholder="Anyone"
+              options={[{ value: "none", label: "Nobody yet" }, ...(staff.data ?? []).map((s) => ({ value: s.id, label: s.name }))]}
+              value={assigned}
+              onChange={(e) => reset(setAssigned)(e.target.value)}
+              wrapperClassName="w-44"
+            />
           </>
         }
         manualFiltering
-        filtered={!!(schoolId || q || filter !== "all")}
+        filtered={!!(schoolId || assigned || q || filter !== "all")}
         serverPagination={inbox.data ? { page: inbox.data.page, pageSize: inbox.data.pageSize, total: inbox.data.total, onPageChange: setPage } : undefined}
         empty={{ icon: <Bug />, title: "No reports here", description: "Reports matching these filters show here." }}
         onRowClick={(r) => setOpenId(r.id)}
@@ -159,6 +172,8 @@ function ReportDrawer({ id, onClose, onChanged }: { id: string | null; onClose: 
   const toast = useToast();
   const detail = usePlatformApi<Detail>(id ? `/problem-reports/${id}` : null);
   const [note, setNote] = useState("");
+  const [reply, setReply] = useState("");
+  const staff = usePlatformApi<{ id: string; name: string }[]>(id ? "/problem-reports/assignees" : null);
   const [busy, setBusy] = useState<string | null>(null);
   const r = detail.data?.id === id ? detail.data : null;
 
@@ -179,6 +194,11 @@ function ReportDrawer({ id, onClose, onChanged }: { id: string | null; onClose: 
   async function addNote(event: FormEvent) {
     event.preventDefault();
     if (await change(`/problem-reports/${id}/notes`, "POST", { note }, "note")) setNote("");
+  }
+
+  async function sendReply(event: FormEvent) {
+    event.preventDefault();
+    if (await change(`/problem-reports/${id}/replies`, "POST", { reply }, "reply")) setReply("");
   }
 
   return (
@@ -225,6 +245,19 @@ function ReportDrawer({ id, onClose, onChanged }: { id: string | null; onClose: 
                   </Link>
                 ),
               },
+              {
+                label: "Looks after it",
+                value: (
+                  <NativeSelect
+                    aria-label="Looks after it"
+                    placeholder="Nobody yet"
+                    options={(staff.data ?? []).map((s) => ({ value: s.id, label: s.name }))}
+                    value={r.assignedTo?.id ?? ""}
+                    disabled={busy === "assign"}
+                    onChange={(e) => void change(`/problem-reports/${r.id}/assign`, "PATCH", { adminId: e.target.value || null }, "assign")}
+                  />
+                ),
+              },
               { label: "Reported by", value: `${r.reporterName}${r.reporter && !r.reporter.isActive ? " (deactivated)" : ""}` },
               { label: "Role", value: roleLabel(r.roles.map((role) => ({ role }))) || "None" },
               { label: "Contact", value: r.reporter ? [r.reporter.phone, r.reporter.email, r.reporter.username].filter(Boolean).join(", ") || "None" : "Account removed" },
@@ -245,7 +278,12 @@ function ReportDrawer({ id, onClose, onChanged }: { id: string | null; onClose: 
                     <p className="text-xs text-fg-muted">
                       {a.adminName} · {when(a.at)}
                     </p>
-                    {a.note ? (
+                    {a.reply ? (
+                      <p className="mt-1 flex gap-2 whitespace-pre-line text-fg">
+                        <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-brand" aria-label="Reply to the school" />
+                        {a.reply}
+                      </p>
+                    ) : a.note ? (
                       <p className="mt-1 flex gap-2 whitespace-pre-line text-fg">
                         <StickyNote className="mt-0.5 size-3.5 shrink-0 text-warning" aria-label="Internal note" />
                         {a.note}
@@ -260,6 +298,14 @@ function ReportDrawer({ id, onClose, onChanged }: { id: string | null; onClose: 
                 ))}
               </ol>
             )}
+            <form onSubmit={sendReply} className="flex flex-col gap-2">
+              <TextareaField label="Reply to the school" hint="The school sees this under My reports, and the reporter is emailed." rows={3} maxLength={4000} value={reply} onChange={(e) => setReply(e.target.value)} />
+              <div className="flex justify-end">
+                <Button type="submit" size="sm" loading={busy === "reply"} disabled={!reply.trim() || !!busy}>
+                  Send reply
+                </Button>
+              </div>
+            </form>
             <form onSubmit={addNote} className="flex flex-col gap-2">
               <TextareaField label="Internal note" hint="Only SchoolSyncer staff see notes." rows={3} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} />
               <div className="flex justify-end">

@@ -28,7 +28,13 @@ export interface AuthUser {
    * Present only on a support session: a SchoolSyncer staff member signed in
    * as this user from the platform console.
    */
-  support?: { adminId: string; adminName: string };
+  support?: {
+    adminId: string;
+    adminName: string;
+    /** Missing on sessions opened before sessions were recorded; those act as edit. */
+    sessionId?: string;
+    scope?: 'view' | 'edit';
+  };
 }
 
 /** A SchoolSyncer staff member signed in to the platform console. */

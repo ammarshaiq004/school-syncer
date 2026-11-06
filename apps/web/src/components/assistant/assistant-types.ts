@@ -6,6 +6,14 @@ export interface AssistantStatus {
   model: string | null;
   usedToday: number;
   dailyLimit: number;
+  /** Aon: the school's switch, its token budget this month, and whether this user can manage it. */
+  aon: { enabled: boolean; monthUsed: number; monthLimit: number; canManage: boolean };
+}
+
+export interface AonNote {
+  id: string;
+  note: string;
+  createdAt: string;
 }
 
 export interface AssistantSection {

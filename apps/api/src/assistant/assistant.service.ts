@@ -3,16 +3,18 @@ import type {
   BetaMessageParam,
   BetaToolResultBlockParam,
 } from '@anthropic-ai/sdk/resources/beta/messages/messages';
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AssistantKind } from '@prisma/client';
 import { z } from 'zod';
+import { SETUP_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { localToday, startOfLocalDay } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AssistantData } from './assistant-data.service.js';
 import { AssistantModel } from './assistant-model.service.js';
-import { ASK_SYSTEM, ASSISTANT_TOOLS, runTool } from './assistant-tools.js';
+import { cleanNote, defaultMonthlyTokens, MAX_NOTE_CHARS, MAX_NOTES, memoryPrompt, monthlyBudget, startOfMonth } from './aon-rules.js';
+import { ASK_SYSTEM, ASSISTANT_TOOLS, REMEMBER_TOOL, runTool } from './assistant-tools.js';
 import { DRAFT_SYSTEM, draftPrompt, fit, REMARK_MAX, templateDraft, type DraftRequest } from './draft-rules.js';
 
 export const askSchema = z.object({
@@ -37,12 +39,14 @@ const LABELS: Record<string, string> = {
   exam_report: 'Exam results',
   fee_report: 'Fees',
   at_risk_students: 'At-risk check',
+  remember: 'Memory',
 };
 
 /** Questions (SCHOOL-105) and drafts (SCHOOL-106), with a per-user daily limit. */
 @Injectable()
 export class AssistantService {
   readonly dailyLimit: number;
+  private readonly defaultMonthly: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -52,19 +56,72 @@ export class AssistantService {
   ) {
     const limit = Number(config.get('ASSISTANT_DAILY_LIMIT'));
     this.dailyLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : DEFAULT_DAILY_LIMIT;
+    this.defaultMonthly = defaultMonthlyTokens(config.get('ASSISTANT_MONTHLY_TOKENS'));
+  }
+
+  /** Managers (owner, principal, admin) can have Aon remember things and switch it off. */
+  canManage(user: AuthUser) {
+    return user.roles.some((r) => SETUP_ROLES.includes(r.role));
   }
 
   async status(user: AuthUser) {
+    const ai = await this.model.available();
+    const school = await this.school(user);
     return {
-      ai: this.model.enabled,
-      model: this.model.enabled ? this.model.model : null,
+      ai,
+      model: ai ? this.model.model : null,
       usedToday: await this.usedToday(user),
       dailyLimit: this.dailyLimit,
+      aon: { enabled: school.aonEnabled, ...(await this.monthUsage(user, school)), canManage: this.canManage(user) },
     };
   }
 
+  // ----- Memory -----
+
+  memory(user: AuthUser) {
+    return this.prisma.aonMemoryNote.findMany({
+      where: { schoolId: user.schoolId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: MAX_NOTES,
+      select: { id: true, note: true, createdAt: true },
+    });
+  }
+
+  /** Saves a note; the oldest go first when the school is at its cap. */
+  async remember(user: AuthUser, text: unknown) {
+    if (!this.canManage(user)) throw new ForbiddenException('Only the owner, principal or an admin can add to Aon\'s memory');
+    const note = cleanNote(text);
+    if (!note) throw new HttpException(`A note must be 1 to ${MAX_NOTE_CHARS} characters.`, HttpStatus.BAD_REQUEST);
+    const old = await this.prisma.aonMemoryNote.findMany({
+      where: { schoolId: user.schoolId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: MAX_NOTES - 1,
+      select: { id: true },
+    });
+    if (old.length) await this.prisma.aonMemoryNote.deleteMany({ where: { id: { in: old.map((n) => n.id) } } });
+    return this.prisma.aonMemoryNote.create({
+      data: { schoolId: user.schoolId, note, createdById: user.sub },
+      select: { id: true, note: true, createdAt: true },
+    });
+  }
+
+  async forget(user: AuthUser, id: string) {
+    if (!this.canManage(user)) throw new ForbiddenException('Only the owner, principal or an admin can remove Aon\'s notes');
+    const { count } = await this.prisma.aonMemoryNote.deleteMany({ where: { id, schoolId: user.schoolId } });
+    if (!count) throw new NotFoundException('No such note');
+  }
+
+  async setEnabled(user: AuthUser, enabled: boolean) {
+    if (!this.canManage(user)) throw new ForbiddenException('Only the owner, principal or an admin can switch Aon on or off');
+    await this.prisma.school.update({ where: { id: user.schoolId }, data: { aonEnabled: enabled } });
+    return this.status(user);
+  }
+
   async ask(user: AuthUser, body: AskRequest) {
-    await this.checkLimit(user);
+    await this.checkLimit(user, { forQuestion: true });
+    const notes = await this.memory(user);
+    const system = ASK_SYSTEM + memoryPrompt(notes);
+    const tools = this.canManage(user) ? [...ASSISTANT_TOOLS, REMEMBER_TOOL] : ASSISTANT_TOOLS;
     const reach = await this.data.reach(user);
     const messages: BetaMessageParam[] = [
       ...body.history.map((h) => ({ role: h.role, content: h.content })),
@@ -81,8 +138,8 @@ export class AssistantService {
       for (let step = 0; step < MAX_STEPS; step++) {
         const res = await this.model.create({
           max_tokens: 8000,
-          system: ASK_SYSTEM,
-          tools: ASSISTANT_TOOLS,
+          system,
+          tools,
           output_config: { effort: 'medium' },
           messages,
         });
@@ -100,7 +157,10 @@ export class AssistantService {
           calls.map(async (call): Promise<BetaToolResultBlockParam> => {
             used.add(call.name);
             try {
-              const out = await runTool(this.data, reach, call.name, call.input);
+              const out =
+                call.name === 'remember'
+                  ? { saved: (await this.remember(user, (call.input as { note?: unknown } | null)?.note)).note }
+                  : await runTool(this.data, reach, call.name, call.input);
               return { type: 'tool_result', tool_use_id: call.id, content: JSON.stringify(out) };
             } catch (e) {
               return { type: 'tool_result', tool_use_id: call.id, content: (e as Error).message, is_error: true };
@@ -131,10 +191,11 @@ export class AssistantService {
     const reach = await this.data.reach(user);
     const { facts, examId } = await this.data.draftFacts(reach, body.studentId, body.examId);
     const shape = (text: string) => (body.kind === 'report_remark' ? fit(text, REMARK_MAX) : text.trim());
-    if (!this.model.enabled) {
+    const school = await this.school(user);
+    if (!school.aonEnabled || !(await this.model.available())) {
       return { text: shape(templateDraft(body.kind, facts, body.notes)), source: 'template' as const, facts, examId };
     }
-    await this.checkLimit(user);
+    await this.checkLimit(user, { school });
     const res = await this.model.create({
       max_tokens: 4000,
       system: DRAFT_SYSTEM,
@@ -158,10 +219,34 @@ export class AssistantService {
     });
   }
 
-  private async checkLimit(user: AuthUser) {
+  private school(user: AuthUser) {
+    return this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId }, select: { aonEnabled: true, aiMonthlyTokens: true } });
+  }
+
+  /** Tokens the school has used this month against its budget. */
+  private async monthUsage(user: AuthUser, school: { aiMonthlyTokens: number | null }) {
+    const sum = await this.prisma.assistantUsage.aggregate({
+      where: { schoolId: user.schoolId, createdAt: { gte: startOfMonth(new Date()) } },
+      _sum: { inputTokens: true, outputTokens: true },
+    });
+    return {
+      monthUsed: (sum._sum.inputTokens ?? 0) + (sum._sum.outputTokens ?? 0),
+      monthLimit: monthlyBudget(school.aiMonthlyTokens, this.defaultMonthly),
+    };
+  }
+
+  private async checkLimit(user: AuthUser, opts: { forQuestion?: boolean; school?: { aonEnabled: boolean; aiMonthlyTokens: number | null } } = {}) {
+    const school = opts.school ?? (await this.school(user));
+    if (opts.forQuestion && !school.aonEnabled) throw new ForbiddenException('Aon is switched off for your school. The owner can switch it on in Settings.');
     if ((await this.usedToday(user)) >= this.dailyLimit)
       throw new HttpException(
         `You have used the assistant ${this.dailyLimit} times today, the daily limit. It resets at midnight.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    const { monthUsed, monthLimit } = await this.monthUsage(user, school);
+    if (monthUsed >= monthLimit)
+      throw new HttpException(
+        'Your school has used its AI allowance for this month. It renews on the 1st, or ask SchoolSyncer support to raise it.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
   }

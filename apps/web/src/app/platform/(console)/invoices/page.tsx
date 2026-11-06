@@ -39,7 +39,11 @@ export default function BillsPage() {
   const canVoid = isOwner(useConsoleAdmin());
   // Links from the overview pass ?status=... (the console only renders in the browser).
   const [status, setStatus] = useState(() => new URLSearchParams(window.location.search).get("status") ?? "");
-  const bills = usePlatformApi<Bill[]>(`/invoices${status ? `?status=${status}` : ""}`);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize), ...(status && { status }), ...(search.trim() && { search: search.trim() }) });
+  const bills = usePlatformApi<{ items: Bill[]; total: number }>(`/invoices?${query}`);
 
   const [generateOpen, setGenerateOpen] = useState(false);
   const [period, setPeriod] = useState(thisMonth());
@@ -113,7 +117,7 @@ export default function BillsPage() {
     setPaying(b);
   }
 
-  const unpaidShown = bills.data?.filter((b) => b.status === "UNPAID") ?? [];
+  const unpaidShown = bills.data?.items.filter((b) => b.status === "UNPAID") ?? [];
   const unpaidTotal = totalOwed(unpaidShown);
 
   const columns: Column<Bill>[] = [
@@ -238,7 +242,7 @@ export default function BillsPage() {
       />
 
       {unpaidTotal > 0 && (
-        <Alert tone="warning" title={`${rupees(unpaidTotal)} unpaid in this list`}>
+        <Alert tone="warning" title={`${rupees(unpaidTotal)} unpaid on this page`}>
           {unpaidShown.length} {unpaidShown.length === 1 ? "bill is" : "bills are"} waiting for payment.
         </Alert>
       )}
@@ -246,11 +250,20 @@ export default function BillsPage() {
       <DataTable
         label="Bills"
         columns={columns}
-        data={bills.data}
+        data={bills.data?.items}
         getRowId={(b) => b.id}
         error={bills.error}
         onRetry={bills.reload}
-        getSearchText={(b) => `${b.number} ${b.school.name} ${b.planName}`}
+        search={search}
+        onSearchChange={(v) => (setSearch(v), setPage(1))}
+        manualFiltering
+        serverPagination={{
+          page,
+          pageSize,
+          total: bills.data?.total ?? 0,
+          onPageChange: setPage,
+          onPageSizeChange: (n) => (setPageSize(n), setPage(1)),
+        }}
         searchPlaceholder="Search bill number or school"
         filters={
           <NativeSelect
@@ -258,11 +271,11 @@ export default function BillsPage() {
             placeholder="All bills"
             options={BILL_STATUSES}
             value={status}
-            onChange={(e) => setStatus(e.target.value)}
+            onChange={(e) => (setStatus(e.target.value), setPage(1))}
             wrapperClassName="w-36"
           />
         }
-        filtered={!!status}
+        filtered={!!status || !!search}
         empty={{
           icon: <Receipt />,
           title: "No bills",

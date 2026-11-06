@@ -62,6 +62,15 @@ export class JwtAuthGuard implements CanActivate {
       if (payload.support && !(await this.users.adminActive(payload.support.adminId))) {
         throw new UnauthorizedException('This support session has ended');
       }
+      if (payload.support?.sessionId) {
+        if (!(await this.users.supportSessionOpen(payload.support.sessionId))) {
+          throw new UnauthorizedException('This support session has ended');
+        }
+        // A view-only session can look but not change anything.
+        if (payload.support.scope === 'view' && !['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+          throw new ForbiddenException('This support session is view only');
+        }
+      }
       // A password change or reset bumps the version, ending older sessions.
       if ((payload.tv ?? 0) !== status.tokenVersion) {
         throw new UnauthorizedException('Your session has ended. Sign in again');

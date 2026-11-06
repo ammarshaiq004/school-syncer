@@ -112,3 +112,29 @@ export function trialRisk(
   }
   return null;
 }
+
+/**
+ * Churn and net revenue retention between two snapshots of a month's start
+ * and end. Of the schools paying (mrr above 0) at the start, churned ones are
+ * paying nothing at the end (or have no row); retention is what those same
+ * schools pay at the end over what they paid at the start, so it counts
+ * downgrades and student drops but not new schools. Both are null when
+ * nobody was paying at the start.
+ */
+export function retention(
+  start: { schoolId: string; mrr: number }[],
+  end: { schoolId: string; mrr: number }[],
+) {
+  const now = new Map(end.map((r) => [r.schoolId, r.mrr]));
+  const paying = start.filter((r) => r.mrr > 0);
+  const churned = paying.filter((r) => !(now.get(r.schoolId) ?? 0)).length;
+  const was = paying.reduce((a, r) => a + r.mrr, 0);
+  const is = paying.reduce((a, r) => a + (now.get(r.schoolId) ?? 0), 0);
+  const pct = (n: number) => Math.round(n * 1000) / 10;
+  return {
+    payingAtStart: paying.length,
+    churned,
+    churnRate: paying.length ? pct(churned / paying.length) : null,
+    nrr: was ? pct(is / was) : null,
+  };
+}

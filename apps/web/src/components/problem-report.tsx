@@ -188,6 +188,14 @@ function ReportItem({ report: r, showReporter }: { report: ProblemReport; showRe
         {r.source === "MOBILE" && <Badge tone="neutral">Mobile app</Badge>}
         {showReporter && <span>· {r.reporterName}</span>}
       </p>
+      {r.replies.map((x) => (
+        <div key={x.id} className="mt-3 rounded-md bg-surface-2 px-3 py-2 text-sm">
+          <p className="text-xs font-medium text-fg-muted">
+            SchoolSyncer support, {day(x.at)}
+          </p>
+          <p className="mt-1 whitespace-pre-line break-words text-fg">{x.reply}</p>
+        </div>
+      ))}
       {r.history.length > 0 && (
         <ol className="mt-2 flex flex-col gap-0.5 border-s-2 border-border ps-3 text-xs text-fg-secondary" aria-label="Status changes">
           {r.history.map((h) => (

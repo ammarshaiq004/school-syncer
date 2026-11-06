@@ -23,7 +23,7 @@ export default function SupportStartPage() {
     // Drop the token from the address bar and history straight away.
     window.history.replaceState(null, "", window.location.pathname);
     if (token) {
-      startSupportSession(token, { schoolName: params.get("school"), expiresAt: params.get("expires") });
+      startSupportSession(token, { schoolName: params.get("school"), expiresAt: params.get("expires"), scope: params.get("scope") });
     }
     if (getSupportToken()) {
       router.replace("/dashboard");

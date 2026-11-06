@@ -51,6 +51,7 @@ const ACTION_LABELS: Record<string, string> = {
   "role.builtin.update": "Changed built-in role access",
   "school.update": "Changed school settings",
   "platform.support_login": "SchoolSyncer support session",
+  "platform.support_ended": "Support session ended by the owner",
 };
 
 const ENTITY_LABELS: Record<string, string> = {

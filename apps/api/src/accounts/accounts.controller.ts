@@ -16,12 +16,12 @@ import { z } from 'zod';
 import { adminScope, campusScopeFor, FEE_ROLES, inScope, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { dateRange, nextDay } from '../common/date-range.js';
-import { dayStart, localDate, localToday, startOfLocalDay } from '../common/dates.js';
+import { dateRange } from '../common/date-range.js';
+import { dayStart, localToday } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { cashbook, type CashMovement } from './cashbook.js';
+import { readBooks } from './books.js';
 import { moneyScope } from './money-scope.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
@@ -153,84 +153,6 @@ export class AccountsController {
   @Get('cashbook')
   async cashbook(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
     const r = dateRange(from, to);
-    const start = startOfLocalDay(r.from);
-    const end = startOfLocalDay(nextDay(r.to));
-    const schoolId = user.schoolId;
-    const money = moneyScope(schoolId, booksScope(user));
-
-    const [feesBefore, entriesBefore, salariesBefore, payments, entries, payslips] = await Promise.all([
-      this.prisma.payment.aggregate({
-        where: { schoolId, receivedAt: { lt: start }, reversedAt: null, ...money.payments },
-        _sum: { amount: true },
-      }),
-      this.prisma.accountEntry.groupBy({
-        by: ['kind'],
-        where: { schoolId, date: { lt: dayStart(r.from) }, ...money.entries },
-        _sum: { amount: true },
-      }),
-      this.prisma.payslip.aggregate({
-        where: { run: { schoolId }, paidAt: { lt: start }, ...money.payslips },
-        _sum: { net: true },
-      }),
-      this.prisma.payment.findMany({
-        where: { schoolId, receivedAt: { gte: start, lt: end }, reversedAt: null, ...money.payments },
-        select: { amount: true, method: true, receivedAt: true },
-      }),
-      this.prisma.accountEntry.findMany({
-        where: { schoolId, date: { gte: dayStart(r.from), lte: dayStart(r.to) }, ...money.entries },
-        include: { category: { select: { name: true } } },
-      }),
-      this.prisma.payslip.findMany({
-        where: { run: { schoolId }, paidAt: { gte: start, lt: end }, ...money.payslips },
-        include: { user: { select: { name: true } }, run: { select: { period: true } } },
-      }),
-    ]);
-
-    const sumKind = (kind: EntryKind) => entriesBefore.find((e) => e.kind === kind)?._sum.amount ?? 0;
-    const opening =
-      (feesBefore._sum.amount ?? 0) +
-      sumKind(EntryKind.INCOME) -
-      sumKind(EntryKind.EXPENSE) -
-      (salariesBefore._sum.net ?? 0);
-
-    // Fee receipts are many and small, so the book shows one line per day and method.
-    const feeDays = new Map<string, { date: string; method: string; amount: number; count: number }>();
-    for (const p of payments) {
-      const date = localDate(p.receivedAt);
-      const key = `${date}|${p.method}`;
-      const row = feeDays.get(key) ?? { date, method: p.method, amount: 0, count: 0 };
-      row.amount += p.amount;
-      row.count += 1;
-      feeDays.set(key, row);
-    }
-
-    const movements: CashMovement[] = [
-      ...[...feeDays.values()].map((f) => ({
-        date: f.date,
-        flow: 'IN' as const,
-        amount: f.amount,
-        source: 'FEES' as const,
-        description: `Fee collections (${f.count} receipt${f.count === 1 ? '' : 's'})`,
-        method: f.method,
-      })),
-      ...entries.map((e) => ({
-        date: e.date.toISOString().slice(0, 10),
-        flow: e.kind === EntryKind.INCOME ? ('IN' as const) : ('OUT' as const),
-        amount: e.amount,
-        source: 'ENTRY' as const,
-        description: [e.category.name, e.party].filter(Boolean).join(': '),
-        method: e.method,
-        reference: e.reference,
-      })),
-      ...payslips.map((p) => ({
-        date: localDate(p.paidAt!),
-        flow: 'OUT' as const,
-        amount: p.net,
-        source: 'SALARY' as const,
-        description: `Salary ${p.run.period}: ${p.user.name}`,
-        method: p.paymentMethod ?? 'BANK',
-      })),
-    ];
-    return { from: r.from, to: r.to, ...cashbook(opening, movements) };
+    return { from: r.from, to: r.to, ...(await readBooks(this.prisma, user.schoolId, booksScope(user), r.from, r.to)) };
   }
 }

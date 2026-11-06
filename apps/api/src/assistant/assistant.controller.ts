@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { z } from 'zod';
 import { ATTENDANCE_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { AllowWhenReadOnly, CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -52,6 +53,32 @@ export class AssistantController {
       sections: await this.data.sections(reach),
       ...(await this.data.atRisk(reach, sectionId || undefined)),
     };
+  }
+
+  /** The director's 90-day comparison (works without an API key). School leaders only. */
+  @Get('changes')
+  async changes(@CurrentUser() user: AuthUser) {
+    return this.data.changesReport(await this.data.reach(user));
+  }
+
+  /** What the school asked Aon to remember. */
+  @Get('memory')
+  memory(@CurrentUser() user: AuthUser) {
+    return this.assistant.memory(user);
+  }
+
+  @Delete('memory/:id')
+  @HttpCode(204)
+  @AllowWhenReadOnly()
+  async forget(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    await this.assistant.forget(user, id);
+  }
+
+  /** The school's own Aon switch. */
+  @Patch('settings')
+  @AllowWhenReadOnly()
+  settings(@CurrentUser() user: AuthUser, @Body(new ZodValidationPipe(z.object({ enabled: z.boolean() }))) body: { enabled: boolean }) {
+    return this.assistant.setEnabled(user, body.enabled);
   }
 
   @Post('ask')

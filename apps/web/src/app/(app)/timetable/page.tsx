@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BellRing, CalendarDays, CalendarRange, Plus, Save, Trash2, UserRound } from "lucide-react";
+import { BellRing, CalendarDays, CalendarRange, Plus, Save, Sparkles, Trash2, UserRound } from "lucide-react";
 import {
   Button,
   Card,
@@ -37,12 +37,14 @@ export default function TimetablePage() {
   const isTeacher = hasRole(user, TEACHING) && !isAdmin;
   // Kept here so switching tabs does not lose the chosen section.
   const [sectionId, setSectionId] = useState("");
-  const section = <SectionTimetable editable={isAdmin} sectionId={sectionId} onSectionChange={setSectionId} />;
+  const [version, setVersion] = useState(0);
+  const section = <SectionTimetable key={version} editable={isAdmin} sectionId={sectionId} onSectionChange={setSectionId} />;
 
   const tabs = [
     ...(isTeacher ? [{ value: "mine", label: "My week", icon: <UserRound /> }] : []),
     { value: "section", label: "Class timetables", icon: <CalendarRange /> },
     ...(isAdmin ? [{ value: "bells", label: "Bell schedule", icon: <BellRing /> }] : []),
+    ...(isAdmin ? [{ value: "generate", label: "Auto-generate", icon: <Sparkles /> }] : []),
   ];
 
   return (
@@ -63,6 +65,11 @@ export default function TimetablePage() {
           {isAdmin && (
             <TabPanel value="bells">
               <BellSchedule />
+            </TabPanel>
+          )}
+          {isAdmin && (
+            <TabPanel value="generate">
+              <AutoGenerate onApplied={() => setVersion((v) => v + 1)} />
             </TabPanel>
           )}
         </Tabs>
@@ -385,6 +392,135 @@ function BellSchedule() {
               Save bell schedule
             </Button>
           </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+interface GenResult {
+  applied: boolean;
+  placed: number;
+  sections: { id: string; name: string; lessons: number }[];
+  sectionsWithoutSubjects: string[];
+  unplaced: { section: string; subject: string; missing: number }[];
+}
+
+/** Plans every section's week from its subjects and teachers, avoiding teacher clashes. Preview first, then apply. */
+function AutoGenerate({ onApplied }: { onApplied: () => void }) {
+  const toast = useToast();
+  const campuses = useApi<Campus[]>("/campuses");
+  const [campusId, setCampusId] = useState("");
+  const current = campusId || campuses.data?.[0]?.id || "";
+  const [saturday, setSaturday] = useState(false);
+  const subjects = useApi<{ id: string; name: string }[]>("/subjects");
+  // subjectId -> lessons a week; blank subjects share the remaining periods evenly.
+  const [counts, setCounts] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<GenResult | null>(null);
+  const [busy, setBusy] = useState<"preview" | "apply" | null>(null);
+  const [error, setError] = useState("");
+
+  async function run(apply: boolean) {
+    setBusy(apply ? "apply" : "preview");
+    try {
+      const res = await api<GenResult>("/timetable/generate", {
+        method: "POST",
+        body: { campusId: current, days: saturday ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5],
+          perWeek: Object.fromEntries(Object.entries(counts).filter(([, v]) => v !== "").map(([id, v]) => [id, Number(v)])),
+          apply,
+        },
+      });
+      setResult(res);
+      setError("");
+      if (apply) {
+        toast.success("Timetables generated", `${res.placed} lessons placed`);
+        onApplied();
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader
+        icon={<Sparkles />}
+        title="Auto-generate timetables"
+        description="Fills every section's week from its subjects and teachers, spreads each subject across the days and never puts a teacher in two classes at once. Sections are replaced, so preview first."
+      />
+      <div className="flex flex-wrap items-end gap-4">
+        {(campuses.data?.length ?? 0) > 1 && (
+          <NativeSelect
+            aria-label="Campus"
+            value={current}
+            onChange={(e) => {
+              setCampusId(e.target.value);
+              setResult(null);
+            }}
+            options={(campuses.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+            wrapperClassName="w-48"
+          />
+        )}
+        <Switch checked={saturday} onCheckedChange={(v) => { setSaturday(v); setResult(null); }} label="Include Saturday" />
+        <Button type="button" variant="secondary" onClick={() => run(false)} loading={busy === "preview"} disabled={!current || busy !== null}>
+          Preview
+        </Button>
+        <Button type="button" onClick={() => run(true)} loading={busy === "apply"} disabled={!current || !result || result.applied || busy !== null} icon={<Save />}>
+          Replace timetables
+        </Button>
+      </div>
+      {!!subjects.data?.length && (
+        <details className="mt-4 text-sm">
+          <summary className="cursor-pointer text-fg-secondary">Lessons per week for each subject (optional)</summary>
+          <p className="mt-2 text-fg-muted">Leave a subject blank to share the remaining periods evenly. Counts apply to every section that studies the subject.</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {subjects.data.map((sub) => (
+              <label key={sub.id} className="flex items-center gap-2">
+                <span className="w-28 shrink-0 truncate">{sub.name}</span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={40}
+                  inputMode="numeric"
+                  className="h-8"
+                  placeholder="auto"
+                  value={counts[sub.id] ?? ""}
+                  onChange={(e) => {
+                    setCounts((c) => ({ ...c, [sub.id]: e.target.value }));
+                    setResult(null);
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+        </details>
+      )}
+      {error && <p role="alert" className="mt-3 text-sm text-danger-text">{error}</p>}
+      {result && (
+        <div className="mt-4 flex flex-col gap-3 text-sm">
+          <p>
+            {result.applied ? "Saved: " : "Preview: "}
+            {result.placed} lessons across {result.sections.length} section{result.sections.length === 1 ? "" : "s"}.
+          </p>
+          {!!result.sectionsWithoutSubjects.length && (
+            <p className="text-warning-text">No subjects set for {result.sectionsWithoutSubjects.join(", ")}. Add them on the Classes screen.</p>
+          )}
+          {result.unplaced.length ? (
+            <div>
+              <p className="font-medium text-warning-text">Could not place every lesson:</p>
+              <ul className="mt-1 list-disc ps-5 text-fg-muted">
+                {result.unplaced.map((u) => (
+                  <li key={`${u.section}-${u.subject}`}>
+                    {u.section}: {u.subject}, {u.missing} lesson{u.missing === 1 ? "" : "s"} short (teacher busy or no free period)
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-fg-muted">Every lesson found a place. You can still edit any section by hand afterwards.</p>
+          )}
         </div>
       )}
     </Card>

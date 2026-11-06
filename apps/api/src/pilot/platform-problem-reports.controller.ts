@@ -4,15 +4,18 @@ import type { PlatformUser } from '../common/auth-user.js';
 import { CurrentAdmin, PlatformOnly } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { FilesService } from '../elearning/files/files.service.js';
+import { EmailService } from '../notifications/email.service.js';
 import { PlatformAccessGuard } from '../platform/platform-access.guard.js';
 import { logPlatform } from '../platform/platform-audit.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { z } from 'zod';
 import {
+  assignSchema,
   consoleView,
   listQuerySchema,
   noteSchema,
   OPEN_STATUSES,
+  replySchema,
   reportInclude,
   statusSchema,
 } from './problem-reports.js';
@@ -27,6 +30,7 @@ export class PlatformProblemReportsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly files: FilesService,
+    private readonly email: EmailService,
   ) {}
 
   @Get()
@@ -34,6 +38,7 @@ export class PlatformProblemReportsController {
     const where: Prisma.ProblemReportWhereInput = {
       ...(query.status ? { status: query.status } : query.open === 'true' ? { status: { in: OPEN_STATUSES } } : {}),
       ...(query.schoolId ? { schoolId: query.schoolId } : {}),
+      ...(query.assigned ? { assignedToId: query.assigned === 'none' ? null : query.assigned } : {}),
       ...(query.q
         ? {
             OR: [
@@ -69,6 +74,12 @@ export class PlatformProblemReportsController {
       pageSize: PAGE_SIZE,
       counts,
     };
+  }
+
+  /** Console staff a report can be given to. */
+  @Get('assignees')
+  assignees() {
+    return this.prisma.platformAdmin.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
   }
 
   @Get(':id')
@@ -111,6 +122,49 @@ export class PlatformProblemReportsController {
           to: body.status,
         }),
       ]);
+    }
+    return this.get(id);
+  }
+
+  /** Gives the report to a staff member, or to nobody. */
+  @Patch(':id/assign')
+  async assign(
+    @CurrentAdmin() admin: PlatformUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(assignSchema)) body: z.infer<typeof assignSchema>,
+  ) {
+    const report = await this.find(id);
+    if (body.adminId && !(await this.prisma.platformAdmin.findFirst({ where: { id: body.adminId, isActive: true }, select: { id: true } }))) {
+      throw new NotFoundException('Staff member not found');
+    }
+    await this.prisma.problemReport.update({ where: { id }, data: { assignedToId: body.adminId } });
+    await logPlatform(this.prisma, admin, 'problem_report.assign', report.schoolId, { reportId: id, from: report.assignedTo?.id ?? null, to: body.adminId });
+    return this.get(id);
+  }
+
+  /** A reply the school sees under its report; the reporter is also emailed when they have an address. */
+  @Post(':id/replies')
+  async reply(
+    @CurrentAdmin() admin: PlatformUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(replySchema)) body: z.infer<typeof replySchema>,
+  ) {
+    const report = await this.find(id);
+    await this.prisma.problemReportActivity.create({ data: { reportId: id, adminId: admin.sub, adminName: admin.name, reply: body.reply } });
+    await logPlatform(this.prisma, admin, 'problem_report.reply', report.schoolId, { reportId: id });
+    const reporter = report.reporterId ? await this.prisma.user.findUnique({ where: { id: report.reporterId }, select: { email: true } }) : null;
+    if (reporter?.email) {
+      // A delivery problem must not lose the reply, which already shows in the app.
+      await this.email
+        .send(report.schoolId, [
+          {
+            to: reporter.email,
+            subject: 'SchoolSyncer support replied to your problem report',
+            text: `You reported: "${report.message.slice(0, 200)}"\n\nOur reply:\n${body.reply}\n\nYou can also read this under Report a problem, My reports, in SchoolSyncer.\n\nSchoolSyncer`,
+            template: 'platform.support',
+          },
+        ])
+        .catch(() => undefined);
     }
     return this.get(id);
   }

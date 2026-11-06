@@ -6,11 +6,15 @@ import { AdmissionsController } from './admissions/admissions.controller.js';
 import { AnnouncementsController } from './announcements/announcements.controller.js';
 import { AttendanceController } from './attendance/attendance.controller.js';
 import { DashboardController } from './dashboard/dashboard.controller.js';
+import { DatesheetController } from './exams/datesheet.controller.js';
+import { ExamReportsController } from './exams/exam-reports.controller.js';
 import { ExamsController } from './exams/exams.controller.js';
 import { HomeworkController } from './homework/homework.controller.js';
 import { TimetableController } from './timetable/timetable.controller.js';
+import { DataHealthController } from './data-health/data-health.controller.js';
 import { TransportController } from './transport/transport.controller.js';
 import { LibraryController } from './library/library.controller.js';
+import { FrontOfficeController } from './front-office/front-office.controller.js';
 import {
   CertificatesController,
   VerifyController,
@@ -18,7 +22,16 @@ import {
 import { PromotionsController } from './promotions/promotions.controller.js';
 import { HrController } from './hr/hr.controller.js';
 import { PayrollController } from './hr/payroll.controller.js';
+import { StaffCertificatesController } from './hr/staff-certificates.controller.js';
+import { StaffImportController } from './hr/staff-import.controller.js';
+import { CandidatesController } from './hr/candidates.controller.js';
+import { PayrollRulesController } from './hr/payroll-rules.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
+import { AccountsReportsController } from './accounts/accounts-reports.controller.js';
+import { FamiliesController } from './fees/families.controller.js';
+import { InstallmentsController } from './fees/installments.controller.js';
+import { FeeReportsController } from './reports/fee-reports.controller.js';
+import { InsightsController } from './reports/insights.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { FeeCorrectionsController } from './fees/fee-corrections.controller.js';
 import { FeeCorrectionsService } from './fees/fee-corrections.service.js';
@@ -73,7 +86,16 @@ import { RolesGuard } from './common/roles.guard.js';
 import { RolesController } from './roles/roles.controller.js';
 import { SubscriptionGuard } from './common/subscription.guard.js';
 import { BillingScheduler } from './platform/billing/billing.scheduler.js';
+import { PlatformMessagesController } from './platform/platform-messages.controller.js';
 import { BillingService } from './platform/billing/billing.service.js';
+import { PlatformContactsController } from './platform/platform-contacts.controller.js';
+import { PlatformAiController } from './platform/platform-ai.controller.js';
+import { PlatformDiscountsController } from './platform/platform-discounts.controller.js';
+import { PlatformCreditsController } from './platform/platform-credits.controller.js';
+import { PlatformWatchController } from './platform/platform-watch.controller.js';
+import { SupportSessionsController } from './platform/support-sessions.controller.js';
+import { UsageSnapshotsService } from './platform/usage-snapshots.service.js';
+import { PaymentClaimsController, PlatformPaymentClaimsController } from './platform/billing/payment-claims.controller.js';
 import { PlatformController } from './platform/platform.controller.js';
 import { PlatformAuthController } from './platform/platform-auth.controller.js';
 import { PlatformGatewaysController } from './platform/platform-gateways.controller.js';
@@ -88,6 +110,7 @@ import { ProblemReportsController } from './pilot/problem-reports.controller.js'
 import { SetupChecklistController } from './pilot/setup-checklist.controller.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { SchoolController } from './school/school.controller.js';
+import { SiteController } from './site/site.controller.js';
 import { SubjectsController } from './subjects/subjects.controller.js';
 import { UsersController } from './users/users.controller.js';
 
@@ -121,6 +144,7 @@ import { UsersController } from './users/users.controller.js';
   controllers: [
     HealthController,
     SchoolController,
+    SiteController,
     CampusesController,
     AcademicYearsController,
     ClassesController,
@@ -138,16 +162,29 @@ import { UsersController } from './users/users.controller.js';
     FeeHeadsController,
     FeeCorrectionsController,
     ExamsController,
+    DatesheetController,
+    ExamReportsController,
     TimetableController,
+    DataHealthController,
     TransportController,
     LibraryController,
+    FrontOfficeController,
     CertificatesController,
     VerifyController,
     PromotionsController,
     HomeworkController,
     HrController,
     PayrollController,
+    PayrollRulesController,
+    CandidatesController,
+    StaffImportController,
+    StaffCertificatesController,
     AccountsController,
+    AccountsReportsController,
+    FamiliesController,
+    InstallmentsController,
+    FeeReportsController,
+    InsightsController,
     ReportsController,
     PaymentWebhookController,
     PaymentGatewayController,
@@ -166,6 +203,15 @@ import { UsersController } from './users/users.controller.js';
     ParentRecordsController,
     StudentController,
     SubscriptionController,
+    PaymentClaimsController,
+    PlatformPaymentClaimsController,
+    PlatformMessagesController,
+    PlatformWatchController,
+    PlatformContactsController,
+    SupportSessionsController,
+    PlatformDiscountsController,
+    PlatformAiController,
+    PlatformCreditsController,
     PlatformAuthController,
     PlatformController,
     PlatformGatewaysController,
@@ -181,6 +227,7 @@ import { UsersController } from './users/users.controller.js';
     ReconciliationService,
     ReconciliationScheduler,
     BillingService,
+    UsageSnapshotsService,
     BillingScheduler,
     // First, so floods of public requests stop before any database work.
     { provide: APP_GUARD, useClass: RateLimitGuard },

@@ -10,7 +10,7 @@ const VIDEO_PLAYERS = ["https://www.youtube-nocookie.com", "https://player.vimeo
  * Next and the theme script use inline scripts, and uploaded files, school
  * logos and photos come from the API or an S3 bucket on any https host.
  */
-function contentSecurityPolicy(apiOrigin: string, dev: boolean, trackerOrigin: string | null) {
+function contentSecurityPolicy(apiOrigin: string, dev: boolean, trackerOrigin: string | null, framedBySelf = false) {
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     // React's dev overlay and fast refresh need eval.
@@ -22,8 +22,9 @@ function contentSecurityPolicy(apiOrigin: string, dev: boolean, trackerOrigin: s
     "media-src": ["'self'", "blob:", "https:", apiOrigin],
     // The error tracker (Sentry or GlitchTip) when NEXT_PUBLIC_SENTRY_DSN is set.
     "connect-src": ["'self'", apiOrigin, ...(trackerOrigin ? [trackerOrigin] : []), ...(dev ? ["ws:"] : [])],
-    "frame-src": VIDEO_PLAYERS,
-    "frame-ancestors": ["'none'"],
+    // The website editor frames its own live preview at /site-preview.
+    "frame-src": ["'self'", ...VIDEO_PLAYERS],
+    "frame-ancestors": [framedBySelf ? "'self'" : "'none'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     // Online payments post a signed form to the gateway's hosted checkout.
@@ -49,10 +50,10 @@ export default function config(phase: string): NextConfig {
   if (process.env.NEXT_PUBLIC_SENTRY_DSN?.trim() && !trackerOrigin && phase === PHASE_PRODUCTION_BUILD) {
     throw new Error("NEXT_PUBLIC_SENTRY_DSN is not a valid DSN (https://<key>@<host>/<project id>).");
   }
-  const headers = [
-    { key: "Content-Security-Policy", value: contentSecurityPolicy(apiOrigin, dev, trackerOrigin) },
+  const headersFor = (framedBySelf: boolean) => [
+    { key: "Content-Security-Policy", value: contentSecurityPolicy(apiOrigin, dev, trackerOrigin, framedBySelf) },
     { key: "X-Content-Type-Options", value: "nosniff" },
-    { key: "X-Frame-Options", value: "DENY" },
+    { key: "X-Frame-Options", value: framedBySelf ? "SAMEORIGIN" : "DENY" },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
     { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
     // Browsers ignore it over plain http, so it is harmless locally.
@@ -61,7 +62,11 @@ export default function config(phase: string): NextConfig {
   return {
     poweredByHeader: false,
     async headers() {
-      return [{ source: "/:path*", headers }];
+      return [
+        // Nothing may frame the portal, except its own website editor framing the live preview.
+        { source: "/((?!site-preview/).*)", headers: headersFor(false) },
+        { source: "/site-preview/:path*", headers: headersFor(true) },
+      ];
     },
   };
 }

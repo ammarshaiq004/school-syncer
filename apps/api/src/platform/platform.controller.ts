@@ -15,11 +15,13 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import {
   PlatformInvoiceStatus,
+  PlatformNoticeSeverity,
   PlatformRole,
   Prisma,
   Role,
   StudentStatus,
   SubscriptionStatus,
+  SupportScope,
 } from '@prisma/client';
 import { z } from 'zod';
 import type { AuthUser, PlatformUser } from '../common/auth-user.js';
@@ -47,6 +49,11 @@ const subscriptionSchema = z.object({
   status: z.enum(SubscriptionStatus).optional(),
   trialEndsAt: z.coerce.date().nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
+  // A price agreed with this school; null goes back to the plan's rate.
+  agreedPricePerStudent: z.number().int().min(0).max(100_000).nullable().optional(),
+  agreedMinimumMonthly: z.number().int().min(0).max(10_000_000).nullable().optional(),
+  agreedNote: z.string().trim().max(300).nullable().optional(),
+  billingCycle: z.enum(['MONTHLY', 'YEARLY']).optional(),
 });
 
 const planSchema = z.object({
@@ -65,6 +72,9 @@ const planSchema = z.object({
 const supportSchema = z.object({
   reason: z.string().trim().min(5).max(500),
 });
+
+/** Starting a support session also picks what it may do; view only unless said otherwise. */
+const supportLoginSchema = supportSchema.extend({ scope: z.enum(['view', 'edit']).default('view') });
 
 const SUPPORT_SESSION_MS = 60 * 60_000;
 
@@ -143,7 +153,7 @@ export class PlatformController {
         s.status === SubscriptionStatus.ACTIVE ||
         s.status === SubscriptionStatus.PAST_DUE
       ) {
-        mrr += monthlyAmount(s.plan, students.get(s.schoolId) ?? 0);
+        mrr += monthlyAmount(s.plan, students.get(s.schoolId) ?? 0, s);
       }
     }
     const soon = new Date(now.getTime() + 7 * 86_400_000);
@@ -238,7 +248,6 @@ export class PlatformController {
       this.prisma.school.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        take: 500,
         include: {
           subscription: { include: { plan: true } },
           _count: { select: { campuses: true } },
@@ -287,7 +296,7 @@ export class PlatformController {
       students: students.get(s.id) ?? 0,
       campuses: s._count.campuses,
       monthly: s.subscription
-        ? monthlyAmount(s.subscription.plan, students.get(s.id) ?? 0)
+        ? monthlyAmount(s.subscription.plan, students.get(s.id) ?? 0, s.subscription)
         : 0,
       balanceDue: due.get(s.id)?.amount ?? 0,
       daysOverdue: daysOverdue(s.id),
@@ -371,6 +380,13 @@ export class PlatformController {
         status: sub.status,
         trialEndsAt: sub.trialEndsAt,
         notes: sub.notes,
+        planPricePerStudent: sub.plan.pricePerStudent,
+        planMinimumMonthly: sub.plan.minimumMonthly,
+        agreedPricePerStudent: sub.agreedPricePerStudent,
+        agreedMinimumMonthly: sub.agreedMinimumMonthly,
+        agreedNote: sub.agreedNote,
+        billingCycle: sub.billingCycle,
+        yearlyUntil: sub.yearlyUntil,
         planFeatures: sub.plan.features,
         featuresAdded: sub.featuresAdded,
         featuresRemoved: sub.featuresRemoved,
@@ -379,7 +395,7 @@ export class PlatformController {
           sub.featuresAdded,
           sub.featuresRemoved,
         ),
-        monthly: monthlyAmount(sub.plan, students),
+        monthly: monthlyAmount(sub.plan, students, sub),
         ...accessFor({
           status: sub.status,
           trialEndsAt: sub.trialEndsAt,
@@ -410,6 +426,9 @@ export class PlatformController {
       admin.role !== PlatformRole.OWNER
     )
       throw new ForbiddenException('Only a SchoolSyncer owner can close a school');
+    const pricing = [body.agreedPricePerStudent, body.agreedMinimumMonthly, body.agreedNote, body.billingCycle];
+    if (pricing.some((v) => v !== undefined) && admin.role !== PlatformRole.OWNER)
+      throw new ForbiddenException('Only a SchoolSyncer owner can set an agreed price');
     let planId: string | undefined;
     if (body.planCode) {
       const plan = await this.prisma.plan.findUnique({
@@ -425,6 +444,10 @@ export class PlatformController {
         status: body.status,
         trialEndsAt: body.trialEndsAt,
         notes: body.notes,
+        agreedPricePerStudent: body.agreedPricePerStudent,
+        agreedMinimumMonthly: body.agreedMinimumMonthly,
+        agreedNote: body.agreedNote,
+        billingCycle: body.billingCycle,
         // Out of the trial: the nightly bill run starts with next month.
         ...(before.status === SubscriptionStatus.TRIAL &&
         body.status === SubscriptionStatus.ACTIVE
@@ -434,16 +457,27 @@ export class PlatformController {
       include: { plan: true },
     });
     this.subscriptions.forget(id);
+    if (
+      before.planId !== after.planId &&
+      ([SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE] as SubscriptionStatus[]).includes(after.status)
+    )
+      await this.billing.planChanged(id, before, after, admin.name);
     await this.log(admin, 'subscription.update', id, {
       before: {
         plan: before.plan.code,
         status: before.status,
         trialEndsAt: before.trialEndsAt,
+        agreedPricePerStudent: before.agreedPricePerStudent,
+        agreedMinimumMonthly: before.agreedMinimumMonthly,
+        billingCycle: before.billingCycle,
       },
       after: {
         plan: after.plan.code,
         status: after.status,
         trialEndsAt: after.trialEndsAt,
+        agreedPricePerStudent: after.agreedPricePerStudent,
+        agreedMinimumMonthly: after.agreedMinimumMonthly,
+        billingCycle: after.billingCycle,
       },
     });
     return after;
@@ -459,7 +493,7 @@ export class PlatformController {
   async supportLogin(
     @CurrentAdmin() admin: PlatformUser,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(supportSchema)) body: { reason: string },
+    @Body(new ZodValidationPipe(supportLoginSchema)) body: z.infer<typeof supportLoginSchema>,
   ) {
     const owner = await this.prisma.user.findFirst({
       where: {
@@ -474,6 +508,17 @@ export class PlatformController {
       throw new NotFoundException(
         'This school has no active owner to sign in as',
       );
+    const expiresAt = new Date(Date.now() + SUPPORT_SESSION_MS);
+    const session = await this.prisma.supportSession.create({
+      data: {
+        schoolId: id,
+        adminId: admin.sub,
+        adminName: admin.name,
+        reason: body.reason,
+        scope: body.scope === 'edit' ? SupportScope.EDIT : SupportScope.VIEW,
+        expiresAt,
+      },
+    });
     const payload: AuthUser = {
       sub: owner.id,
       schoolId: id,
@@ -483,10 +528,9 @@ export class PlatformController {
         campusId,
         customRoleId,
       })),
-      support: { adminId: admin.sub, adminName: admin.name },
+      support: { adminId: admin.sub, adminName: admin.name, sessionId: session.id, scope: body.scope },
       tv: owner.tokenVersion,
     };
-    const expiresAt = new Date(Date.now() + SUPPORT_SESSION_MS);
     await this.prisma.auditLog.create({
       data: {
         schoolId: id,
@@ -494,19 +538,28 @@ export class PlatformController {
         action: 'platform.support_login',
         entity: 'User',
         entityId: owner.id,
-        after: { by: admin.name, byAdminId: admin.sub, reason: body.reason },
+        after: { by: admin.name, byAdminId: admin.sub, reason: body.reason, scope: body.scope },
       },
     });
     await this.log(admin, 'school.support_login', id, {
       as: owner.id,
       reason: body.reason,
+      scope: body.scope,
       expiresAt,
+    });
+    await this.billing.notify(id, {
+      kind: 'support.session',
+      severity: PlatformNoticeSeverity.INFO,
+      dedupeKey: session.id,
+      title: 'SchoolSyncer support has signed in to your school',
+      body: `${admin.name} from SchoolSyncer support signed in to your school for up to one hour (${body.scope === 'edit' ? 'can make changes' : 'view only'}). Reason: ${body.reason} You can end it from the banner at the top of your dashboard.`,
     });
     return {
       accessToken: this.jwt.sign(payload, {
         expiresIn: SUPPORT_SESSION_MS / 1000,
       }),
       expiresAt,
+      scope: body.scope,
       schoolSlug: owner.school.slug,
       user: payload,
     };
@@ -550,21 +603,40 @@ export class PlatformController {
   // ----- Platform invoices -----
 
   @Get('invoices')
-  invoices(
+  async invoices(
     @Query('status') status?: string,
     @Query('period') forPeriod?: string,
+    @Query('search') search?: string,
+    @Query('page') pageParam?: string,
+    @Query('pageSize') sizeParam?: string,
   ) {
-    return this.prisma.platformInvoice.findMany({
-      where: {
-        ...(status && status in PlatformInvoiceStatus
-          ? { status: status as PlatformInvoiceStatus }
-          : {}),
-        ...(forPeriod ? { period: forPeriod } : {}),
-      },
-      orderBy: [{ period: 'desc' }, { number: 'desc' }],
-      take: 500,
-      include: { school: { select: { id: true, name: true, slug: true } } },
-    });
+    const page = Math.max(1, Math.floor(Number(pageParam)) || 1);
+    const pageSize = Math.min(100, Math.max(1, Math.floor(Number(sizeParam)) || 25));
+    const where: Prisma.PlatformInvoiceWhereInput = {
+      ...(status && status in PlatformInvoiceStatus
+        ? { status: status as PlatformInvoiceStatus }
+        : {}),
+      ...(forPeriod ? { period: forPeriod } : {}),
+      ...(search?.trim()
+        ? {
+            OR: [
+              { number: { contains: search.trim(), mode: 'insensitive' } },
+              { school: { name: { contains: search.trim(), mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.platformInvoice.findMany({
+        where,
+        orderBy: [{ period: 'desc' }, { number: 'desc' }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { school: { select: { id: true, name: true, slug: true } } },
+      }),
+      this.prisma.platformInvoice.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   /**

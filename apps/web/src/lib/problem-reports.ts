@@ -21,6 +21,8 @@ export interface ProblemReport {
   statusChangedAt: string | null;
   createdAt: string;
   hasScreenshot: boolean;
+  /** What SchoolSyncer support wrote back to the school. */
+  replies: { id: string; reply: string; at: string }[];
   history: { status: ProblemStatus; fromStatus: ProblemStatus | null; at: string }[];
 }
 

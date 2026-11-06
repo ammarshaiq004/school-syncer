@@ -9,19 +9,14 @@
 // Needs the new key in PAYMENTS_SECRET_KEY and the old one in
 // PAYMENTS_SECRET_KEY_PREVIOUS. Values no key opens are listed and left
 // alone. Safe to run again: already current values are skipped.
-import { PrismaClient } from '@prisma/client';
 import { parseArgs } from 'node:util';
+import { createScriptPrismaClient } from '../prisma/client.js';
 import { rotateSecrets, type TableReport } from './secret-rotation.js';
 
 async function main() {
-  // The keys usually live in apps/api/.env; variables already set win.
-  try {
-    process.loadEnvFile();
-  } catch {
-    // No .env here: the environment has them (a container, a CI job).
-  }
+  // Also loads apps/api/.env, where the keys usually live.
+  const prisma = createScriptPrismaClient();
   const { values } = parseArgs({ options: { apply: { type: 'boolean', default: false } } });
-  const prisma = new PrismaClient();
   try {
     const report = await rotateSecrets(prisma, { apply: values.apply });
     const verb = values.apply ? 'Re-encrypted' : 'Would re-encrypt';
@@ -32,8 +27,9 @@ async function main() {
     line('School merchant accounts', report.paymentAccounts);
     line('School WhatsApp senders', report.messagingSenders);
     line('Messages waiting to be sent', report.queuedMessages);
+    line('Console AI key', report.aiKey);
     console.log(`Student photo links: ${report.studentPhotos.checked} checked, ${values.apply ? 're-signed' : 'would re-sign'} ${report.studentPhotos.resigned}`);
-    const failed = report.paymentAccounts.failed.length + report.messagingSenders.failed.length + report.queuedMessages.failed.length;
+    const failed = report.paymentAccounts.failed.length + report.messagingSenders.failed.length + report.queuedMessages.failed.length + report.aiKey.failed.length;
     if (failed) {
       console.log('\nSome values open with none of the keys: keep the key that sealed them in PAYMENTS_SECRET_KEY_PREVIOUS, or have the school enter them again.');
       process.exitCode = 2;

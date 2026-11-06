@@ -67,6 +67,7 @@ const examSchema = z.object({
   startsOn: isoDate.optional(),
   endsOn: isoDate.optional(),
 });
+const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM');
 const papersSchema = z.object({
   papers: z
     .array(
@@ -77,10 +78,17 @@ const papersSchema = z.object({
           maxMarks: z.number().positive().max(1000),
           passMarks: z.number().min(0),
           date: isoDate.optional(),
+          startTime: clock.optional(),
+          endTime: clock.optional(),
+          room: z.string().trim().max(40).optional(),
         })
         .refine(
           (p) => p.passMarks <= p.maxMarks,
           'Pass marks cannot exceed total marks',
+        )
+        .refine(
+          (p) => !p.startTime || !p.endTime || p.endTime > p.startTime,
+          'A paper must end after it starts',
         ),
     )
     .min(1),
@@ -295,6 +303,9 @@ export class ExamsController {
           maxMarks: p.maxMarks,
           passMarks: p.passMarks,
           date: p.date ? dayStart(p.date) : null,
+          startTime: p.startTime ?? null,
+          endTime: p.endTime ?? null,
+          room: p.room || null,
         };
         return this.prisma.examPaper.upsert({
           where: {

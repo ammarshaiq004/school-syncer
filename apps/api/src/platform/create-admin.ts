@@ -7,8 +7,8 @@
 // PLATFORM_ADMIN_PASSWORD or on stdin with --password-stdin. Either way it
 // must be changed at first sign-in. Refuses when an active owner already
 // exists; --force allows another owner or recovers an existing account.
-import { PrismaClient } from '@prisma/client';
 import { parseArgs } from 'node:util';
+import { createScriptPrismaClient } from '../prisma/client.js';
 import { BootstrapError, createPlatformOwner } from './bootstrap-owner.js';
 
 async function readStdin(): Promise<string> {
@@ -33,7 +33,7 @@ async function main() {
   }
   const password = values['password-stdin'] ? await readStdin() : process.env.PLATFORM_ADMIN_PASSWORD || undefined;
 
-  const prisma = new PrismaClient();
+  const prisma = createScriptPrismaClient();
   try {
     const result = await createPlatformOwner(prisma, {
       email: values.email,
