@@ -16,6 +16,7 @@ import { CUSTOMER_SCHOOLS, PLATFORM_ADMIN, seedBilling, seedCustomerSchools, see
 import { seedSchool, type SchoolPlan } from './demo/school.js';
 import { SUPPORT_ADMIN, seedPlatformActivity, seedSchoolAccess, seedSupportAdmin } from './demo/access.js';
 import { seedAcademia } from './demo/academia.js';
+import { seedInstallments } from './demo/installments.js';
 import { seedOnlinePayments } from './demo/online-payments.js';
 import { seedSite } from './demo/site.js';
 import { createScriptPrismaClient } from '../src/prisma/client.js';
@@ -309,6 +310,11 @@ async function main() {
   for (const plan of DEMO_SCHOOLS) {
     const checkouts = await seedOnlinePayments(prisma, plan.slug);
     if (checkouts) console.log(`  ${plan.slug}: ${checkouts} online fee checkouts`);
+  }
+  // Payment plans on a few open vouchers, for the instalments report.
+  for (const plan of DEMO_SCHOOLS) {
+    const plans = await seedInstallments(prisma, plan.slug);
+    if (plans) console.log(`  ${plan.slug}: ${plans} fee payment plans`);
   }
   console.log(
     `Seeded ${CUSTOMER_SCHOOLS.length} customer schools and the console logins ${PLATFORM_ADMIN.email} (owner) and ${SUPPORT_ADMIN.email} (support)`,

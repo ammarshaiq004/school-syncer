@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { ArrowRight, Brain, Building, CreditCard, History, Library, ListChecks, MessageCircle, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
+import { ArrowRight, Brain, Building, CreditCard, History, Library, ListChecks, MapPin, MessageCircle, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
 import { Alert, buttonClass, Card, CardHeader, ErrorState, PageHeader, SkeletonRows, TabPanel, Tabs } from "@/components/ui";
 import { AonSettings } from "@/components/assistant/aon-settings";
 import { AuditLog } from "@/components/settings/audit-log";
+import { Localities } from "@/components/settings/localities";
 import { PickLists } from "@/components/settings/pick-lists";
 import { MessagingSender } from "@/components/settings/messaging-sender";
 import { PaymentAccounts } from "@/components/settings/payment-accounts";
@@ -17,7 +18,7 @@ import { can, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 import { SchoolModeSettings } from "./school-mode";
 
-type Tab = "profile" | "mode" | "fees" | "payments" | "messaging" | "aon" | "library" | "lists" | "roles" | "audit";
+type Tab = "profile" | "mode" | "fees" | "payments" | "messaging" | "aon" | "library" | "localities" | "lists" | "roles" | "audit";
 
 export default function SettingsPage() {
   return (
@@ -49,6 +50,7 @@ function Settings() {
     ...(setup && user.plan?.features.includes("ai_assistant") ? [{ value: "aon", label: "Aon", icon: <Brain /> }] : []),
     ...((data?.mode ?? user.school?.mode) !== "ONLINE" ? [{ value: "library", label: "Library", icon: <Library /> }] : []),
     ...(setup ? [{ value: "lists", label: "Student lists", icon: <ListChecks /> }] : []),
+    ...(can(user, "front_office") ? [{ value: "localities", label: "Localities", icon: <MapPin /> }] : []),
     ...(setup && can(user, "users") ? [{ value: "roles", label: "Roles and permissions", icon: <ShieldCheck /> }] : []),
     ...(setup && can(user, "audit") ? [{ value: "audit", label: "Audit log", icon: <History /> }] : []),
   ];
@@ -118,6 +120,9 @@ function Settings() {
         )}
         {tabs.some((t) => t.value === "lists") && data && (
           <TabPanel value="lists">{tab === "lists" && <PickLists school={data} readOnly={!canEditSettings} onSaved={setSaved} />}</TabPanel>
+        )}
+        {tabs.some((t) => t.value === "localities") && (
+          <TabPanel value="localities">{tab === "localities" && <Localities readOnly={!canEditSettings} />}</TabPanel>
         )}
         {tabs.some((t) => t.value === "roles") && (
           <TabPanel value="roles">

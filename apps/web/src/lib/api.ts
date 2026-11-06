@@ -67,6 +67,7 @@ export type PermissionModule =
   | "transport"
   | "library"
   | "pos"
+  | "front_office"
   | "announcements"
   | "messages"
   | "chat"

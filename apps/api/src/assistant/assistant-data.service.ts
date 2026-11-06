@@ -9,6 +9,7 @@ import { studentSearchWhere } from '../common/student-search.js';
 import { billedOf, feeOutstanding } from '../fees/outstanding.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { DraftFacts } from './draft-rules.js';
+import { attendanceRate, compareWindows, type WindowMetric } from './director-rules.js';
 import { attendancePercent, riskFlags, riskLevel, riskScore, type RiskFlag, type RiskInput } from './risk-rules.js';
 
 /**
@@ -482,6 +483,57 @@ export class AssistantData {
       })),
       fees: fees ? (fees.get(studentId) ?? { overdueAmount: 0, oldestOverdueDays: 0 }) : null,
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Director's view: the last 90 days against the 90 before
+  // ---------------------------------------------------------------------------
+
+  async changesReport(reach: Reach) {
+    if (!reach.wide) throw new ForbiddenException('The 90-day changes view is for school leaders');
+    this.require(reach, 'students');
+    const schoolId = reach.user.schoolId;
+    const today = localToday();
+    const windows = [
+      { from: daysBefore(today, 89), to: today },
+      { from: daysBefore(today, 179), to: daysBefore(today, 90) },
+    ];
+    const campus = reach.campuses ? { campusId: { in: reach.campuses } } : {};
+    const perWindow = async (w: { from: string; to: string }) => {
+      const dates = { gte: dayStart(w.from), lte: dayStart(w.to) };
+      const stamps = { gte: dayStart(w.from), lt: dayStart(daysBefore(w.to, -1)) };
+      const [admitted, left, enquiries, attendance, collected] = await Promise.all([
+        this.prisma.student.count({ where: { schoolId, ...campus, admittedOn: dates } }),
+        // shortcut: no leaving date is stored, so updatedAt of a LEFT student stands in; upgrade when withdrawals get their own date.
+        this.prisma.student.count({ where: { schoolId, ...campus, status: StudentStatus.LEFT, updatedAt: stamps } }),
+        this.can(reach, 'admissions') ? this.prisma.application.count({ where: { schoolId, ...campus, createdAt: stamps } }) : null,
+        this.can(reach, 'attendance')
+          ? this.prisma.attendanceRecord.groupBy({
+              by: ['status'],
+              where: { student: { schoolId, ...campus }, session: { date: dates } },
+              _count: true,
+            })
+          : null,
+        reach.canFees
+          ? this.prisma.payment.aggregate({
+              where: { schoolId, reversedAt: null, receivedAt: stamps, invoice: { student: { is: campus } } },
+              _sum: { amount: true },
+            })
+          : null,
+      ]);
+      const counts = { present: 0, absent: 0, late: 0, leave: 0 };
+      for (const r of attendance ?? []) counts[r.status.toLowerCase() as keyof typeof counts] += r._count;
+      return { admitted, left, enquiries, attendance: attendance ? attendanceRate(counts) : null, collected: collected ? (collected._sum.amount ?? 0) : null };
+    };
+    const [cur, prev] = await Promise.all(windows.map(perWindow));
+    const metrics: WindowMetric[] = [
+      { key: 'admissions', label: 'New admissions', current: cur.admitted, previous: prev.admitted, higherIsBetter: true, unit: 'count' },
+      { key: 'left', label: 'Students who left', current: cur.left, previous: prev.left, higherIsBetter: false, unit: 'count' },
+    ];
+    if (cur.enquiries !== null) metrics.push({ key: 'enquiries', label: 'New admission enquiries', current: cur.enquiries, previous: prev.enquiries ?? 0, higherIsBetter: true, unit: 'count' });
+    if (cur.attendance !== null) metrics.push({ key: 'attendance', label: 'Attendance', current: cur.attendance, previous: prev.attendance ?? 0, higherIsBetter: true, unit: 'percent' });
+    if (cur.collected !== null) metrics.push({ key: 'collected', label: 'Fees collected', current: cur.collected, previous: prev.collected ?? 0, higherIsBetter: true, unit: 'rupees' });
+    return { current: windows[0], previous: windows[1], currency: 'PKR', metrics: compareWindows(metrics) };
   }
 
   // ---------------------------------------------------------------------------

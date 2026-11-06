@@ -6,6 +6,7 @@ import { CalendarRange, CircleCheck, FilePenLine, FileText, Plus, Save, Scale, T
 import {
   Alert,
   Button,
+  buttonClass,
   Card,
   CardHeader,
   DataTable,
@@ -123,7 +124,14 @@ export default function ExamsPage() {
         title="Exams and results"
         description="Set up papers, enter marks and publish report cards to parents."
         breadcrumbs={[{ label: "Academics" }, { label: "Exams" }]}
-        actions={newExamButton}
+        actions={
+          <>
+            <Link href="/exams/reports" className={buttonClass("secondary")}>
+              Reports
+            </Link>
+            {newExamButton}
+          </>
+        }
       />
 
       <StatGrid>

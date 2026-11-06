@@ -49,6 +49,7 @@ import {
   studentInclude,
 } from './certificate-details.js';
 import { nextSerial, verifyCode } from './certificate-rules.js';
+import type { StaffCertificateDetails } from '../hr/staff-certificates.controller.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 
@@ -520,7 +521,7 @@ export class VerifyController {
       where: { verifyCode: code.trim().toUpperCase() },
       include: { school: { select: { name: true, city: true } } },
     });
-    if (!c) return { found: false };
+    if (!c) return this.verifyStaff(code);
     const d = c.details as unknown as CertificateDetails;
     return {
       found: true,
@@ -534,6 +535,29 @@ export class VerifyController {
       admissionNo: d.admissionNo,
       className: d.className,
       leavingOn: d.leavingOn ?? null,
+      cancelledOn: c.cancelledAt ? localDate(c.cancelledAt) : null,
+    };
+  }
+
+  /** Staff experience certificates share the same public check. */
+  private async verifyStaff(code: string) {
+    const c = await this.prisma.staffCertificate.findUnique({
+      where: { verifyCode: code.trim().toUpperCase() },
+      include: { school: { select: { name: true, city: true } } },
+    });
+    if (!c) return { found: false };
+    const d = c.details as unknown as StaffCertificateDetails;
+    return {
+      found: true,
+      valid: !c.cancelledAt,
+      type: 'EXPERIENCE',
+      serialNo: c.serialNo,
+      issuedOn: iso(c.issuedOn),
+      school: c.school,
+      staffName: d.staffName,
+      designation: d.designation,
+      joinedOn: d.joinedOn,
+      leftOn: d.leftOn,
       cancelledOn: c.cancelledAt ? localDate(c.cancelledAt) : null,
     };
   }
