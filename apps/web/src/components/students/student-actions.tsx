@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Ellipsis, FileBadge, KeyRound, Pencil, Save, UserRound, Wallet } from "lucide-react";
+import { LocalitySelect } from "@/components/front-office/locality-select";
 import { Select } from "@/components/select";
 import { StudentLoginCard } from "@/components/student/student-login-card";
 import {
@@ -156,6 +157,7 @@ function EditStudentDrawer({ id, name, onClose, onSaved }: { id: string | null; 
           dateOfBirth: text("dateOfBirth") || undefined,
           bFormNo: text("bFormNo") || undefined,
           address: text("address") || undefined,
+          localityId: text("localityId") || null,
           medicalNotes: text("medicalNotes") || undefined,
           status: text("status"),
         },
@@ -214,6 +216,7 @@ function EditStudentDrawer({ id, name, onClose, onSaved }: { id: string | null; 
           <div className="sm:col-span-full">
             <Field label="Address" name="address" defaultValue={s.address ?? ""} />
           </div>
+          <LocalitySelect defaultValue={s.localityId} />
           <div className="sm:col-span-full">
             <TextArea label="Medical notes" name="medicalNotes" rows={3} defaultValue={s.medicalNotes ?? ""} />
           </div>

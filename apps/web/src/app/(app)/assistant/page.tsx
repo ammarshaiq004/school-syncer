@@ -1,17 +1,18 @@
 "use client";
 
-import { MessageSquareText, PenLine, TriangleAlert } from "lucide-react";
+import { LineChart, MessageSquareText, PenLine, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { AskPanel } from "@/components/assistant/ask-panel";
 import type { AssistantOptions, AssistantStatus, DraftTarget } from "@/components/assistant/assistant-types";
+import { ChangesPanel } from "@/components/assistant/changes-panel";
 import { DraftPanel } from "@/components/assistant/draft-panel";
 import { RiskPanel } from "@/components/assistant/risk-panel";
 import { Badge, Card, ErrorState, PageHeader, SkeletonRows, TabPanel, Tabs } from "@/components/ui";
 import { usePersistedState } from "@/lib/persisted";
-import { can, FEES, hasRole, TEACHING, useSession } from "@/lib/session";
+import { can, FEES, hasRole, SETUP, TEACHING, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
-type Tab = "risk" | "ask" | "drafts";
+type Tab = "risk" | "ask" | "drafts" | "changes";
 
 export default function AssistantPage() {
   const user = useSession();
@@ -23,6 +24,7 @@ export default function AssistantPage() {
   const teaching = hasRole(user, TEACHING);
   const canRemark = teaching && can(user, "exams");
   const canChat = teaching && can(user, "chat");
+  const leader = hasRole(user, SETUP);
   const canFees = hasRole(user, FEES) && can(user, "fees");
 
   const s = status.data;
@@ -58,6 +60,7 @@ export default function AssistantPage() {
             { value: "risk", label: "Students at risk", icon: <TriangleAlert /> },
             { value: "ask", label: "Ask a question", icon: <MessageSquareText /> },
             { value: "drafts", label: "Remarks and messages", icon: <PenLine /> },
+            ...(leader ? [{ value: "changes", label: "Last 90 days", icon: <LineChart /> }] : []),
           ]}
         >
           <TabPanel value="risk">
@@ -69,8 +72,13 @@ export default function AssistantPage() {
               }}
             />
           </TabPanel>
+          {leader && (
+            <TabPanel value="changes">
+              <ChangesPanel />
+            </TabPanel>
+          )}
           <TabPanel value="ask">
-            <AskPanel status={s} onUsed={status.reload} canFees={canFees} />
+            <AskPanel status={s} onUsed={status.reload} canFees={canFees} leader={leader} />
           </TabPanel>
           <TabPanel value="drafts">
             <DraftPanel key={target?.n ?? 0} status={s} options={options.data} target={target?.value ?? null} onUsed={status.reload} canRemark={canRemark} canChat={canChat} />

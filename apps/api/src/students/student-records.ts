@@ -25,6 +25,7 @@ export interface NewStudent {
   dateOfBirth?: Date;
   bFormNo?: string;
   address?: string;
+  localityId?: string | null;
   medicalNotes?: string;
   guardians: GuardianInput[];
   /** A campus-limited admin's campuses: the section must be at one of them. */
@@ -325,6 +326,7 @@ export async function createStudentRecord(
       dateOfBirth: input.dateOfBirth,
       bFormNo: input.bFormNo,
       address: input.address,
+      localityId: input.localityId ?? undefined,
       medicalNotes: input.medicalNotes,
       enrollments: {
         create: {

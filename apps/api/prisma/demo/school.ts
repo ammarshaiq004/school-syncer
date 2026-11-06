@@ -29,11 +29,14 @@ import {
 import { DEFAULT_BANDS, positions, studentResult } from '../../src/exams/result-calculator.js';
 import { invoiceLines, type InvoiceLineDraft } from '../../src/fees/fee-calculator.js';
 import { calculatePayslip, workingDays } from '../../src/hr/payroll-calculator.js';
+import { DEFAULT_RULES, isLate } from '../../src/hr/payroll-rules.js';
+import { seedHr } from './hr.js';
 import { daysBefore } from '../../src/common/dates.js';
 import { ridesDuring } from '../../src/transport/transport-rules.js';
 import { seedCertificates } from './certificates.js';
 import { seedEschool, type EschoolPlan, type EschoolSummary } from './eschool.js';
 import { seedLibrary } from './library.js';
+import { seedFrontOffice } from './front-office.js';
 import {
   BOY_NAMES,
   FATHER_NAMES,
@@ -641,6 +644,14 @@ export async function seedSchool(
     });
   });
 
+  // A few deliberate gaps in the second school so Data health has findings to show; the demo school stays clean.
+  if (!plan.demoFamily && !online && students.length > 4) {
+    await prisma.student.update({ where: { id: students[0].id }, data: { dateOfBirth: null } });
+    await prisma.student.update({ where: { id: students[1].id }, data: { bFormNo: '123' } });
+    await prisma.studentGuardian.deleteMany({ where: { studentId: students[2].id } });
+    await prisma.section.update({ where: { id: pending[3].section.id }, data: { classTeacherId: null } });
+  }
+
   // Parent logins for a handful of families, the demo family first.
   const loginFamilies = families.slice(0, plan.demoFamily ? 1 : 0).concat(rng.shuffle(families.slice(1)).slice(0, 5));
   for (const f of loginFamilies) {
@@ -918,9 +929,21 @@ export async function seedSchool(
       endsOn: day(addDays(today, 4)),
     },
   });
+  // An earlier, shorter published test so the multi-exam report has something to compare.
+  const unitTest = await prisma.exam.create({
+    data: {
+      schoolId,
+      academicYearId: year.id,
+      name: `Unit Test 1 ${startYear}`,
+      startsOn: day(addDays(firstTermEnd, -60)),
+      endsOn: day(addDays(firstTermEnd, -57)),
+      status: ExamStatus.PUBLISHED,
+      publishedAt: at(addDays(firstTermEnd, -50), 15),
+    },
+  });
   const resultRows: Prisma.ExamResultCreateManyInput[] = [];
   const markRows: Prisma.MarkCreateManyInput[] = [];
-  for (const cls of classIds.values()) {
+  for (const [classIndex, cls] of [...classIds.values()].entries()) {
     const clsSections = sections.filter((s) => s.classId === cls.id);
     const subjectList = subjectsFor(cls.level).map(([s]) => s).sort();
     const termPapers = await prisma.examPaper.createManyAndReturn({
@@ -931,20 +954,85 @@ export async function seedSchool(
         maxMarks: 100,
         passMarks: 33,
         date: day(addDays(firstTermEnd, -11 + i)),
+        startTime: '09:00',
+        endTime: '11:00',
+        // One hall per class, so no two classes share a room.
+        room: `Room ${classIndex + 1}`,
+        syllabus: `Chapters 1 to ${3 + (i % 4)} of the ${subject} textbook\nClass notes and exercises\nRevision of the unit tests`,
+      })),
+    });
+    const unitPapers = await prisma.examPaper.createManyAndReturn({
+      data: subjectList.slice(0, 4).map((subject, i) => ({
+        examId: unitTest.id,
+        classId: cls.id,
+        subjectId: subjectId.get(subject)!,
+        maxMarks: 50,
+        passMarks: 17,
+        date: day(addDays(firstTermEnd, -60 + i)),
+        startTime: '09:00',
+        endTime: '10:00',
+        room: `Room ${classIndex + 1}`,
       })),
     });
     const monthlyPapers = await prisma.examPaper.createManyAndReturn({
-      data: subjectList.slice(0, 3).map((subject) => ({
+      data: subjectList.slice(0, 3).map((subject, i) => ({
         examId: monthly.id,
         classId: cls.id,
         subjectId: subjectId.get(subject)!,
         maxMarks: 25,
         passMarks: 9,
+        date: day(addDays(today, i)),
+        startTime: '10:00',
+        endTime: '10:45',
+        room: `Room ${classIndex + 1}`,
       })),
     });
     const subjectOfPaper = new Map(termPapers.map((p) => [p.id, subjects.find((s) => s.id === p.subjectId)!.name]));
+    const unitSubject = new Map(unitPapers.map((p) => [p.id, subjects.find((x) => x.id === p.subjectId)!.name]));
     for (const s of clsSections) {
       const sectionKids = kidsBySection.get(s.id) ?? [];
+      const unitMarks = sectionKids.map((k) => ({
+        kid: k,
+        marks: unitPapers.map((p) => ({
+          paperId: p.id,
+          marks: Math.round(Math.min(50, Math.max(4, 50 * rng.normal(k.ability, 0.1)))),
+          isAbsent: false,
+        })),
+      }));
+      const unitResults = unitMarks.map((m) => ({
+        kid: m.kid,
+        ...studentResult(
+          unitPapers.map((p) => ({ id: p.id, subject: unitSubject.get(p.id)!, maxMarks: p.maxMarks, passMarks: p.passMarks })),
+          m.marks,
+          DEFAULT_BANDS,
+        ),
+      }));
+      const unitRanks = positions(unitResults.map((r) => ({ id: r.kid.id, percent: r.percent })));
+      for (const m of unitMarks) {
+        for (const x of m.marks) {
+          markRows.push({
+            paperId: x.paperId,
+            studentId: m.kid.id,
+            marks: x.marks,
+            isAbsent: false,
+            enteredById: teacherOf.get(`${s.id}|${unitSubject.get(x.paperId)}`)?.id,
+          });
+        }
+      }
+      for (const r of unitResults) {
+        resultRows.push({
+          examId: unitTest.id,
+          studentId: r.kid.id,
+          sectionId: s.id,
+          obtained: r.obtained,
+          maxTotal: r.maxTotal,
+          percent: r.percent,
+          grade: r.grade,
+          position: unitRanks.get(r.kid.id)!,
+          passed: r.passed,
+          subjects: r.subjects as unknown as Prisma.InputJsonValue,
+        });
+      }
       const sectionMarks = sectionKids.map((k) => ({
         kid: k,
         marks: termPapers.map((p) => {
@@ -1099,6 +1187,7 @@ export async function seedSchool(
 
   const staffAttendance: Prisma.StaffAttendanceCreateManyInput[] = [];
   const unpaid = new Map<string, number>(); // `${userId}|${period}`
+  const lates = new Map<string, number>(); // `${userId}|${period}`
   const admin = staff.find((s) => plan.staff.some((p) => p.role === Role.ADMIN && p.name === s.name));
   for (const d of schoolDays) {
     if (d === today) continue;
@@ -1106,13 +1195,29 @@ export async function seedSchool(
       const leave = onLeave.get(`${s.id}|${d}`);
       const r = rng.next();
       const status = leave ? AttendanceStatus.LEAVE : r < 0.02 ? AttendanceStatus.ABSENT : r < 0.07 ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
-      staffAttendance.push({ schoolId, userId: s.id, date: day(d), status, markedById: admin?.id ?? null, scannedAt: scannedAt(d, status, staffAttendance.length) });
+      // Arrival times, so the payroll rules have lates to count: most are on time, a few just inside the grace period.
+      const checkIn =
+        status === AttendanceStatus.LATE
+          ? `08:${String(rng.int(11, 59)).padStart(2, '0')}`
+          : status === AttendanceStatus.PRESENT
+            ? `07:${String(rng.int(35, 59)).padStart(2, '0')}`
+            : null;
+      staffAttendance.push({ schoolId, userId: s.id, date: day(d), status, checkIn, markedById: admin?.id ?? null, scannedAt: scannedAt(d, status, staffAttendance.length) });
+      if (isLate(status, checkIn, DEFAULT_RULES)) lates.set(`${s.id}|${monthOf(d)}`, (lates.get(`${s.id}|${monthOf(d)}`) ?? 0) + 1);
       if (status === AttendanceStatus.ABSENT || leave === LeaveType.UNPAID) {
         unpaid.set(`${s.id}|${monthOf(d)}`, (unpaid.get(`${s.id}|${monthOf(d)}`) ?? 0) + 1);
       }
     }
   }
   for (const part of chunk(staffAttendance, 10000)) await prisma.staffAttendance.createMany({ data: part });
+
+  const hr = await seedHr(prisma, rng, {
+    schoolId,
+    issuedById: (admin ?? staff[0]).id,
+    today,
+    staff: staff.map((s) => ({ id: s.id, joinedOn: s.joinedOn })),
+    schoolDays,
+  });
 
   for (const period of months.filter((m) => m < monthOf(today))) {
     const [y, m] = period.split('-').map(Number);
@@ -1128,6 +1233,8 @@ export async function seedSchool(
           items: p.payItems,
           unpaidDays: unpaid.get(`${p.userId}|${period}`) ?? 0,
           workingDays: total,
+          lateDays: lates.get(`${p.userId}|${period}`) ?? 0,
+          shortLeaves: hr.shortLeaveCounts.get(`${p.userId}|${period}`) ?? 0,
         });
         return {
           runId: run.id,
@@ -1137,6 +1244,8 @@ export async function seedSchool(
           deductions: slip.deductions,
           unpaidDays: slip.unpaidDays,
           unpaidDeduction: slip.unpaidDeduction,
+          lateDeduction: slip.lateDeduction,
+          shortLeaveDeduction: slip.shortLeaveDeduction,
           net: slip.net,
           lines: slip.lines as unknown as Prisma.InputJsonValue,
           paidAt: paidOn <= today ? at(paidOn, 11) : null,
@@ -1302,6 +1411,9 @@ export async function seedSchool(
     today,
     { loanDays: 14, finePerDay: 5 },
   );
+
+  // ----- Front office (not for online schools) -----
+  if (!online) await seedFrontOffice(prisma, rng, schoolId, today, schoolDays);
 
   // ----- Certificates -----
   const office =

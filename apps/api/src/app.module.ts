@@ -7,11 +7,15 @@ import { AnnouncementsController } from './announcements/announcements.controlle
 import { AttendanceQrController } from './attendance/attendance-qr.controller.js';
 import { AttendanceController } from './attendance/attendance.controller.js';
 import { DashboardController } from './dashboard/dashboard.controller.js';
+import { DatesheetController } from './exams/datesheet.controller.js';
+import { ExamReportsController } from './exams/exam-reports.controller.js';
 import { ExamsController } from './exams/exams.controller.js';
 import { HomeworkController } from './homework/homework.controller.js';
 import { TimetableController } from './timetable/timetable.controller.js';
+import { DataHealthController } from './data-health/data-health.controller.js';
 import { TransportController } from './transport/transport.controller.js';
 import { LibraryController } from './library/library.controller.js';
+import { FrontOfficeController } from './front-office/front-office.controller.js';
 import {
   CertificatesController,
   VerifyController,
@@ -19,7 +23,16 @@ import {
 import { PromotionsController } from './promotions/promotions.controller.js';
 import { HrController } from './hr/hr.controller.js';
 import { PayrollController } from './hr/payroll.controller.js';
+import { StaffCertificatesController } from './hr/staff-certificates.controller.js';
+import { StaffImportController } from './hr/staff-import.controller.js';
+import { CandidatesController } from './hr/candidates.controller.js';
+import { PayrollRulesController } from './hr/payroll-rules.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
+import { AccountsReportsController } from './accounts/accounts-reports.controller.js';
+import { FamiliesController } from './fees/families.controller.js';
+import { InstallmentsController } from './fees/installments.controller.js';
+import { FeeReportsController } from './reports/fee-reports.controller.js';
+import { InsightsController } from './reports/insights.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { FeeCorrectionsController } from './fees/fee-corrections.controller.js';
 import { FeeCorrectionsService } from './fees/fee-corrections.service.js';
@@ -151,16 +164,29 @@ import { UsersController } from './users/users.controller.js';
     FeeHeadsController,
     FeeCorrectionsController,
     ExamsController,
+    DatesheetController,
+    ExamReportsController,
     TimetableController,
+    DataHealthController,
     TransportController,
     LibraryController,
+    FrontOfficeController,
     CertificatesController,
     VerifyController,
     PromotionsController,
     HomeworkController,
     HrController,
     PayrollController,
+    PayrollRulesController,
+    CandidatesController,
+    StaffImportController,
+    StaffCertificatesController,
     AccountsController,
+    AccountsReportsController,
+    FamiliesController,
+    InstallmentsController,
+    FeeReportsController,
+    InsightsController,
     ReportsController,
     PaymentWebhookController,
     PaymentGatewayController,
