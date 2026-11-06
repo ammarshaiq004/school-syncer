@@ -217,7 +217,7 @@ export class FrontOfficeController {
   @Get('short-leaves')
   async shortLeaves(@CurrentUser() user: AuthUser, @Query('date') date?: string) {
     const day = date && isoDate.safeParse(date).success ? date : localToday();
-    const rows = await this.prisma.shortLeave.findMany({
+    const rows = await this.prisma.studentShortLeave.findMany({
       where: { schoolId: user.schoolId, ...this.scoped(user), date: dayStart(day) },
       orderBy: { leftAt: 'desc' },
       include: {
@@ -251,7 +251,7 @@ export class FrontOfficeController {
   ) {
     const student = await this.studentInScope(user, body.studentId);
     if (student.status !== StudentStatus.ACTIVE) throw new BadRequestException('This student is not enrolled');
-    const leave = await this.prisma.shortLeave.create({
+    const leave = await this.prisma.studentShortLeave.create({
       data: {
         ...body,
         schoolId: user.schoolId,
@@ -260,18 +260,18 @@ export class FrontOfficeController {
         approvedById: user.sub,
       },
     });
-    await this.audit.record(user, 'front_office.short_leave.create', 'ShortLeave', leave.id, { after: leave });
+    await this.audit.record(user, 'front_office.short_leave.create', 'StudentShortLeave', leave.id, { after: leave });
     return leave;
   }
 
   @Patch('short-leaves/:id/return')
   async returned(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    const leave = await this.prisma.shortLeave.findFirst({
+    const leave = await this.prisma.studentShortLeave.findFirst({
       where: { id, schoolId: user.schoolId, ...this.scoped(user) },
     });
     if (!leave) throw new NotFoundException('Short leave not found');
     if (leave.returnedAt) throw new BadRequestException('This student is already marked back');
-    return this.prisma.shortLeave.update({ where: { id }, data: { returnedAt: new Date() } });
+    return this.prisma.studentShortLeave.update({ where: { id }, data: { returnedAt: new Date() } });
   }
 
   // ----- Complaints -----

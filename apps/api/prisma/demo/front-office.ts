@@ -118,7 +118,7 @@ export async function seedFrontOffice(
       };
     }),
   );
-  await prisma.shortLeave.createMany({ data: leaves });
+  await prisma.studentShortLeave.createMany({ data: leaves });
 
   const complaints = Array.from({ length: 14 }, (_, i) => {
     const [category, description] = COMPLAINTS[i % COMPLAINTS.length];

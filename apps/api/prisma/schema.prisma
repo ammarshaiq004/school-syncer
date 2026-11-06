@@ -48,7 +48,7 @@ model School {
   campuses             Campus[]
   visitors             Visitor[]
   postalRecords        PostalRecord[]
-  shortLeaves          ShortLeave[]
+  studentShortLeaves   StudentShortLeave[]
   complaints           Complaint[]
   contactEntries       ContactEntry[]
   localities           Locality[]
@@ -502,7 +502,7 @@ model Student {
   bookLoans    BookLoan[]
   certificates Certificate[]
   promotions   Promotion[]
-  shortLeaves  ShortLeave[]
+  studentShortLeaves  StudentShortLeave[]
   complaints   Complaint[]
 
   lessonProgress LessonProgress[]
@@ -3058,7 +3058,7 @@ model PostalRecord {
 }
 
 /// A student leaving school early in the day.
-model ShortLeave {
+model StudentShortLeave {
   id           String    @id @default(cuid())
   schoolId     String
   campusId     String
