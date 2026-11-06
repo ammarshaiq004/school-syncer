@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Ban, Banknote, CalendarClock, CalendarX2, Download, Forward, Printer, ReceiptText, SlidersHorizontal, TriangleAlert, Undo2 } from "lucide-react";
+import { Ban, Banknote, CalendarClock, CalendarX2, Download, Forward, Printer, ReceiptText, SlidersHorizontal, TriangleAlert, Undo2, Users } from "lucide-react";
 import { InvoiceStatusPill, invoiceDisplay } from "@/components/fees/invoice-status";
+import { InstallmentsPanel } from "@/components/fees/installments-panel";
 import { ReasonDialog } from "@/components/fees/reason-dialog";
 import { InvoiceBreakdownCard, PrintableVoucher } from "@/components/invoices/invoice-breakdown";
 import {
   Alert,
   Avatar,
   Button,
+  buttonClass,
   Card,
   CardHeader,
   Dialog,
@@ -52,6 +54,7 @@ interface Voucher {
   lines: { id: string; description: string; amount: number }[];
   payments: Payment[];
   student: {
+    id: string;
     firstName: string;
     lastName: string | null;
     admissionNo: string;
@@ -235,6 +238,12 @@ export default function VoucherPage() {
                 Waive late fine
               </Button>
             )}
+            {open && (
+              <Link href={`/fees/family/${v.student.id}`} className={buttonClass("secondary")}>
+                <Users aria-hidden />
+                Family voucher
+              </Link>
+            )}
             <Button variant={canPay ? "secondary" : "primary"} icon={<Download />} onClick={() => window.print()}>
               Download invoice PDF
             </Button>
@@ -364,6 +373,9 @@ export default function VoucherPage() {
             <span>The PDF prints three copies on one A4 page: bank, school and parent. Choose Save as PDF in the print window to download it.</span>
           </div>
         </Card>
+        <div className="lg:col-span-3">
+          <InstallmentsPanel invoiceId={v.id} open={open} canManage={canManage} />
+        </div>
       </div>
 
       {/* Printed voucher: three copies on one A4 page, bank, school and parent. Only shown when printing. */}

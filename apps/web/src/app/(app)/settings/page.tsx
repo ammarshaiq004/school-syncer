@@ -3,9 +3,11 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { ArrowRight, Building, CreditCard, History, Library, MessageCircle, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
+import { ArrowRight, Brain, Building, CreditCard, History, Library, MessageCircle, MapPin, ShieldCheck, Shuffle, Users, Wallet } from "lucide-react";
 import { Alert, buttonClass, Card, CardHeader, ErrorState, PageHeader, SkeletonRows, TabPanel, Tabs } from "@/components/ui";
+import { AonSettings } from "@/components/assistant/aon-settings";
 import { AuditLog } from "@/components/settings/audit-log";
+import { Localities } from "@/components/settings/localities";
 import { MessagingSender } from "@/components/settings/messaging-sender";
 import { PaymentAccounts } from "@/components/settings/payment-accounts";
 import { RolesManager } from "@/components/settings/roles-manager";
@@ -15,7 +17,7 @@ import { can, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 import { SchoolModeSettings } from "./school-mode";
 
-type Tab = "profile" | "mode" | "fees" | "payments" | "messaging" | "library" | "roles" | "audit";
+type Tab = "profile" | "mode" | "fees" | "payments" | "messaging" | "aon" | "library" | "localities" | "roles" | "audit";
 
 export default function SettingsPage() {
   return (
@@ -44,7 +46,9 @@ function Settings() {
       ? [{ value: "payments", label: "Online payments", icon: <CreditCard /> }]
       : []),
     ...(setup ? [{ value: "messaging", label: "Messaging", icon: <MessageCircle /> }] : []),
+    ...(setup && user.plan?.features.includes("ai_assistant") ? [{ value: "aon", label: "Aon", icon: <Brain /> }] : []),
     ...((data?.mode ?? user.school?.mode) !== "ONLINE" ? [{ value: "library", label: "Library", icon: <Library /> }] : []),
+    ...(can(user, "front_office") ? [{ value: "localities", label: "Localities", icon: <MapPin /> }] : []),
     ...(setup && can(user, "users") ? [{ value: "roles", label: "Roles and permissions", icon: <ShieldCheck /> }] : []),
     ...(setup && can(user, "audit") ? [{ value: "audit", label: "Audit log", icon: <History /> }] : []),
   ];
@@ -94,6 +98,9 @@ function Settings() {
         {tabs.some((t) => t.value === "messaging") && (
           <TabPanel value="messaging">{tab === "messaging" && <MessagingSender readOnly={!canEditSettings} />}</TabPanel>
         )}
+        {tabs.some((t) => t.value === "aon") && (
+          <TabPanel value="aon">{tab === "aon" && <AonSettings readOnly={!canEditSettings} />}</TabPanel>
+        )}
         {tabs.some((t) => t.value === "library") && (
           <TabPanel value="library">
             <Card className="max-w-3xl">
@@ -108,6 +115,9 @@ function Settings() {
               </Link>
             </Card>
           </TabPanel>
+        )}
+        {tabs.some((t) => t.value === "localities") && (
+          <TabPanel value="localities">{tab === "localities" && <Localities readOnly={!canEditSettings} />}</TabPanel>
         )}
         {tabs.some((t) => t.value === "roles") && (
           <TabPanel value="roles">

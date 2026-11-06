@@ -18,6 +18,8 @@ export interface RotationReport {
   paymentAccounts: TableReport;
   messagingSenders: TableReport;
   queuedMessages: TableReport;
+  /** The Anthropic key saved in the console (at most one). */
+  aiKey: TableReport;
   /** Saved photo links signed with an older FILE_SIGNING_SECRET (or JWT_SECRET), signed again. */
   studentPhotos: { checked: number; resigned: number };
 }
@@ -43,7 +45,7 @@ export async function rotateSecrets(prisma: PrismaClient, opts: { apply?: boolea
   /** Reseals one value; null when it is already current. */
   const reseal = (sealed: string) => (sealedWith(sealed, current) ? null : sealSecrets(openSecrets(sealed, all), current));
 
-  const report: RotationReport = { paymentAccounts: empty(), messagingSenders: empty(), queuedMessages: empty(), studentPhotos: { checked: 0, resigned: 0 } };
+  const report: RotationReport = { paymentAccounts: empty(), messagingSenders: empty(), queuedMessages: empty(), aiKey: empty(), studentPhotos: { checked: 0, resigned: 0 } };
 
   const step = async (table: TableReport, id: string, sealed: string, write: (value: string) => Promise<number>) => {
     table.checked++;
@@ -64,6 +66,9 @@ export async function rotateSecrets(prisma: PrismaClient, opts: { apply?: boolea
   for (const row of await prisma.schoolMessagingSender.findMany({ where: { secrets: { not: '' } }, select: { schoolId: true, secrets: true } })) {
     await step(report.messagingSenders, row.schoolId, row.secrets, async (secrets) => (await prisma.schoolMessagingSender.updateMany({ where: { schoolId: row.schoolId, secrets: row.secrets }, data: { secrets } })).count);
   }
+
+  const aiKey = await prisma.platformAiKey.findUnique({ where: { id: 'default' }, select: { sealed: true } });
+  if (aiKey) await step(report.aiKey, 'default', aiKey.sealed, async (sealed) => (await prisma.platformAiKey.updateMany({ where: { id: 'default', sealed: aiKey.sealed }, data: { sealed } })).count);
 
   const queued = await prisma.job.findMany({ where: { queue: DELIVER_QUEUE, status: JobStatus.PENDING }, select: { id: true, payload: true } });
   for (const job of queued) {

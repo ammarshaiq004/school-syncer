@@ -15,6 +15,7 @@ import { TopBar } from "@/components/shell/topbar";
 import { BillingNoticeBanner } from "@/components/billing/notice-banner";
 import { SupportBanner } from "@/components/platform/support-banner";
 import { SupportSessionsBanner } from "@/components/support-sessions-banner";
+import { AonLayer, useAon } from "@/components/assistant/aon-layer";
 import { ProblemReportPanel } from "@/components/problem-report";
 import { api, endSupportSession, getSupportToken, setToken, type SchoolPlan, type SessionUser } from "@/lib/api";
 import { day, fullName } from "@/lib/format";
@@ -74,6 +75,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [router, pathname]);
 
   const available = useMemo(() => (user ? availableViews(user) : []), [user]);
+  const aon = useAon(user);
   const view: ViewId = resolveView(pathname, savedView, available);
   const mode = user?.school?.mode ?? null;
   const groups = useMemo(() => (user ? navForView({ user, view, mode }) : []), [user, view, mode]);
@@ -209,6 +211,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             onOpenPalette={() => setPaletteOpen(true)}
             onSignOut={signOut}
             onReportProblem={() => setReportOpen(true)}
+            onOpenAon={aon.status ? () => aon.setOpen(true) : undefined}
             // A support session acts as the owner, so it cannot change their password.
             changePasswordHref={user.support ? undefined : "/change-password"}
             showBell={isStaff}
@@ -237,6 +240,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <ProblemReportPanel open={reportOpen} onOpenChange={setReportOpen} />
+      <AonLayer user={user} aon={aon} />
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}

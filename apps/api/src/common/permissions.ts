@@ -59,6 +59,7 @@ export const PERMISSION_MODULES = {
   hr: { label: 'HR and payroll', group: 'operations' },
   transport: { label: 'Transport', group: 'operations' },
   library: { label: 'Library', group: 'operations' },
+  front_office: { label: 'Front office', group: 'operations' },
   announcements: { label: 'Announcements', group: 'communication' },
   messages: { label: 'Messages and notifications', group: 'communication' },
   chat: { label: 'Parent-teacher chat', group: 'communication' },
@@ -178,6 +179,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     gradebook: 'none',
     lesson_plans: 'none',
     chat: 'none',
+    front_office: 'manage', // reception staff run the front desk
   }),
   // Parents and students are not editable; their endpoints are fenced by
   // @Roles and by ownership checks, the matrix only has to let them through.

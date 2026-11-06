@@ -14,7 +14,7 @@ import { day } from "@/lib/format";
 interface Result {
   found: boolean;
   valid?: boolean;
-  type?: CertificateType;
+  type?: CertificateType | "EXPERIENCE";
   serialNo?: string;
   issuedOn?: string;
   school?: { name: string; city: string | null };
@@ -24,6 +24,11 @@ interface Result {
   className?: string | null;
   leavingOn?: string | null;
   cancelledOn?: string | null;
+  // Staff experience certificates.
+  staffName?: string;
+  designation?: string;
+  joinedOn?: string;
+  leftOn?: string | null;
 }
 
 /** Public: checks a certificate's code, for whoever is handed the paper. */
@@ -48,9 +53,20 @@ export default function VerifyCodePage() {
     };
   }, [code, attempt]);
 
-  const items: DescriptionItem[] = result?.found
+  const items: DescriptionItem[] = result?.found && result.type === "EXPERIENCE"
     ? [
-        { label: "Certificate", value: CERTIFICATE_TITLE[result.type!] },
+        { label: "Certificate", value: "Experience Certificate" },
+        { label: "Serial No.", value: <span className="font-mono">{result.serialNo}</span> },
+        { label: "Issued on", value: day(result.issuedOn!) },
+        { label: "Name", value: result.staffName },
+        { label: "Designation", value: result.designation },
+        { label: "Joined on", value: day(result.joinedOn!) },
+        { label: "Last day", value: result.leftOn ? day(result.leftOn) : "Still working here" },
+        { label: "School", value: result.school!.name, full: true },
+      ]
+    : result?.found
+    ? [
+        { label: "Certificate", value: CERTIFICATE_TITLE[result.type as CertificateType] },
         { label: "Serial No.", value: <span className="font-mono">{result.serialNo}</span> },
         { label: "Issued on", value: day(result.issuedOn!) },
         { label: "Student", value: result.studentName },

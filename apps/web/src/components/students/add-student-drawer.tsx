@@ -2,6 +2,7 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { Save } from "lucide-react";
+import { LocalitySelect } from "@/components/front-office/locality-select";
 import { Select } from "@/components/select";
 import { Alert, Button, Drawer, Field, useToast } from "@/components/ui";
 import { WarningList } from "@/components/students/guardian-dialogs";
@@ -51,6 +52,7 @@ export function AddStudentDrawer({
           dateOfBirth: f.get("dateOfBirth") || undefined,
           bFormNo: f.get("bFormNo") || undefined,
           address: f.get("address") || undefined,
+          localityId: f.get("localityId") || undefined,
           guardians: [
             {
               name: f.get("guardianName"),
@@ -135,6 +137,7 @@ export function AddStudentDrawer({
         <Field label="Date of birth" name="dateOfBirth" type="date" />
         <Field label="B-Form number" name="bFormNo" placeholder="35202-1234567-1" inputMode="numeric" />
         <Field label="Address" name="address" />
+        <LocalitySelect />
         <p className="col-span-full mt-2 text-xs font-medium uppercase tracking-[0.04em] text-fg-muted">Primary guardian</p>
         <Field label="Guardian name" name="guardianName" required />
         <Field label="Guardian phone (WhatsApp)" name="guardianPhone" type="tel" placeholder="0300 1234567" required />

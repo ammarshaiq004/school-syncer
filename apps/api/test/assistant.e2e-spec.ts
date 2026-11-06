@@ -20,6 +20,9 @@ const model = {
   enabled: false,
   model: 'test-model',
   create: vi.fn(),
+  available: async () => model.enabled,
+  keySource: async () => ({ key: model.enabled ? 'sk-test' : null, source: model.enabled ? ('env' as const) : null }),
+  refresh: vi.fn(),
 };
 
 const usage = { input_tokens: 100, output_tokens: 20 };
@@ -49,6 +52,7 @@ describe('AI assistant (e2e)', () => {
   let sana: string; // A: fine
   let bilal: string; // B: fees long overdue
   let examId: string;
+  let platform: Headers;
 
   async function loginAs(login: string) {
     const res = await request(server)
@@ -69,6 +73,12 @@ describe('AI assistant (e2e)', () => {
     await app.init();
     server = app.getHttpServer();
     prisma = app.get(PrismaService);
+
+    const passwordHash = await bcrypt.hash('password123', 4);
+    await prisma.platformAdmin.create({ data: { email: `owner+${run}@assistant.test`, name: 'Console owner', role: 'OWNER', passwordHash } });
+    platform = {
+      Authorization: `Bearer ${(await request(server).post('/api/platform/auth/login').send({ email: `owner+${run}@assistant.test`, password: 'password123' }).expect(200)).body.accessToken}`,
+    };
 
     const reg = await request(server)
       .post('/api/auth/register-school')
@@ -343,6 +353,118 @@ describe('AI assistant (e2e)', () => {
       const res = await request(server).post('/api/assistant/ask').set(teacherB).send({ question: 'Hi' }).expect(429);
       expect(res.body.message).toContain('daily limit');
       expect(model.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Aon', () => {
+    const forgetAll = () => prisma.aonMemoryNote.deleteMany({ where: { schoolId } });
+
+    afterEach(async () => {
+      await forgetAll();
+      await prisma.school.update({ where: { id: schoolId }, data: { aonEnabled: true, aiMonthlyTokens: null } });
+      await prisma.assistantUsage.deleteMany({ where: { schoolId } });
+    });
+
+    it('remembers a note for managers only, and gives the notes back to the model as data', async () => {
+      model.enabled = true;
+      model.create
+        .mockResolvedValueOnce({ stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: 'r1', name: 'remember', input: { note: 'Fees are due on the 10th' } }] })
+        .mockResolvedValueOnce({ stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'Noted.' }] });
+      const res = await request(server).post('/api/assistant/ask').set(owner).send({ question: 'Remember fees are due on the 10th' }).expect(200);
+      expect(res.body).toEqual({ answer: 'Noted.', sources: ['Memory'] });
+      expect(model.create.mock.calls[0][0].tools.map((t: { name: string }) => t.name)).toContain('remember');
+
+      const notes = (await request(server).get('/api/assistant/memory').set(teacherA).expect(200)).body as { id: string; note: string }[];
+      expect(notes.map((n) => n.note)).toEqual(['Fees are due on the 10th']);
+
+      // The next question carries the note, inside a data block; a teacher is not offered the tool.
+      model.create.mockResolvedValueOnce({ stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'ok' }] });
+      await request(server).post('/api/assistant/ask').set(teacherA).send({ question: 'When are fees due?' }).expect(200);
+      const call = model.create.mock.calls[2][0];
+      expect(call.system).toContain('<school_notes>');
+      expect(call.system).toContain('Fees are due on the 10th');
+      expect(call.tools.map((t: { name: string }) => t.name)).not.toContain('remember');
+
+      await request(server).delete(`/api/assistant/memory/${notes[0].id}`).set(teacherA).expect(403);
+      await request(server).delete(`/api/assistant/memory/${notes[0].id}`).set(owner).expect(204);
+      await request(server).delete(`/api/assistant/memory/${notes[0].id}`).set(owner).expect(404);
+    });
+
+    it('keeps the newest 30 notes and refuses a note a teacher\'s model call tries to save', async () => {
+      model.enabled = true;
+      for (let i = 0; i < 31; i++) {
+        model.create
+          .mockResolvedValueOnce({ stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: `n${i}`, name: 'remember', input: { note: `Note ${i}` } }] })
+          .mockResolvedValueOnce({ stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'ok' }] });
+        await request(server).post('/api/assistant/ask').set(owner).send({ question: `Remember ${i}` }).expect(200);
+      }
+      const notes = (await request(server).get('/api/assistant/memory').set(owner).expect(200)).body as { note: string }[];
+      expect(notes).toHaveLength(30);
+      expect(notes[0].note).toBe('Note 30');
+      expect(notes.map((n) => n.note)).not.toContain('Note 0');
+
+      // Even if a model asked a teacher's session to remember something, the service refuses.
+      model.create
+        .mockResolvedValueOnce({ stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: 'x', name: 'remember', input: { note: 'Sneaky' } }] })
+        .mockResolvedValueOnce({ stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'ok' }] });
+      await request(server).post('/api/assistant/ask').set(teacherA).send({ question: 'Remember Sneaky' }).expect(200);
+      expect((await prisma.aonMemoryNote.count({ where: { schoolId, note: 'Sneaky' } }))).toBe(0);
+    });
+
+    it('lets a manager switch Aon off, which stops questions and AI drafts', async () => {
+      model.enabled = true;
+      await request(server).patch('/api/assistant/settings').set(teacherA).send({ enabled: false }).expect(403);
+      const off = await request(server).patch('/api/assistant/settings').set(owner).send({ enabled: false }).expect(200);
+      expect(off.body.aon).toMatchObject({ enabled: false, canManage: true });
+
+      const res = await request(server).post('/api/assistant/ask').set(teacherA).send({ question: 'Hi' }).expect(403);
+      expect(res.body.message).toContain('switched off');
+      const draft = await request(server)
+        .post('/api/assistant/draft')
+        .set(teacherA)
+        .send({ kind: 'report_remark', studentId: ahmed, notes: 'Revise Maths', language: 'en' })
+        .expect(200);
+      expect(draft.body.source).toBe('template');
+      expect(model.create).not.toHaveBeenCalled();
+    });
+
+    it('stops at the school\'s monthly token budget until staff raise it', async () => {
+      model.enabled = true;
+      await prisma.school.update({ where: { id: schoolId }, data: { aiMonthlyTokens: 100 } });
+      const userId = (await prisma.user.findUniqueOrThrow({ where: { schoolId_phone: { schoolId, phone: phone(2) } } })).id;
+      await prisma.assistantUsage.create({ data: { schoolId, userId, kind: 'ASK', model: 'test-model', inputTokens: 80, outputTokens: 20 } });
+
+      const status = await request(server).get('/api/assistant/status').set(teacherA).expect(200);
+      expect(status.body.aon).toMatchObject({ monthUsed: 100, monthLimit: 100 });
+      const res = await request(server).post('/api/assistant/ask').set(teacherA).send({ question: 'Hi' }).expect(429);
+      expect(res.body.message).toContain('allowance');
+      expect(model.create).not.toHaveBeenCalled();
+
+      await request(server).patch(`/api/platform/ai/schools/${schoolId}`).set(platform).send({ monthlyTokens: 500 }).expect(200);
+      model.create.mockResolvedValueOnce({ stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'ok' }] });
+      await request(server).post('/api/assistant/ask').set(teacherA).send({ question: 'Hi' }).expect(200);
+    });
+
+    it('shows the console its usage and keeps the saved key out of every answer', async () => {
+      const saved = process.env.PAYMENTS_SECRET_KEY;
+      process.env.PAYMENTS_SECRET_KEY = 'e2e-aon-key-that-is-long-enough-to-use';
+      try {
+        await request(server).put('/api/platform/ai/key').set(platform).send({ key: 'nope' }).expect(400);
+        const res = await request(server).put('/api/platform/ai/key').set(platform).send({ key: 'sk-ant-e2e-0123456789abcdef-WXYZ' }).expect(200);
+        expect(res.body.consoleKey).toMatchObject({ hint: 'WXYZ' });
+        expect(JSON.stringify(res.body)).not.toContain('sk-ant-e2e');
+        expect(model.refresh).toHaveBeenCalled();
+        const sealed = (await prisma.platformAiKey.findUniqueOrThrow({ where: { id: 'default' } })).sealed;
+        expect(sealed).not.toContain('sk-ant');
+
+        const overview = (await request(server).get('/api/platform/ai').set(platform).expect(200)).body;
+        expect(overview.defaultMonthlyTokens).toBe(1_000_000);
+      } finally {
+        await request(server).delete('/api/platform/ai/key').set(platform).expect(200);
+        if (saved === undefined) delete process.env.PAYMENTS_SECRET_KEY;
+        else process.env.PAYMENTS_SECRET_KEY = saved;
+      }
+      expect(await prisma.platformAiKey.count()).toBe(0);
     });
   });
 });

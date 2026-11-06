@@ -1,15 +1,16 @@
 import { randomInt } from 'node:crypto';
 import { CertificateType } from '@prisma/client';
 
-export const SERIAL_PREFIX: Record<CertificateType, string> = {
+export const SERIAL_PREFIX: Record<CertificateType | 'EXPERIENCE', string> = {
   LEAVING: 'SLC',
   CHARACTER: 'CC',
   ENROLMENT: 'EC',
+  EXPERIENCE: 'EXP', // staff experience certificates
 };
 
 /** The next serial for a type and year, after the highest already issued: "SLC-2026-0008". */
 export function nextSerial(
-  type: CertificateType,
+  type: CertificateType | 'EXPERIENCE',
   year: number,
   existing: string[],
 ): string {

@@ -31,6 +31,12 @@ describe('nextSerial', () => {
   });
 });
 
+describe('nextSerial for staff', () => {
+  it('numbers experience certificates on their own', () => {
+    expect(nextSerial('EXPERIENCE', 2026, ['EXP-2026-0002', 'EC-2026-0009'])).toBe('EXP-2026-0003');
+  });
+});
+
 describe('verifyCode', () => {
   it('avoids characters that are easy to misread', () => {
     const code = verifyCode();

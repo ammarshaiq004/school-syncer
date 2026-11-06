@@ -28,43 +28,37 @@ import {
   DataTable,
   DonutChart,
   EmptyState,
-  ErrorState,
   KpiCard,
   PageHeader,
-  ProgressBar,
-  Skeleton,
-  SkeletonRows,
   StatGrid,
   StatusPill,
   TabPanel,
   Tabs,
   TextField,
   type Column,
-  type Tone,
 } from "@/components/ui";
+import { FeeAnalysis } from "@/components/reports/fee-analysis";
+import { ClosingReport, ProfitLoss } from "@/components/reports/finance-reports";
+import { SchoolInsights } from "@/components/reports/school-insights";
+import { ReportBody, shortRupees, Totals, type Total } from "@/components/reports/shared";
 import { downloadCsv } from "@/lib/csv";
 import { day, rupees, thisMonth, todayIso } from "@/lib/format";
 import { FEES, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
-type Tab = "income" | "collection" | "outstanding" | "attendance";
-interface Total { name: string; total: number }
+type Tab = "income" | "collection" | "outstanding" | "fees" | "closing" | "pnl" | "insights" | "attendance";
 type Range = { from: string; to: string };
 
 const TAB_META: Record<Tab, { label: string; icon: ReactNode }> = {
   income: { label: "Income and expenditure", icon: <Scale /> },
   collection: { label: "Fee collection", icon: <Banknote /> },
   outstanding: { label: "Outstanding fees", icon: <Wallet /> },
+  fees: { label: "Fee analysis", icon: <ReceiptText /> },
+  closing: { label: "Closing", icon: <Banknote /> },
+  pnl: { label: "Profit and loss", icon: <Scale /> },
+  insights: { label: "School insights", icon: <ChartColumn /> },
   attendance: { label: "Attendance", icon: <CalendarCheck /> },
 };
-
-/** Short rupee figures for chart axes: Rs 950, Rs 12k, Rs 1.4M. */
-function shortRupees(n: number) {
-  const a = Math.abs(n);
-  if (a >= 1_000_000) return `Rs ${(n / 1_000_000).toFixed(a >= 10_000_000 ? 0 : 1)}M`;
-  if (a >= 1_000) return `Rs ${Math.round(n / 1_000)}k`;
-  return `Rs ${n}`;
-}
 
 /** Top slices for a donut, with the rest folded into "Other". */
 function topSlices(rows: Total[], n = 5) {
@@ -78,8 +72,8 @@ export default function ReportsPage() {
   const user = useSession();
   const school = useApi<{ name: string }>("/school");
   const tabs: Tab[] = [
-    ...(hasRole(user, FEES) ? (["income", "collection", "outstanding"] as const) : []),
-    ...(hasRole(user, SETUP) ? (["attendance"] as const) : []),
+    ...(hasRole(user, FEES) ? (["income", "collection", "outstanding", "fees", "closing", "pnl"] as const) : []),
+    ...(hasRole(user, SETUP) ? (["insights", "attendance"] as const) : []),
   ];
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [range, setRange] = useState({ from: `${todayIso().slice(0, 7)}-01`, to: todayIso() });
@@ -134,65 +128,24 @@ export default function ReportsPage() {
           <TabPanel value="outstanding">
             <Outstanding />
           </TabPanel>
+          <TabPanel value="fees">
+            <FeeAnalysis />
+          </TabPanel>
+          <TabPanel value="closing">
+            <ClosingReport />
+          </TabPanel>
+          <TabPanel value="pnl">
+            <ProfitLoss />
+          </TabPanel>
+          <TabPanel value="insights">
+            <SchoolInsights />
+          </TabPanel>
           <TabPanel value="attendance">
             <AttendanceReport />
           </TabPanel>
         </Tabs>
       )}
     </div>
-  );
-}
-
-/** Loading, error and empty handling for a report body. */
-function ReportBody<T>({
-  report,
-  kpis = 3,
-  children,
-}: {
-  report: { data: T | null; error: string; reload: () => Promise<void> };
-  kpis?: 2 | 3 | 4 | 5;
-  children: (data: T) => ReactNode;
-}) {
-  if (report.error)
-    return (
-      <Card padding="none">
-        <ErrorState message={report.error} onRetry={report.reload} />
-      </Card>
-    );
-  if (!report.data)
-    return (
-      <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading report">
-        <StatGrid cols={kpis}>
-          {Array.from({ length: kpis }, (_, i) => (
-            <KpiCard key={i} label="Loading" value="" loading />
-          ))}
-        </StatGrid>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="mt-4 h-44 w-full" />
-          </Card>
-          <Card>
-            <SkeletonRows rows={5} columns={2} />
-          </Card>
-        </div>
-      </div>
-    );
-  return <div className="flex flex-col gap-6">{children(report.data)}</div>;
-}
-
-/** A ranked list of totals with proportional bars. */
-function Totals({ rows, tone, empty }: { rows: Total[]; tone: Tone; empty: string }) {
-  if (!rows.length) return <p className="py-4 text-center text-sm text-fg-muted">{empty}</p>;
-  const max = Math.max(1, ...rows.map((r) => r.total));
-  return (
-    <ul className="flex flex-col gap-3">
-      {rows.map((r) => (
-        <li key={r.name}>
-          <ProgressBar label={<span className="truncate text-fg">{r.name}</span>} valueText={rupees(r.total)} value={r.total} max={max} tone={tone} size="sm" />
-        </li>
-      ))}
-    </ul>
   );
 }
 
