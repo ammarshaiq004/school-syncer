@@ -47,7 +47,7 @@ CREATE TABLE "PostalRecord" (
 );
 
 -- CreateTable
-CREATE TABLE "ShortLeave" (
+CREATE TABLE "StudentShortLeave" (
     "id" TEXT NOT NULL,
     "schoolId" TEXT NOT NULL,
     "campusId" TEXT NOT NULL,
@@ -61,7 +61,7 @@ CREATE TABLE "ShortLeave" (
     "approvedById" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "ShortLeave_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "StudentShortLeave_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -116,10 +116,10 @@ CREATE INDEX "Visitor_schoolId_checkedInAt_idx" ON "Visitor"("schoolId", "checke
 CREATE INDEX "PostalRecord_schoolId_date_idx" ON "PostalRecord"("schoolId", "date");
 
 -- CreateIndex
-CREATE INDEX "ShortLeave_schoolId_date_idx" ON "ShortLeave"("schoolId", "date");
+CREATE INDEX "StudentShortLeave_schoolId_date_idx" ON "StudentShortLeave"("schoolId", "date");
 
 -- CreateIndex
-CREATE INDEX "ShortLeave_studentId_idx" ON "ShortLeave"("studentId");
+CREATE INDEX "StudentShortLeave_studentId_idx" ON "StudentShortLeave"("studentId");
 
 -- CreateIndex
 CREATE INDEX "Complaint_schoolId_status_idx" ON "Complaint"("schoolId", "status");
@@ -140,10 +140,10 @@ ALTER TABLE "Visitor" ADD CONSTRAINT "Visitor_schoolId_fkey" FOREIGN KEY ("schoo
 ALTER TABLE "PostalRecord" ADD CONSTRAINT "PostalRecord_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortLeave" ADD CONSTRAINT "ShortLeave_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "StudentShortLeave" ADD CONSTRAINT "StudentShortLeave_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ShortLeave" ADD CONSTRAINT "ShortLeave_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "StudentShortLeave" ADD CONSTRAINT "StudentShortLeave_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "Student"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Complaint" ADD CONSTRAINT "Complaint_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE;
