@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import type { Readable } from 'node:stream';
 import { DeleteObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -38,6 +39,11 @@ export class S3StorageDriver implements StorageDriver {
       client: this.client,
       params: { Bucket: this.settings.bucket, Key: key, Body: createReadStream(sourcePath), ContentType: mimeType },
     }).done();
+  }
+
+  async read(key: string) {
+    const res = await this.client.send(new GetObjectCommand({ Bucket: this.settings.bucket, Key: key }));
+    return res.Body as Readable;
   }
 
   async delete(key: string) {
