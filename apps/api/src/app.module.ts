@@ -6,6 +6,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { AdmissionsController } from './admissions/admissions.controller.js';
 import { AnnouncementsController } from './announcements/announcements.controller.js';
+import { AttendanceQrController } from './attendance/attendance-qr.controller.js';
 import { AttendanceController } from './attendance/attendance.controller.js';
 import { DashboardController } from './dashboard/dashboard.controller.js';
 import { DatesheetController } from './exams/datesheet.controller.js';
@@ -96,6 +97,8 @@ import { PlatformAiController } from './platform/platform-ai.controller.js';
 import { PlatformDiscountsController } from './platform/platform-discounts.controller.js';
 import { PlatformCreditsController } from './platform/platform-credits.controller.js';
 import { PlatformWatchController } from './platform/platform-watch.controller.js';
+import { SchoolDeletionService } from './platform/deletion/school-deletion.service.js';
+import { SchoolLifecycleController } from './platform/deletion/school-lifecycle.controller.js';
 import { SupportSessionsController } from './platform/support-sessions.controller.js';
 import { UsageSnapshotsService } from './platform/usage-snapshots.service.js';
 import { PaymentClaimsController, PlatformPaymentClaimsController } from './platform/billing/payment-claims.controller.js';
@@ -162,6 +165,7 @@ import { UsersController } from './users/users.controller.js';
     StudentPhotoContentController,
     AdmissionsController,
     AttendanceController,
+    AttendanceQrController,
     FeesController,
     FeeHeadsController,
     FeeCorrectionsController,
@@ -212,6 +216,7 @@ import { UsersController } from './users/users.controller.js';
     PaymentClaimsController,
     PlatformPaymentClaimsController,
     PlatformMessagesController,
+    SchoolLifecycleController,
     PlatformWatchController,
     PlatformContactsController,
     SupportSessionsController,
@@ -234,6 +239,7 @@ import { UsersController } from './users/users.controller.js';
     ReconciliationScheduler,
     BillingService,
     UsageSnapshotsService,
+    SchoolDeletionService,
     BillingScheduler,
     // First, so floods of public requests stop before any database work.
     { provide: APP_GUARD, useClass: RateLimitGuard },

@@ -183,6 +183,8 @@ export const setToken = (token: string | null) => {
   writeToken(TOKEN_KEY, token);
 };
 export const setPlatformToken = (token: string | null) => writeToken(PLATFORM_TOKEN_KEY, token);
+/** The console staff token, for downloads that a plain link cannot authorise. */
+export const getPlatformToken = () => readToken(PLATFORM_TOKEN_KEY);
 
 export class ApiError extends Error {
   constructor(

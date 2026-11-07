@@ -77,6 +77,8 @@ model School {
   /// monthly token budget SchoolSyncer staff set for it (null = server default).
   aonEnabled           Boolean        @default(true)
   aiMonthlyTokens      Int?
+  /// QR scans after this local time (HH:MM) count as late.
+  attendanceLateAfter  String         @default("08:30")
 
   students          Student[]
   aonMemory         AonMemoryNote[]
@@ -658,6 +660,8 @@ model AttendanceRecord {
   studentId String
   status    AttendanceStatus
   note      String?
+  /// When a QR scan marked the student, so lateness can be judged and shown.
+  scannedAt DateTime?
 
   session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   student Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -1192,6 +1196,8 @@ model StaffAttendance {
   status     AttendanceStatus
   note       String?
   markedById String?
+  /// When a QR scan marked the staff member.
+  scannedAt  DateTime?
   /// Arrival time "HH:MM" (school local time); payroll rules count it as late past the grace period.
   checkIn    String?
 
@@ -2974,6 +2980,33 @@ model PlatformMessage {
   createdAt DateTime                @default(now())
 
   @@index([createdAt])
+}
+
+/// A trial school waiting to be deleted, already deleted, or let off (SCHOOL-156).
+/// Not related to School on purpose: this record must outlive the school it describes.
+model SchoolDeletion {
+  id              String             @id @default(cuid())
+  schoolId        String
+  schoolName      String
+  schoolSlug      String
+  reason          String
+  requestedBy     String // PlatformAdmin name
+  requestedAt     DateTime           @default(now())
+  dueAt           DateTime
+  /// The status the school goes back to if the deletion is cancelled.
+  priorStatus     SubscriptionStatus
+  restoredAt      DateTime?
+  restoredBy      String?
+  purgedAt        DateTime?
+  /// Why the last purge failed; the school stays suspended until a purge works.
+  purgeError      String?
+  /// The copy of the school's data kept after the purge, in the storage driver.
+  exportKey       String?
+  exportSize      Int?
+  exportExpiresAt DateTime?
+
+  @@index([schoolId])
+  @@index([dueAt])
 }
 
 enum SupportScope {

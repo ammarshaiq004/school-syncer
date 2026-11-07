@@ -2,16 +2,18 @@
 
 import { Suspense, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarClock, ClipboardCheck, Table2 } from "lucide-react";
+import { BarChart3, CalendarClock, ClipboardCheck, ScanLine, Table2 } from "lucide-react";
 import { ClassTimetable } from "@/components/attendance/class-timetable";
 import { DayRegister } from "@/components/attendance/day-register";
 import { MonthlyMatrix } from "@/components/attendance/monthly-matrix";
+import { ReportsTab } from "@/components/attendance/reports-tab";
+import { ScanTab } from "@/components/attendance/scan-tab";
 import { PageHeader, TabPanel, Tabs } from "@/components/ui";
 import { todayIso } from "@/lib/format";
 import { usePersistedState } from "@/lib/persisted";
 import { can, useSession } from "@/lib/session";
 
-type Tab = "take" | "matrix" | "timetable";
+type Tab = "take" | "scan" | "matrix" | "reports" | "timetable";
 
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -54,7 +56,9 @@ function Attendance() {
 
   const tabs = [
     { value: "take", label: "Take attendance", icon: <ClipboardCheck /> },
+    { value: "scan", label: "Scan", icon: <ScanLine /> },
     { value: "matrix", label: "Monthly matrix", icon: <Table2 /> },
+    { value: "reports", label: "Reports", icon: <BarChart3 /> },
     ...(showTimetable ? [{ value: "timetable", label: "Class timetable", icon: <CalendarClock /> }] : []),
   ];
 
@@ -62,12 +66,18 @@ function Attendance() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Attendance"
-        description="Take the daily register, review a whole month at a glance and check the class timetable."
+        description="Take the daily register or scan ID cards, review a month at a glance, run absence reports and check the class timetable."
         breadcrumbs={[{ label: "Academics" }, { label: "Attendance" }]}
       />
       <Tabs tabs={tabs} value={tab} onValueChange={(v) => setTab(v as Tab)} aria-label="Attendance views">
         <TabPanel value="take">
           <DayRegister sectionId={sectionId} onSectionChange={setSectionId} date={date} onDateChange={(d) => setQuery({ date: d })} />
+        </TabPanel>
+        <TabPanel value="scan">
+          <ScanTab />
+        </TabPanel>
+        <TabPanel value="reports">
+          <ReportsTab />
         </TabPanel>
         <TabPanel value="matrix">
           <MonthlyMatrix sectionId={sectionId} onSectionChange={setSectionId} />
