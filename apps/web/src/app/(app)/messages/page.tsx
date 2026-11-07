@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { CircleCheck, CircleSlash, Clock, MessageSquare, Send, TriangleAlert } from "lucide-react";
 import { Alert, DataTable, KpiCard, NativeSelect, PageHeader, StatGrid, StatusPill, type Column, type Tone } from "@/components/ui";
+import { MessagesNav } from "@/components/messages/messages-nav";
 import { STATUS_LABEL, STATUS_TONE, statusDetail } from "@/lib/message-status";
 import { useApi } from "@/lib/use-api";
 
@@ -109,6 +110,7 @@ export default function MessagesPage() {
         description="Every WhatsApp and SMS message the school has sent, newest first. Showing the last 200."
         breadcrumbs={[{ label: "Communication" }, { label: "Message log" }]}
       />
+      <MessagesNav />
 
       {delivery.data && !delivery.data.delivers && (
         <Alert tone="warning" title="Messages are not being delivered">

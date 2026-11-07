@@ -197,6 +197,22 @@ export async function seedLibrary(
     where: { id: { in: [...lent] } },
     data: { status: CopyStatus.ON_LOAN },
   });
+  // Titles with every copy out have a short queue, so the Reservations tab has something in it.
+  const byTitle = new Map<string, string[]>();
+  for (const c of copies) byTitle.set(c.title, [...(byTitle.get(c.title) ?? []), c.id]);
+  const books = await prisma.book.findMany({ where: { schoolId }, select: { id: true, title: true } });
+  const allOut = books.filter((b) => (byTitle.get(b.title) ?? []).every((id) => lent.has(id)) && byTitle.has(b.title));
+  const queued = new Set(loans.filter((l) => !l.returnedOn).map((l) => l.studentId));
+  const waiting = readers.filter((r) => !queued.has(r.id));
+  let reservations = 0;
+  for (const [i, book] of allOut.slice(0, 3).entries()) {
+    for (const reader of waiting.slice(i * 2, i * 2 + 2)) {
+      await prisma.bookReservation.create({
+        data: { schoolId, bookId: book.id, studentId: reader.id, createdAt: new Date(Date.now() - (reservations + 1) * 3_600_000 * 7) },
+      });
+      reservations++;
+    }
+  }
   // Two copies went missing over the year.
   const missing = rng
     .shuffle(copies.filter((c) => !lent.has(c.id)))

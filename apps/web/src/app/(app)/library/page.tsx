@@ -7,6 +7,7 @@ import {
   BookMarked,
   BookOpen,
   Clock,
+  FileSpreadsheet,
   HandCoins,
   Library,
   Plus,
@@ -46,7 +47,10 @@ import {
   useToast,
   type Column,
 } from "@/components/ui";
+import { BookImport } from "@/components/library/book-import";
 import { COPY_STATUS } from "@/components/library/copy-status";
+import { BarcodeLabels } from "@/components/library/labels";
+import { Reservations } from "@/components/library/reservations";
 import { api } from "@/lib/api";
 import { day, rupees } from "@/lib/format";
 import { daysOverdue, FINE_LABEL, type BookRow, type Loan } from "@/lib/library";
@@ -78,7 +82,7 @@ interface Borrower {
   onLoan: number;
 }
 
-type Tab = "desk" | "loans" | "catalogue" | "settings";
+type Tab = "desk" | "loans" | "reservations" | "catalogue" | "labels" | "import" | "settings";
 
 /** Issue and take back books by the number stamped inside them. */
 function Desk({ onChange }: { onChange: () => Promise<void> }) {
@@ -577,7 +581,10 @@ export default function LibraryPage() {
   const tabs = [
     { value: "desk", label: "Issue and return", icon: <ScanBarcode /> },
     { value: "loans", label: "Books out", icon: <Clock />, count: s?.onLoan },
+    { value: "reservations", label: "Reservations", icon: <BookMarked /> },
     { value: "catalogue", label: "Catalogue", icon: <Library />, count: s?.titles },
+    { value: "labels", label: "Barcode labels", icon: <Printer /> },
+    { value: "import", label: "Import from Excel", icon: <FileSpreadsheet /> },
     ...(hasRole(user, SETUP) ? [{ value: "settings", label: "Rules", icon: <SlidersHorizontal /> }] : []),
   ];
 
@@ -615,8 +622,17 @@ export default function LibraryPage() {
         <TabPanel value="loans">
           <Loans onChange={summary.reload} />
         </TabPanel>
+        <TabPanel value="reservations">
+          <Reservations onChange={summary.reload} />
+        </TabPanel>
         <TabPanel value="catalogue">
           <Catalogue onChange={summary.reload} />
+        </TabPanel>
+        <TabPanel value="labels">
+          <BarcodeLabels />
+        </TabPanel>
+        <TabPanel value="import">
+          <BookImport onChange={summary.reload} />
         </TabPanel>
         {hasRole(user, SETUP) && (
           <TabPanel value="settings">

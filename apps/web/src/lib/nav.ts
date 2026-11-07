@@ -25,6 +25,7 @@ import {
   Megaphone,
   MessageCircle,
   MessagesSquare,
+  Smartphone,
   MonitorPlay,
   NotebookPen,
   NotebookText,
@@ -184,7 +185,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/announcements", label: "Announcements", icon: Megaphone, module: "announcements", roles: STAFF, views: ["admin", "teacher"], keywords: "notices news" },
       { href: "/chat", label: "Messages", icon: MessageCircle, module: "chat", roles: TEACHING, views: ["admin", "teacher"], keywords: "chat parents parent teacher conversations inbox safeguarding", viewLabels: { admin: "Parent-teacher chat" }, count: "chatUnread" },
-      { href: "/messages", label: "Message log", icon: MessagesSquare, module: "messages", roles: SETUP, views: ["admin"], keywords: "whatsapp sms notifications" },
+      { href: "/messages", label: "Messages", icon: MessagesSquare, module: "messages", roles: SETUP, views: ["admin"], keywords: "whatsapp sms notifications message log templates inbox replies delivery report" },
+      { href: "/parent-logins", label: "Parent app usage", icon: Smartphone, module: "students", roles: SETUP, views: ["admin"], keywords: "parent logins statistics app active never signed in" },
     ],
   },
   {

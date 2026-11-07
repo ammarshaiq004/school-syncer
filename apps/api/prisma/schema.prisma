@@ -138,6 +138,9 @@ model School {
   paymentGateways      SchoolPaymentGateway[]
 
   messagingSender SchoolMessagingSender?
+  messageTemplates MessageTemplate[]
+  whatsappMessages WhatsappMessage[]
+  bookReservations BookReservation[]
   passwordResets  PasswordResetCode[]
 
   /// The owner hid the setup checklist on the dashboard before finishing it.
@@ -330,6 +333,7 @@ model User {
   staffCertificatesIssued StaffCertificate[] @relation("StaffCertificateIssuer")
   payslips           Payslip[]
   bookLoans          BookLoan[]        @relation("BookLoans")
+  bookReservations   BookReservation[] @relation("BookReservations")
   certificatesIssued Certificate[]
 
   studentProfile     Student?
@@ -498,6 +502,7 @@ model Student {
   examResults  ExamResult[]
   transport    TransportAssignment[]
   bookLoans    BookLoan[]
+  bookReservations BookReservation[]
   certificates Certificate[]
   promotions   Promotion[]
   studentShortLeaves  StudentShortLeave[]
@@ -915,10 +920,14 @@ model NotificationLog {
   providerMessageId String?
   createdAt         DateTime           @default(now())
   sentAt            DateTime?
+  /// WhatsApp delivery receipts (Meta status webhook).
+  deliveredAt       DateTime?
+  readAt            DateTime?
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, createdAt])
+  @@index([providerMessageId])
   /// Monitoring: delivery failures across every school.
   @@index([createdAt, status])
 }
@@ -1845,8 +1854,9 @@ model Book {
   shelf     String? // "B-3"
   createdAt DateTime @default(now())
 
-  school School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  copies BookCopy[]
+  school       School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  copies       BookCopy[]
+  reservations BookReservation[]
 
   @@index([schoolId, title])
 }
@@ -1865,6 +1875,41 @@ model BookCopy {
   loans  BookLoan[]
 
   @@unique([schoolId, accessionNo])
+}
+
+enum ReservationStatus {
+  /// Queued: every copy is out.
+  WAITING
+  /// A returned copy is held at the desk until `holdUntil`.
+  READY
+  FULFILLED
+  CANCELLED
+  /// Not collected before `holdUntil`.
+  EXPIRED
+}
+
+/// A place in the queue for a title whose copies are all out.
+model BookReservation {
+  id          String            @id @default(cuid())
+  schoolId    String
+  bookId      String
+  studentId   String?
+  userId      String? // staff borrower
+  status      ReservationStatus @default(WAITING)
+  /// The copy held at the desk while READY.
+  copyId      String?
+  holdUntil   DateTime?         @db.Date
+  createdAt   DateTime          @default(now())
+  createdById String?
+  settledAt   DateTime?
+
+  school  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  book    Book     @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  student Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user    User?    @relation("BookReservations", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, status])
+  @@index([bookId, status, createdAt])
 }
 
 // A copy lent to a student or a member of staff.
@@ -2671,6 +2716,48 @@ model SchoolMessagingSender {
   updatedAt     DateTime @updatedAt
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+}
+
+/// A school's own wording for one of the built-in messages (src/notifications/templates.ts).
+/// `body` empty means the built-in text; `enabled` false stops that message being sent.
+model MessageTemplate {
+  schoolId    String
+  key         String
+  body        String   @default("")
+  enabled     Boolean  @default(true)
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([schoolId, key])
+}
+
+enum WhatsappDirection {
+  IN
+  OUT
+}
+
+/// The WhatsApp inbox: what parents wrote to the school's number and the replies sent from it.
+model WhatsappMessage {
+  id                String            @id @default(cuid())
+  schoolId          String
+  /// International format without "+".
+  phone             String
+  direction         WhatsappDirection
+  body              String
+  contactName       String?
+  providerMessageId String?
+  /// When staff opened an incoming message.
+  readAt            DateTime?
+  sentById          String?
+  createdAt         DateTime          @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, providerMessageId])
+  @@index([schoolId, phone, createdAt])
+  @@index([schoolId, direction, readAt])
 }
 
 /// A one-time code for "forgot password", sent to a phone number. Only its hash is stored.

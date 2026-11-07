@@ -32,6 +32,7 @@ import { calculatePayslip, workingDays } from '../../src/hr/payroll-calculator.j
 import { DEFAULT_RULES, isLate } from '../../src/hr/payroll-rules.js';
 import { seedHr } from './hr.js';
 import { daysBefore } from '../../src/common/dates.js';
+import { toInternational } from '../../src/notifications/phone.js';
 import { ridesDuring } from '../../src/transport/transport-rules.js';
 import { seedCertificates } from './certificates.js';
 import { seedEschool, type EschoolPlan, type EschoolSummary } from './eschool.js';
@@ -643,11 +644,27 @@ export async function seedSchool(
 
   // Parent logins for a handful of families, the demo family first.
   const loginFamilies = families.slice(0, plan.demoFamily ? 1 : 0).concat(rng.shuffle(families.slice(1)).slice(0, 5));
-  for (const f of loginFamilies) {
+  const parentLogins: { id: string; keen: boolean }[] = [];
+  for (const [i, f] of loginFamilies.entries()) {
     const parent = await createUser(f.father, null, [{ role: Role.PARENT }]);
     await prisma.user.update({ where: { id: parent.id }, data: { phone: f.phone } });
     await prisma.guardian.update({ where: { id: f.guardianId }, data: { userId: parent.id } });
+    parentLogins.push({ id: parent.id, keen: i < 3 });
   }
+  // A month of app use for the parent login statistics: some parents open it most days, one has gone quiet.
+  const parentDays: Prisma.UserActivityDayCreateManyInput[] = [];
+  for (const [i, p] of parentLogins.entries()) {
+    const quiet = i === parentLogins.length - 1 && parentLogins.length > 3;
+    let last: string | null = null;
+    for (let back = 29; back >= 0; back--) {
+      const date = addDays(today, -back);
+      if (quiet ? back < 20 : !rng.chance(p.keen ? 0.7 : 0.25)) continue;
+      parentDays.push({ userId: p.id, schoolId, date: day(date), roles: [Role.PARENT] });
+      last = date;
+    }
+    if (last) await prisma.user.update({ where: { id: p.id }, data: { lastLoginAt: at(last, rng.int(15, 21), rng.int(0, 59)) } });
+  }
+  await prisma.userActivityDay.createMany({ data: parentDays, skipDuplicates: true });
 
   // ----- Transport: vans, routes and the families who use them -----
   // A family rides from one stop; rides are billed on every voucher below.
@@ -1380,13 +1397,41 @@ export async function seedSchool(
       to: f.phone,
       template: 'attendance.absent',
       body: `Dear parent, ${a.kid.name} was marked absent on ${a.date}. - ${plan.name}`,
-      status: rng.chance(0.96) ? NotificationStatus.SENT : NotificationStatus.FAILED,
-      error: null,
+      ...(rng.chance(0.96)
+        ? (() => {
+            // WhatsApp receipts: nearly all delivered, about half read.
+            const sentAt = at(a.date, 9, rng.int(30, 59));
+            return {
+              status: NotificationStatus.SENT,
+              error: null,
+              sentAt,
+              deliveredAt: rng.chance(0.93) ? new Date(sentAt.getTime() + 40_000) : null,
+              readAt: rng.chance(0.5) ? new Date(sentAt.getTime() + rng.int(5, 240) * 60_000) : null,
+            };
+          })()
+        : { status: NotificationStatus.FAILED, error: 'WhatsApp API 400: the number is not on WhatsApp', sentAt: null }),
       createdAt: at(a.date, 9, rng.int(0, 30)),
-      sentAt: at(a.date, 9, rng.int(30, 59)),
     });
   }
   await prisma.notificationLog.createMany({ data: logs });
+
+  // The school's own wording for absence alerts, and parents' replies in the WhatsApp inbox.
+  await prisma.messageTemplate.create({
+    data: { schoolId, key: 'attendance.absent', body: 'Assalam o Alaikum. {studentName} was absent on {date}. Please send a leave note or call the office. - {schoolName}' },
+  });
+  const replies: [number, string, string, number][] = [
+    [0, 'Ahmed has fever today, he will not come to school. Kindly mark leave.', 'IN', 2],
+    [0, 'Noted, get well soon. Please send a doctor note when he returns.', 'OUT', 1],
+    [1, 'Assalam o Alaikum, when is the fee last date this month?', 'IN', 5],
+    [2, 'Can my daughter get the previous year result card? We need it for a scholarship form.', 'IN', 70],
+  ];
+  const inbox = replies.flatMap(([fi, body, direction, hoursAgo]) => {
+    const f = families[Math.min(fi, families.length - 1)];
+    return f
+      ? [{ schoolId, phone: toInternational(f.phone), direction: direction as 'IN' | 'OUT', body, contactName: f.father, readAt: direction === 'IN' && hoursAgo > 24 ? new Date() : null, createdAt: new Date(Date.now() - hoursAgo * 3_600_000) }]
+      : [];
+  });
+  await prisma.whatsappMessage.createMany({ data: inbox });
 
   // ----- Library (not for online schools) -----
   const library = online ? { copies: 0, loans: 0 } : await seedLibrary(

@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { DeliveryError } from './drivers.js';
 import { maskPhone, maskPhonesIn, toInternational } from './phone.js';
 import { MessagingSenders } from './senders.js';
+import { isEditable, renderText, type TemplateOverride } from './template-text.js';
 import { loggableText, secretParams, TEMPLATES, type TemplateKey } from './templates.js';
 
 export interface OutgoingMessage {
@@ -68,10 +69,12 @@ export class NotificationsService implements OnModuleInit {
     messages: OutgoingMessage[],
     opts: { urgent?: boolean; platform?: boolean } = {},
   ): Promise<number> {
+    // The school's own wording, and the messages it switched off (platform messages are never edited).
+    const overrides = opts.platform ? new Map<string, TemplateOverride>() : await this.overrides(schoolId);
     const unique = [
       ...new Map(
         messages
-          .filter((m) => m.to)
+          .filter((m) => m.to && overrides.get(m.template)?.enabled !== false)
           .map((m) => [`${toInternational(m.to)}|${m.template}|${JSON.stringify(m.params)}`, m]),
       ).values(),
     ];
@@ -85,7 +88,7 @@ export class NotificationsService implements OnModuleInit {
       sender: sender.source,
       to: toInternational(m.to),
       template: m.template,
-      body: loggableText(m.template, m.params),
+      body: loggableText(m.template, m.params, overrides.get(m.template)),
     }));
     const payloads = unique.map((m, i): DeliverPayload => {
       const secret = secretParams(m.template);
@@ -107,6 +110,12 @@ export class NotificationsService implements OnModuleInit {
     return rows.length;
   }
 
+  /** The school's reworded or switched-off messages, by template key. */
+  async overrides(schoolId: string): Promise<Map<string, TemplateOverride>> {
+    const rows = await this.prisma.messageTemplate.findMany({ where: { schoolId } });
+    return new Map(rows.filter((r) => isEditable(r.key)).map((r) => [r.key, { body: r.body, enabled: r.enabled }]));
+  }
+
   /** Delivers one message; throws to have the job retried. */
   async deliver(payload: DeliverPayload, job: JobInfo) {
     const log = await this.prisma.notificationLog.findUnique({ where: { id: payload.logId } });
@@ -126,9 +135,10 @@ export class NotificationsService implements OnModuleInit {
       data: { attempts: job.attempt, channel: sender.driver.channel, sender: sender.source },
     });
     const masked = maskPhone(log.to);
+    const override = payload.platform ? null : (await this.overrides(log.schoolId)).get(log.template);
     let result;
     try {
-      result = await sender.driver.send({ to: log.to, template, params, text: TEMPLATES[template].text(params) });
+      result = await sender.driver.send({ to: log.to, template, params, text: renderText(template, params, override) });
     } catch (e) {
       const message = maskPhonesIn((e as Error).message);
       this.logger.warn(`Attempt ${job.attempt}/${job.maxAttempts} of ${log.template} to ${masked} failed: ${message}`);

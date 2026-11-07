@@ -33,6 +33,7 @@ import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decor
 import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { settleHolds } from './library-holds.js';
 import { dueDate, lateFine, nextAccessionNumbers } from './library-rules.js';
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
@@ -314,15 +315,18 @@ export class LibraryController {
     });
     if (!book) throw new NotFoundException('Book not found');
     await this.checkCampus(user, body.campusId);
-    const numbers = await this.prisma.$transaction((tx) =>
-      this.createCopies(
+    const numbers = await this.prisma.$transaction(async (tx) => {
+      const made = await this.createCopies(
         tx,
         user.schoolId,
         id,
         body.count,
         body.campusId ?? null,
-      ),
-    );
+      );
+      // New copies go to people already queued for the title.
+      await settleHolds(tx, id, localToday());
+      return made;
+    });
     await this.audit.record(user, 'library.copies.add', 'Book', id, {
       after: { accessionNos: numbers },
     });
@@ -351,9 +355,13 @@ export class LibraryController {
       throw new ForbiddenException('This copy belongs to another campus');
     if (copy.status === CopyStatus.ON_LOAN)
       throw new ConflictException('This copy is on loan; take it back first');
-    const after = await this.prisma.bookCopy.update({
-      where: { id },
-      data: { status: body.status },
+    const after = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.bookCopy.update({
+        where: { id },
+        data: { status: body.status },
+      });
+      await settleHolds(tx, updated.bookId, localToday());
+      return updated;
     });
     await this.audit.record(user, 'library.copy.status', 'BookCopy', id, {
       before: copy.status,
@@ -522,6 +530,18 @@ export class LibraryController {
     const dueOn = body.dueOn ?? dueDate(today, settings.libraryLoanDays);
     if (dueOn < today) throw new BadRequestException('The due date has passed');
     const loan = await this.prisma.$transaction(async (tx) => {
+      // Release holds that ran out, then keep a held copy for the person it is held for.
+      await settleHolds(tx, copy.bookId, today);
+      const own = body.studentId ? { studentId: body.studentId } : { userId: body.userId };
+      const holder = await tx.bookReservation.findFirst({
+        where: { copyId: copy.id, status: 'READY' },
+        include: { student: { select: { firstName: true, lastName: true } }, user: { select: { name: true } } },
+      });
+      if (holder && !(holder.studentId ? holder.studentId === body.studentId : holder.userId === body.userId)) {
+        throw new ConflictException(
+          `${copy.book.title} (${copy.accessionNo}) is held for ${holder.student ? name(holder.student) : holder.user!.name} until ${iso(holder.holdUntil)}`,
+        );
+      }
       // Guards against two desks lending the same copy at once.
       const taken = await tx.bookCopy.updateMany({
         where: { id: copy.id, status: CopyStatus.AVAILABLE },
@@ -531,6 +551,12 @@ export class LibraryController {
         throw new ConflictException(
           `${copy.book.title} (${copy.accessionNo}) was just lent out`,
         );
+      // Borrowing the title ends the borrower's own reservation for it.
+      await tx.bookReservation.updateMany({
+        where: { bookId: copy.bookId, status: { in: ['WAITING', 'READY'] }, ...own },
+        data: { status: 'FULFILLED', copyId: null, settledAt: new Date() },
+      });
+      await settleHolds(tx, copy.bookId, today);
       return tx.bookLoan.create({
         data: {
           schoolId: user.schoolId,
@@ -558,10 +584,12 @@ export class LibraryController {
     const today = localToday();
     const fine = lateFine(iso(loan.dueOn)!, today, settings.libraryFinePerDay);
     const after = await this.prisma.$transaction(async (tx) => {
-      await tx.bookCopy.update({
+      const copy = await tx.bookCopy.update({
         where: { id: loan.copyId },
         data: { status: CopyStatus.AVAILABLE },
       });
+      // The returned copy is held for the next person in the queue.
+      await settleHolds(tx, copy.bookId, today);
       return tx.bookLoan.update({
         where: { id },
         data: {
