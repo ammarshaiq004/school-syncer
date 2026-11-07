@@ -139,7 +139,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Academics",
     items: [
       { href: "/classes", label: "Classes and sections", icon: Layers, module: "classes", roles: SETUP, views: ["admin"], keywords: "grades subjects" },
-      { href: "/attendance", label: "Attendance", icon: CalendarCheck, module: "attendance", roles: TEACHING, views: ["admin", "teacher"], keywords: "present absent register monthly matrix class timetable", viewLabels: { teacher: "Classes and attendance" } },
+      { href: "/attendance", label: "Attendance", icon: CalendarCheck, module: "attendance", roles: TEACHING, views: ["admin", "teacher"], keywords: "present absent register monthly matrix class timetable qr scan reports late", viewLabels: { teacher: "Classes and attendance" } },
       { href: "/timetable", label: "Timetable", icon: CalendarClock, module: "timetable", roles: STAFF, feature: "timetable", views: ["admin", "teacher"], keywords: "periods schedule" },
       { href: "/homework", label: "Homework", icon: NotebookPen, module: "homework", roles: TEACHING, feature: "homework", views: ["admin", "teacher"], keywords: "assignments diary" },
       { href: "/exams", label: "Exams and results", icon: ClipboardCheck, module: "exams", roles: TEACHING, feature: "exams", views: ["admin", "teacher"], keywords: "marks report cards grades", viewLabels: { teacher: "Exams and marks" } },

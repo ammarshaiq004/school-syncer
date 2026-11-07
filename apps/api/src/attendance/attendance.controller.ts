@@ -427,21 +427,25 @@ export class AttendanceController {
    * Admins mark any section; teachers only sections where they are class
    * teacher or teach a subject.
    */
-  private async assertCanMark(user: AuthUser, sectionId: string) {
-    const section = await this.prisma.section.findFirst({
-      where: { id: sectionId, schoolId: user.schoolId },
-      include: {
-        class: { select: { name: true, campusId: true, school: { select: { name: true } } } },
-        subjects: { select: { teacherId: true } },
-      },
-    });
-    if (!section) throw new NotFoundException('Section not found');
-
-    if (administers(user, section.class.campusId)) return section;
-    const teaches =
-      section.classTeacherId === user.sub ||
-      section.subjects.some((s) => s.teacherId === user.sub);
-    if (!teaches) throw new ForbiddenException('You do not teach this section');
-    return section;
+  private assertCanMark(user: AuthUser, sectionId: string) {
+    return assertCanMark(this.prisma, user, sectionId);
   }
+}
+
+/** The section if this user may take its register; NotFound or Forbidden otherwise. Shared with QR scanning. */
+export async function assertCanMark(prisma: PrismaService, user: AuthUser, sectionId: string) {
+  const section = await prisma.section.findFirst({
+    where: { id: sectionId, schoolId: user.schoolId },
+    include: {
+      class: { select: { name: true, campusId: true, school: { select: { name: true } } } },
+      subjects: { select: { teacherId: true } },
+    },
+  });
+  if (!section) throw new NotFoundException('Section not found');
+
+  if (administers(user, section.class.campusId)) return section;
+  const teaches =
+    section.classTeacherId === user.sub || section.subjects.some((s) => s.teacherId === user.sub);
+  if (!teaches) throw new ForbiddenException('You do not teach this section');
+  return section;
 }
