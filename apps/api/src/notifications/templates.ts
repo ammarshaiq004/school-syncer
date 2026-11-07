@@ -3,6 +3,8 @@
  * template approved in Meta Business Manager with the same name and the
  * parameters in this order; the text here is what SMS and logs carry.
  */
+import { renderText, type TemplateOverride } from './template-text.js';
+
 export const TEMPLATES = {
   'attendance.absent': {
     whatsapp: 'attendance_absent',
@@ -84,11 +86,10 @@ export function secretParams(key: TemplateKey): readonly string[] {
 }
 
 /** The message text with secret parameters (passwords) masked, for the delivery log. */
-export function loggableText(key: TemplateKey, params: Record<string, string>): string {
-  const template = TEMPLATES[key];
+export function loggableText(key: TemplateKey, params: Record<string, string>, override?: TemplateOverride | null): string {
   const secret = secretParams(key);
   const masked = Object.fromEntries(
     Object.entries(params).map(([k, v]) => [k, secret.includes(k) ? '********' : v]),
   );
-  return template.text(masked);
+  return renderText(key, masked, override);
 }

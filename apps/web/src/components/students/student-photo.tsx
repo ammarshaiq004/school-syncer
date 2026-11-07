@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Camera, Trash2 } from "lucide-react";
+import { Camera, ScanFace, Trash2 } from "lucide-react";
 import { Avatar, Button, IconButton, useToast } from "@/components/ui";
 import { uploadFile } from "@/components/elearning/file-upload";
 import { api } from "@/lib/api";
+import { WebcamCapture } from "./webcam-capture";
 
 /** Same types and size the API accepts (STUDENT_PHOTO in apps/api/src/elearning/files/file-rules.ts). */
 const PHOTO_ACCEPT = ".png,.jpg,.jpeg,.webp,.gif";
@@ -30,6 +31,7 @@ export function StudentPhoto({
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [webcam, setWebcam] = useState(false);
 
   async function upload(file: File | undefined) {
     if (!file) return;
@@ -79,6 +81,9 @@ export function StudentPhoto({
           <Button type="button" size="sm" variant="ghost" icon={<Camera />} loading={busy} onClick={() => input.current?.click()}>
             {photoUrl ? "Change" : "Add photo"}
           </Button>
+          <Button type="button" size="sm" variant="ghost" icon={<ScanFace />} disabled={busy} onClick={() => setWebcam(true)}>
+            Webcam
+          </Button>
           {photoUrl && (
             <IconButton size="sm" disabled={busy} onClick={remove} aria-label="Remove photo">
               <Trash2 className="size-4" aria-hidden />
@@ -86,6 +91,7 @@ export function StudentPhoto({
           )}
         </div>
       )}
+      {canManage && <WebcamCapture open={webcam} onOpenChange={setWebcam} onCapture={(file) => void upload(file)} />}
     </div>
   );
 }
