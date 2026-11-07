@@ -235,7 +235,7 @@ export class CertificatesController {
         const leavingOn = details.leavingOn!;
         await tx.student.update({
           where: { id: student.id },
-          data: { status: StudentStatus.LEFT },
+          data: { status: StudentStatus.LEFT, leftOn: dayStart(leavingOn) },
         });
         offUserIds = await disableStudentLogins(tx, [student.id]);
         await tx.enrollment.updateMany({

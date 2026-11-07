@@ -37,6 +37,7 @@ import { ridesDuring } from '../../src/transport/transport-rules.js';
 import { seedCertificates } from './certificates.js';
 import { seedEschool, type EschoolPlan, type EschoolSummary } from './eschool.js';
 import { seedLibrary } from './library.js';
+import { seedPos } from './pos.js';
 import { seedFrontOffice } from './front-office.js';
 import {
   BOY_NAMES,
@@ -121,6 +122,7 @@ export interface SeedSummary {
   certificates: number;
   books: number;
   loans: number;
+  posSales: number;
   students: number;
   staff: number;
   invoices: number;
@@ -1457,6 +1459,16 @@ export async function seedSchool(
     { loanDays: 14, finePerDay: 5 },
   );
 
+  // ----- Canteen and shop (not for online schools) -----
+  const pos = online
+    ? { products: 0, sales: 0, purchases: 0 }
+    : await seedPos(prisma, rng, {
+        schoolId,
+        cashierId: owner!.id,
+        studentIds: kids.map((k) => k.id),
+        schoolDays,
+        today,
+      });
   // ----- Front office (not for online schools) -----
   if (!online) await seedFrontOffice(prisma, rng, schoolId, today, schoolDays);
 
@@ -1496,6 +1508,7 @@ export async function seedSchool(
     certificates: certificates.certificates,
     books: library.copies,
     loans: library.loans,
+    posSales: pos.sales,
     students: kids.length,
     staff: staff.length,
     invoices: invoiceRows.length,

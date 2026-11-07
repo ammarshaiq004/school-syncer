@@ -273,7 +273,7 @@ async function main() {
     const summary = await seedSchool(prisma, plan, passwordHash, today);
     console.log(
       `Seeded ${plan.slug}: ${summary.students} students, ${summary.staff} staff, ${summary.invoices} invoices, ` +
-        `${summary.attendanceRecords} attendance records, ${summary.books} library books, ${summary.loans} loans, ${summary.certificates} certificates in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+        `${summary.attendanceRecords} attendance records, ${summary.books} library books, ${summary.loans} loans, ${summary.posSales} canteen sales, ${summary.certificates} certificates in ${((Date.now() - started) / 1000).toFixed(1)}s`,
     );
     const e = summary.eschool;
     if (e) {

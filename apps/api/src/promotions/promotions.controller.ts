@@ -23,6 +23,7 @@ import { AuditService } from '../common/audit.service.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { disableStudentLogins } from '../students/student-login.js';
 import type { AuthUser } from '../common/auth-user.js';
+import { dayStart, localToday } from '../common/dates.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -472,6 +473,10 @@ export class PromotionsController {
                     p.decision === PromotionDecision.GRADUATE
                       ? StudentStatus.GRADUATED
                       : StudentStatus.LEFT,
+                  leftOn:
+                    p.decision === PromotionDecision.GRADUATE
+                      ? null
+                      : dayStart(localToday()),
                 },
               });
               leavers.push(e.studentId);

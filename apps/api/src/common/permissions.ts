@@ -59,6 +59,7 @@ export const PERMISSION_MODULES = {
   hr: { label: 'HR and payroll', group: 'operations' },
   transport: { label: 'Transport', group: 'operations' },
   library: { label: 'Library', group: 'operations' },
+  pos: { label: 'Point of sale and canteen', group: 'operations' },
   front_office: { label: 'Front office', group: 'operations' },
   announcements: { label: 'Announcements', group: 'communication' },
   messages: { label: 'Messages and notifications', group: 'communication' },
@@ -162,6 +163,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     hr: 'manage', // payroll
     transport: 'view',
     library: 'manage',
+    pos: 'manage',
     announcements: 'view',
     campuses: 'view',
     classes: 'view',
@@ -175,6 +177,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, PermissionMatrix> = {
     homework: 'view',
     exams: 'view',
     elearning: 'none', // e-school is for teaching staff
+    pos: 'manage', // the canteen counter
     assistant: 'none',
     gradebook: 'none',
     lesson_plans: 'none',

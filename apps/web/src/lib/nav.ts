@@ -21,6 +21,7 @@ import {
   Layers,
   LayoutDashboard,
   Library,
+  ShoppingCart,
   ListChecks,
   Megaphone,
   MessageCircle,
@@ -176,6 +177,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/transport", label: "Transport", icon: Bus, module: "transport", roles: STAFF, feature: "transport", modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "routes vans buses" },
       { href: "/library", label: "Library", icon: Library, module: "library", roles: STAFF, feature: "library", modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "books loans" },
+      { href: "/pos", label: "Canteen and shop", icon: ShoppingCart, module: "pos", roles: STAFF, feature: "pos", modes: ON_CAMPUS, views: ["admin"], keywords: "pos canteen tuck shop stock sales vendors purchases" },
       { href: "/front-office", label: "Front office", icon: ConciergeBell, module: "front_office", roles: STAFF, modes: ON_CAMPUS, views: ["admin", "teacher"], keywords: "visitors post short leave complaints phone book birthdays slips reception" },
     ],
   },

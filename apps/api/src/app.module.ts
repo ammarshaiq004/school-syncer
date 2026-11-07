@@ -17,6 +17,7 @@ import { TimetableController } from './timetable/timetable.controller.js';
 import { DataHealthController } from './data-health/data-health.controller.js';
 import { TransportController } from './transport/transport.controller.js';
 import { LibraryController } from './library/library.controller.js';
+import { PosController } from './pos/pos.controller.js';
 import { FrontOfficeController } from './front-office/front-office.controller.js';
 import {
   CertificatesController,
@@ -175,6 +176,7 @@ import { UsersController } from './users/users.controller.js';
     DataHealthController,
     TransportController,
     LibraryController,
+    PosController,
     LibraryExtrasController,
     FrontOfficeController,
     CertificatesController,

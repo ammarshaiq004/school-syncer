@@ -26,6 +26,7 @@ import { AuditService } from '../common/audit.service.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { PermissionService } from '../common/permission.service.js';
 import type { AuthUser } from '../common/auth-user.js';
+import { dayStart, localToday } from '../common/dates.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -448,7 +449,14 @@ export class StudentsController {
     }
     const leaving = Boolean(body.status && body.status !== StudentStatus.ACTIVE);
     const [after, offUserIds] = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.student.update({ where: { id }, data: body });
+      const updated = await tx.student.update({
+        where: { id },
+        data: {
+          ...body,
+          // Marks the day a student leaves; coming back clears it.
+          ...(body.status === StudentStatus.LEFT ? { leftOn: dayStart(localToday()) } : body.status ? { leftOn: null } : {}),
+        },
+      });
       if (!leaving) return [updated, [] as string[]] as const;
       await tx.enrollment.updateMany({
         where: { studentId: id, status: 'ACTIVE' },

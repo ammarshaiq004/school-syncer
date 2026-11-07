@@ -16,6 +16,7 @@ import {
   Scale,
   Users,
   Wallet,
+  UserPlus,
 } from "lucide-react";
 import { DateRange } from "@/components/date-range";
 import {
@@ -37,6 +38,7 @@ import {
   TextField,
   type Column,
 } from "@/components/ui";
+import { AdmissionsReport } from "@/components/reports/admissions-report";
 import { FeeAnalysis } from "@/components/reports/fee-analysis";
 import { ClosingReport, ProfitLoss } from "@/components/reports/finance-reports";
 import { SchoolInsights } from "@/components/reports/school-insights";
@@ -46,7 +48,7 @@ import { day, rupees, thisMonth, todayIso } from "@/lib/format";
 import { FEES, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
-type Tab = "income" | "collection" | "outstanding" | "fees" | "closing" | "pnl" | "insights" | "attendance";
+type Tab = "income" | "collection" | "outstanding" | "fees" | "closing" | "pnl" | "insights" | "attendance" | "admissions";
 type Range = { from: string; to: string };
 
 const TAB_META: Record<Tab, { label: string; icon: ReactNode }> = {
@@ -58,6 +60,7 @@ const TAB_META: Record<Tab, { label: string; icon: ReactNode }> = {
   pnl: { label: "Profit and loss", icon: <Scale /> },
   insights: { label: "School insights", icon: <ChartColumn /> },
   attendance: { label: "Attendance", icon: <CalendarCheck /> },
+  admissions: { label: "Admissions and withdrawals", icon: <UserPlus /> },
 };
 
 /** Top slices for a donut, with the rest folded into "Other". */
@@ -73,7 +76,7 @@ export default function ReportsPage() {
   const school = useApi<{ name: string }>("/school");
   const tabs: Tab[] = [
     ...(hasRole(user, FEES) ? (["income", "collection", "outstanding", "fees", "closing", "pnl"] as const) : []),
-    ...(hasRole(user, SETUP) ? (["insights", "attendance"] as const) : []),
+    ...(hasRole(user, SETUP) ? (["insights", "attendance", "admissions"] as const) : []),
   ];
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [range, setRange] = useState({ from: `${todayIso().slice(0, 7)}-01`, to: todayIso() });
@@ -142,6 +145,9 @@ export default function ReportsPage() {
           </TabPanel>
           <TabPanel value="attendance">
             <AttendanceReport />
+          </TabPanel>
+          <TabPanel value="admissions">
+            <AdmissionsReport />
           </TabPanel>
         </Tabs>
       )}

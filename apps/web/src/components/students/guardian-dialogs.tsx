@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { Alert, Button, Checkbox, Dialog, TextField, useToast } from "@/components/ui";
 import { Select } from "@/components/select";
 import { api } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { formatCnic, saveWarnings, type SaveWarning } from "@/lib/identity";
 
 export const RELATIONS = ["Father", "Mother", "Guardian", "Uncle", "Aunt", "Grandparent", "Brother", "Sister"];
@@ -58,6 +59,7 @@ export function GuardianDialog({
   onSaved: () => void | Promise<unknown>;
 }) {
   const toast = useToast();
+  const school = useApi<{ occupations?: string[] }>("/school");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [warnings, setWarnings] = useState<SaveWarning[] | null>(null);
@@ -149,7 +151,8 @@ export function GuardianDialog({
         <Select label="Relation" name="relation" defaultValue={link?.relation ?? "Mother"} options={relationOptions(link?.relation)} />
         <TextField label="CNIC" name="cnic" defaultValue={formatCnic(g?.cnic)} placeholder="35202-1234567-1" />
         <TextField label="Email" name="email" type="email" defaultValue={g?.email ?? ""} />
-        <TextField label="Occupation" name="occupation" defaultValue={g?.occupation ?? ""} />
+        <TextField label="Occupation" name="occupation" list="guardian-occupations" defaultValue={g?.occupation ?? ""} />
+        <datalist id="guardian-occupations">{school.data?.occupations?.map((o) => <option key={o} value={o} />)}</datalist>
         {!editing && (
           <Checkbox
             className="sm:col-span-2"

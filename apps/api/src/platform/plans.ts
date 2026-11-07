@@ -16,6 +16,7 @@ export const FEATURES = {
   reports: 'Reports',
   transport: 'Transport',
   library: 'Library',
+  pos: 'Point of sale and canteen: products, stock, sales, purchases and vendors',
   certificates: 'Certificates and ID cards',
   elearning: 'E-school: courses, live classes, assignments and quizzes',
   ai_assistant: 'AI assistant: questions, drafts and at-risk students',
