@@ -40,6 +40,7 @@ export class DashboardController {
     const today = dayStart(todayIso);
     const period = todayIso.slice(0, 7);
     const periods = lastPeriods(period, 6);
+    const lastMonth = periods[periods.length - 2];
     const weekFrom = dayStart(daysBefore(todayIso, 20));
     // Per-payment rows and fee trends are for fee staff only; other staff get aggregates.
     const canFees = hasAnyRole(user, FEE_ROLES);
@@ -70,6 +71,8 @@ export class DashboardController {
       challanRows,
       cashByMonth,
       staffNoDesignation,
+      expenseRows,
+      complaintsOpen,
     ] = await Promise.all([
       this.prisma.student.count({ where: { schoolId, status: 'ACTIVE', ...campusFilter } }),
       this.prisma.student.count({
@@ -218,6 +221,15 @@ export class DashboardController {
       this.prisma.user.count({
         where: { schoolId, isActive: true, roles: { some: { role: { in: STAFF_ROLES }, ...staffFilter } }, staffProfile: { is: null } },
       }),
+      // Spending this month and last, from the Accounts ledger.
+      canFees
+        ? this.prisma.accountEntry.groupBy({
+            by: ['date'],
+            where: { schoolId, kind: 'EXPENSE', date: { gte: dayStart(`${lastMonth}-01`), lte: today }, ...(scope ? { OR: [{ campusId: null }, { campusId: { in: scope } }] } : {}) },
+            _sum: { amount: true },
+          })
+        : [],
+      this.prisma.complaint.count({ where: { schoolId, status: 'OPEN', ...campusFilter } }),
     ]);
     const topDefaulters = canFees ? await this.topDefaulters(schoolId, campusFilter) : [];
 
@@ -268,6 +280,13 @@ export class DashboardController {
       staff,
       teachers,
       staffWithoutDesignation: staffNoDesignation,
+      complaintsOpen,
+      expenses: canFees
+        ? {
+            thisMonth: expenseRows.filter((e) => e.date.toISOString().slice(0, 7) === period).reduce((n, e) => n + (e._sum.amount ?? 0), 0),
+            lastMonth: expenseRows.filter((e) => e.date.toISOString().slice(0, 7) === lastMonth).reduce((n, e) => n + (e._sum.amount ?? 0), 0),
+          }
+        : null,
       attendanceToday: {
         marked,
         present: count('PRESENT') + count('LATE'),

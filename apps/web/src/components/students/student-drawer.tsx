@@ -33,6 +33,7 @@ import {
   Tabs,
   type TabItem,
 } from "@/components/ui";
+import { CreditDialog } from "@/components/fees/credit-dialog";
 import { day, rupees } from "@/lib/format";
 import { formatCnic } from "@/lib/identity";
 import {
@@ -152,7 +153,7 @@ export function StudentDrawer({
           {perms.fees && (
             <TabPanel value="fees">
               <PerfGate api={perfApi}>
-                {perf && <FeesTab perf={perf} row={row} onRecordPayment={onRecordPayment} />}
+                {perf && <FeesTab perf={perf} row={row} onRecordPayment={onRecordPayment} onChanged={perfApi.reload} />}
               </PerfGate>
             </TabPanel>
           )}
@@ -389,19 +390,22 @@ function AttendanceTab({ perf, name }: { perf: StudentPerformance; name: string 
   );
 }
 
-function FeesTab({ perf, row, onRecordPayment }: { perf: StudentPerformance; row: DirectoryRow; onRecordPayment: (id: string, name: string) => void }) {
+function FeesTab({ perf, row, onRecordPayment, onChanged }: { perf: StudentPerformance; row: DirectoryRow; onRecordPayment: (id: string, name: string) => void; onChanged: () => void }) {
   const f = perf.feeSummary;
+  const [crediting, setCrediting] = useState(false);
   if (!f) {
     return <p className="text-sm text-fg-muted">Fee details are not available for your role.</p>;
   }
+  const net = f.netBalance ?? f.balance;
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[13px] text-fg-muted">Outstanding balance</p>
-          <p className={`font-display text-2xl font-semibold tabular-nums ${f.balance > 0 ? "text-danger-text" : "text-fg"}`}>
-            {f.balance > 0 ? rupees(f.balance) : "Nothing due"}
+          <p className={`font-display text-2xl font-semibold tabular-nums ${net > 0 ? "text-danger-text" : "text-fg"}`}>
+            {net > 0 ? rupees(net) : net < 0 ? `${rupees(-net)} ahead` : "Nothing due"}
           </p>
+          {(f.credit ?? 0) > 0 && <p className="text-[13px] text-fg-muted">Includes {rupees(f.credit ?? 0)} advance credit</p>}
         </div>
         <StatusPill status={f.status} />
       </div>
@@ -435,10 +439,14 @@ function FeesTab({ perf, row, onRecordPayment }: { perf: StudentPerformance; row
             Record payment
           </Button>
         )}
+        <Button type="button" size="sm" variant="secondary" onClick={() => setCrediting(true)}>
+          Credit / opening balance
+        </Button>
         <Link href={`/students/${row.id}`} className={buttonClass("secondary", "sm")}>
           See all invoices
         </Link>
       </div>
+      <CreditDialog studentId={row.id} name={row.name} open={crediting} onOpenChange={setCrediting} onSaved={onChanged} />
     </div>
   );
 }

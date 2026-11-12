@@ -26,7 +26,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import { day, fullName, rupees } from "@/lib/format";
+import { day, fullName, rupees, todayIso } from "@/lib/format";
 import { can, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
@@ -101,6 +101,7 @@ export default function VoucherPage() {
   const canManage = can(user, "fees", "manage") && user.plan?.access !== "read_only";
   const voucher = useApi<Voucher>(`/fees/invoices/${id}`);
   const [payOpen, setPayOpen] = useState(false);
+  const receivers = useApi<{ id: string; name: string }[]>(payOpen ? "/fees/receivers" : null);
   // One key per opening of the payment dialog, so a retried save is recorded once.
   const [payKey, setPayKey] = useState("");
   const [paying, setPaying] = useState(false);
@@ -149,6 +150,8 @@ export default function VoucherPage() {
           amount: Number(f.get("amount")),
           method: f.get("method"),
           reference: f.get("reference") || undefined,
+          paidOn: f.get("paidOn") || undefined,
+          receivedById: f.get("receivedById") || undefined,
           idempotencyKey: payKey || undefined,
         },
       });
@@ -427,6 +430,13 @@ export default function VoucherPage() {
             hint={`At most ${rupees(v.balance + v.lateFine)}`}
           />
           <SelectField label="Method" name="method" options={METHODS.map((m) => ({ value: m, label: methodLabel(m) }))} />
+          <TextField label="Received on" name="paidOn" type="date" max={todayIso()} defaultValue={todayIso()} required hint="Change it to enter an older receipt" />
+          <SelectField
+            label="Received by"
+            name="receivedById"
+            defaultValue={user.sub}
+            options={(receivers.data ?? []).map((r) => ({ value: r.id, label: r.name }))}
+          />
           <TextField
             label="Reference"
             name="reference"

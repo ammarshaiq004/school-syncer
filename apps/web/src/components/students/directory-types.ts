@@ -32,6 +32,10 @@ export interface FeeSummary {
   totalBilled: number;
   totalPaid: number;
   balance: number;
+  /** Advance paid ahead of any voucher. */
+  credit?: number;
+  /** Balance less credit; negative when the family is ahead. */
+  netBalance?: number;
   overdueBalance: number;
   openInvoices: number;
   status: FeeStatus;
