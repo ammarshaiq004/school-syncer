@@ -342,7 +342,7 @@ export async function studentPerformance(
 ) {
   const student = await prisma.student.findFirst({
     where: { id: studentId, schoolId },
-    select: { id: true, campusId: true },
+    select: { id: true, campusId: true, feeRemark: true },
   });
   if (!student) throw new NotFoundException('Student not found');
   if (campuses && !campuses.includes(student.campusId)) {
@@ -463,6 +463,7 @@ export async function studentPerformance(
             today,
             credit?._sum.amount ?? 0,
           ),
+          feeRemark: student.feeRemark,
           lastPayment: lastPayment
             ? {
                 amount: lastPayment.amount,

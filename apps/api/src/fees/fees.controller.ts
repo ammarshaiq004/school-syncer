@@ -31,6 +31,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { dayStart, localToday } from '../common/dates.js';
 import { createAdhocVoucher } from './adhoc-vouchers.js';
 import { daysLate, fineDue, fineRule, siblingPercent } from './fee-calculator.js';
+import { commitmentsWithStatus } from './commitments.js';
 import { billedOf, feeOutstanding, OPEN_INVOICE, overdueWhere } from './outstanding.js';
 import { PaymentsService } from './payments.service.js';
 import { schoolSiblings } from './siblings.js';
@@ -641,12 +642,18 @@ export class FeesController {
             firstName: true,
             lastName: true,
             admissionNo: true,
+            feeRemark: true,
             guardians: { where: { isPrimary: true }, select: { guardian: { select: { name: true, phone: true } } } },
           },
         },
       },
     });
+    // The promise to pay still standing (or last broken) for each student.
+    const promises = await commitmentsWithStatus(this.prisma, { schoolId: user.schoolId, studentId: { in: [...new Set(overdue.map((i) => i.studentId))] } }, today);
+    const promiseOf = new Map<string, (typeof promises)[number]>();
+    for (const c of promises.filter((c) => c.status !== 'KEPT')) promiseOf.set(c.studentId, c);
     return overdue.map((i) => ({
+      commitment: promiseOf.get(i.studentId) ?? null,
       invoiceId: i.id,
       voucherNo: i.voucherNo,
       period: i.period,

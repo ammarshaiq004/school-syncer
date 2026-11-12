@@ -33,6 +33,7 @@ import {
   Tabs,
   type TabItem,
 } from "@/components/ui";
+import { CommitmentDialog } from "@/components/fees/commitment-dialog";
 import { CreditDialog } from "@/components/fees/credit-dialog";
 import { day, rupees } from "@/lib/format";
 import { formatCnic } from "@/lib/identity";
@@ -393,6 +394,7 @@ function AttendanceTab({ perf, name }: { perf: StudentPerformance; name: string 
 function FeesTab({ perf, row, onRecordPayment, onChanged }: { perf: StudentPerformance; row: DirectoryRow; onRecordPayment: (id: string, name: string) => void; onChanged: () => void }) {
   const f = perf.feeSummary;
   const [crediting, setCrediting] = useState(false);
+  const [promising, setPromising] = useState(false);
   if (!f) {
     return <p className="text-sm text-fg-muted">Fee details are not available for your role.</p>;
   }
@@ -442,10 +444,16 @@ function FeesTab({ perf, row, onRecordPayment, onChanged }: { perf: StudentPerfo
         <Button type="button" size="sm" variant="secondary" onClick={() => setCrediting(true)}>
           Credit / opening balance
         </Button>
+        {f.openInvoices > 0 && (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setPromising(true)}>
+            Promise to pay
+          </Button>
+        )}
         <Link href={`/students/${row.id}`} className={buttonClass("secondary", "sm")}>
           See all invoices
         </Link>
       </div>
+      <CommitmentDialog studentId={row.id} name={row.name} remark={f.feeRemark} open={promising} onOpenChange={setPromising} onSaved={onChanged} />
       <CreditDialog studentId={row.id} name={row.name} open={crediting} onOpenChange={setCrediting} onSaved={onChanged} />
     </div>
   );

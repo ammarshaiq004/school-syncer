@@ -5,6 +5,7 @@ import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { dayStart, daysBefore, localToday, SCHOOL_TIMEZONE, startOfLocalDay } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { commitmentsWithStatus } from '../fees/commitments.js';
 import { billedOf, feeOutstanding } from '../fees/outstanding.js';
 import { ageOn, challanCounts, genderCounts, monthsOwed, teachingDesignationWhere } from './dashboard-rules.js';
 
@@ -232,6 +233,8 @@ export class DashboardController {
       this.prisma.complaint.count({ where: { schoolId, status: 'OPEN', ...campusFilter } }),
     ]);
     const topDefaulters = canFees ? await this.topDefaulters(schoolId, campusFilter) : [];
+    // Promises falling due today, and promises already broken, for the fee office to chase.
+    const commitments = canFees ? await commitmentsWithStatus(this.prisma, { schoolId, student: campusFilter }, todayIso) : [];
 
     const count = (s: string) => attendance.find((a) => a.status === s)?._count ?? 0;
     const marked = attendance.reduce((n, a) => n + a._count, 0);
@@ -281,6 +284,12 @@ export class DashboardController {
       teachers,
       staffWithoutDesignation: staffNoDesignation,
       complaintsOpen,
+      commitments: canFees
+        ? {
+            dueToday: commitments.filter((c) => c.promisedOn === todayIso).slice(0, 8),
+            broken: commitments.filter((c) => c.status === 'BROKEN').length,
+          }
+        : null,
       expenses: canFees
         ? {
             thisMonth: expenseRows.filter((e) => e.date.toISOString().slice(0, 7) === period).reduce((n, e) => n + (e._sum.amount ?? 0), 0),

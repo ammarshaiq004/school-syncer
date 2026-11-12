@@ -58,6 +58,7 @@ interface Voucher {
     firstName: string;
     lastName: string | null;
     admissionNo: string;
+    feeRemark?: string | null;
     enrollments: { section: { name: string; class: { name: string } } }[];
     guardians: { guardian: { name: string } }[];
   };
@@ -254,6 +255,12 @@ export default function VoucherPage() {
           </>
         }
       />
+
+      {v.student.feeRemark && (
+        <Alert tone="info" title="Fee remark">
+          {v.student.feeRemark}
+        </Alert>
+      )}
 
       {display === "OVERDUE" && (
         <Alert tone="danger" title="This voucher is overdue" className="print:hidden" icon={<TriangleAlert />}>

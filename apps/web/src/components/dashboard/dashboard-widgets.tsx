@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Cake, CircleDollarSign, Receipt, TicketCheck, UserMinus, UserPlus, Users } from "lucide-react";
+import { Cake, CircleDollarSign, HandCoins, Receipt, TicketCheck, UserMinus, UserPlus, Users } from "lucide-react";
 import { Card, CardHeader, DonutChart, ProgressBar, Skeleton } from "@/components/ui";
 import { SegmentedControl } from "@/components/kit/tabs";
 import { rupees } from "@/lib/format";
@@ -17,6 +17,7 @@ export interface WidgetData {
   challans?: { period: string; paid: number; partial: number; unpaid: number; total: number } | null;
   expenses?: { thisMonth: number; lastMonth: number } | null;
   complaintsOpen?: number;
+  commitments?: { dueToday: { id: string; studentId: string; student: { firstName: string; lastName: string | null }; amount: number; paid: number; status: string }[]; broken: number } | null;
   staffWithoutDesignation?: number;
 }
 
@@ -185,6 +186,38 @@ export function ComplaintsCard({ s }: { s?: WidgetData }) {
     <Card>
       <CardHeader title="New complaints" description="Waiting to be looked at" icon={<TicketCheck />} action={<ViewAll href="/front-office" />} />
       {s ? <p className="font-display text-2xl font-semibold tabular-nums">{s.complaintsOpen ?? 0}</p> : <Skeleton className="h-8 w-16" />}
+    </Card>
+  );
+}
+
+export function CommitmentsCard({ s }: { s?: WidgetData }) {
+  const c = s?.commitments;
+  if (c === null) return null;
+  return (
+    <Card>
+      <CardHeader title="Today's fee commitments" description="Parents who promised to pay today" icon={<HandCoins />} action={<ViewAll href="/fees#defaulters" label="Defaulters" />} />
+      {!c ? (
+        <Skeleton className="h-16 w-full" />
+      ) : c.dueToday.length === 0 ? (
+        <p className="text-sm text-fg-muted">No promises fall due today.{c.broken ? ` ${c.broken} earlier promise${c.broken === 1 ? " was" : "s were"} broken.` : ""}</p>
+      ) : (
+        <>
+          <ul className="-my-2 divide-y divide-border">
+            {c.dueToday.map((x) => (
+              <li key={x.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                <Link href={`/students/${x.studentId}`} className="truncate font-medium text-fg hover:text-brand">
+                  {[x.student.firstName, x.student.lastName].filter(Boolean).join(" ")}
+                </Link>
+                <span className={x.status === "KEPT" ? "shrink-0 text-success-text" : "shrink-0 tabular-nums"}>
+                  {x.status === "KEPT" ? "Paid " : ""}
+                  {rupees(x.amount)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {c.broken > 0 && <p className="mt-3 text-xs text-danger-text">{c.broken} earlier promise{c.broken === 1 ? " was" : "s were"} broken.</p>}
+        </>
+      )}
     </Card>
   );
 }

@@ -37,6 +37,7 @@ export interface FeeSummary {
   /** Balance less credit; negative when the family is ahead. */
   netBalance?: number;
   overdueBalance: number;
+  feeRemark?: string | null;
   openInvoices: number;
   status: FeeStatus;
   lastPayment: { amount: number; receivedAt: string; receiptNo: string } | null;

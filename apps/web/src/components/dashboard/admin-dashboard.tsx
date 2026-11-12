@@ -54,7 +54,7 @@ import {
   type QuickAction,
 } from "./shared";
 import { SetupChecklistCard } from "./setup-checklist";
-import { AdmissionsWithdrawalsCard, BirthdaysCard, ComplaintsCard, ExpensesCard, GenderSplitCard, VoucherStatusCard } from "./dashboard-widgets";
+import { AdmissionsWithdrawalsCard, BirthdaysCard, CommitmentsCard, ComplaintsCard, ExpensesCard, GenderSplitCard, VoucherStatusCard } from "./dashboard-widgets";
 
 interface DayAttendance {
   date: string;
@@ -101,6 +101,7 @@ export interface Summary {
   challans?: { period: string; paid: number; partial: number; unpaid: number; total: number } | null;
   expenses?: { thisMonth: number; lastMonth: number } | null;
   complaintsOpen?: number;
+  commitments?: import("./dashboard-widgets").WidgetData["commitments"];
   staffWithoutDesignation?: number;
   staff?: number;
   teachers?: number;
@@ -586,6 +587,7 @@ export function AdminDashboard() {
           <AdmissionsWithdrawalsCard />
           <BirthdaysCard s={s ?? undefined} loading={!s} error={summary.error} onRetry={summary.reload} />
           {canFees && <VoucherStatusCard s={s ?? undefined} />}
+          {canFees && <CommitmentsCard s={s ?? undefined} />}
           {canFees && <ExpensesCard s={s ?? undefined} />}
           <ComplaintsCard s={s ?? undefined} />
 

@@ -9,6 +9,8 @@ export const STUDENT_COLUMNS = [
   { key: "lastName", title: "Last Name", aliases: ["surname"], width: 14 },
   { key: "gender", title: "Gender", aliases: ["sex"], width: 9 },
   { key: "dateOfBirth", title: "Date of Birth", aliases: ["dob", "birth date"], width: 13 },
+  { key: "admissionDate", title: "Admission Date", aliases: ["date of admission", "admitted on", "admission dt"], width: 14 },
+  { key: "openingBalance", title: "Opening Balance", aliases: ["balance", "arrears", "previous balance", "advance"], width: 14 },
   { key: "class", title: "Class", aliases: ["grade"], width: 12 },
   { key: "section", title: "Section", aliases: [], width: 9 },
   { key: "rollNo", title: "Roll No", aliases: ["roll number", "roll"], width: 8 },
@@ -87,7 +89,7 @@ export function gridToRows(grid: unknown[][]): ReadResult {
     else ignored.push(cellText(h));
   });
   const found = new Set(columnFor.values());
-  const missing = ["firstName", "gender", "class", "guardianName", "guardianPhone"]
+  const missing = ["firstName", "class", "guardianName", "guardianPhone"]
     .filter((k) => !found.has(k as never))
     .map((k) => STUDENT_COLUMNS.find((c) => c.key === k)!.title);
   const rows = body
@@ -118,8 +120,8 @@ export async function readStudentFile(file: File): Promise<ReadResult> {
 export async function downloadStudentTemplate(sections: string[][]) {
   const [first = ["", "Grade 1", "A"], second = first] = sections;
   const examples: Record<string, string>[] = [
-    { admissionNo: "", firstName: "Ahmed", lastName: "Khan", gender: "Male", dateOfBirth: "14/08/2018", campus: first[0], class: first[1], section: first[2], rollNo: "", guardianName: "Imran Khan", guardianRelation: "Father", guardianPhone: "0300 1234567", guardianCnic: "35202-1234567-1", guardian2Name: "Sana Imran", guardian2Relation: "Mother", guardian2Phone: "0321 7654321" },
-    { admissionNo: "", firstName: "Fatima", lastName: "Ali", gender: "Female", dateOfBirth: "02/01/2017", campus: second[0], class: second[1], section: second[2], rollNo: "", guardianName: "Asif Ali", guardianRelation: "Father", guardianPhone: "0333 1112223" },
+    { admissionNo: "", firstName: "Ahmed", lastName: "Khan", gender: "Male", dateOfBirth: "14/08/2018", admissionDate: "01/04/2023", openingBalance: "3500", campus: first[0], class: first[1], section: first[2], rollNo: "", guardianName: "Imran Khan", guardianRelation: "Father", guardianPhone: "0300 1234567", guardianCnic: "35202-1234567-1", guardian2Name: "Sana Imran", guardian2Relation: "Mother", guardian2Phone: "0321 7654321" },
+    { admissionNo: "", firstName: "Fatima", lastName: "Ali", gender: "Female", dateOfBirth: "02/01/2017", admissionDate: "01/04/2022", openingBalance: "-700", campus: second[0], class: second[1], section: second[2], rollNo: "", guardianName: "Asif Ali", guardianRelation: "Father", guardianPhone: "0333 1112223" },
   ];
   await writeXlsxFile(
     [

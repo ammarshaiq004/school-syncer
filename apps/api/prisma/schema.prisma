@@ -500,6 +500,8 @@ model Student {
   /// Why the student left, graduated or was suspended (one of the school's leavingReasons), with optional remarks.
   leavingReason  String?
   leavingRemarks String?
+  /// A free-text remark on the student's fee account, shown on the defaulters list and the voucher.
+  feeRemark      String?
   /// What the student owed (net of advance credit) the day they left; negative when the family was ahead.
   leavingBalance Int?
   /// The student's own sign-in (a User with the STUDENT role), if one was created.
@@ -512,6 +514,7 @@ model Student {
   locality    Locality?          @relation(fields: [localityId], references: [id], onDelete: SetNull)
   user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
   credits     StudentCredit[]
+  commitments FeeCommitment[]
   photoFile   StoredFile?        @relation("StudentPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   guardians   StudentGuardian[]
   enrollments Enrollment[]
@@ -818,6 +821,26 @@ model StudentCredit {
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, studentId])
+}
+
+/// "The parent promised to pay Rs X by day Y." Kept or broken is worked out from the payments
+/// that arrive, so nothing has to be updated when money comes in.
+model FeeCommitment {
+  id          String    @id @default(cuid())
+  schoolId    String
+  studentId   String
+  amount      Int
+  promisedOn  DateTime  @db.Date
+  note        String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  /// Set when the office withdraws the commitment (it no longer counts as kept or broken).
+  cancelledAt DateTime?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, promisedOn])
+  @@index([studentId])
 }
 
 /// One instalment of a voucher's payment plan. Payments are taken against the voucher
