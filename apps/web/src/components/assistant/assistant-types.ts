@@ -80,3 +80,11 @@ export interface DraftTarget {
   kind: DraftKind;
   notes?: string;
 }
+
+/** One bubble in the Aon chat. `failed` marks an error message (no answer was produced). */
+export interface AonTurn {
+  role: "user" | "assistant";
+  content: string;
+  sources?: string[];
+  failed?: boolean;
+}

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Bug, Sparkles, ChevronDown, KeyRound, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
+import { Bell, Bug, ChevronDown, KeyRound, LogOut, Menu, Moon, Search, Sun } from "lucide-react";
+import { AonMark } from "@/components/assistant/aon-mascot";
 import { Avatar } from "@/components/kit/avatar";
 import { IconButton } from "@/components/kit/button";
 import { DropdownItem, DropdownLabel, DropdownMenu, DropdownSeparator, Tooltip } from "@/components/kit/overlay";
@@ -102,7 +103,7 @@ export function TopBar({ name, roles, view, available, onSwitchView, onOpenMenu,
         {onOpenAon && (
           <Tooltip content="Ask Aon (Ctrl+/)" side="bottom">
             <IconButton aria-label="Ask Aon" aria-keyshortcuts="Control+/ Meta+/" onClick={onOpenAon}>
-              <Sparkles />
+              <AonMark className="size-6" />
             </IconButton>
           </Tooltip>
         )}

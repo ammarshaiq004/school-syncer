@@ -238,9 +238,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {user.support && <SupportBanner adminName={user.support.adminName} />}
           {!user.support && hasRole(user, ["OWNER"]) && <SupportSessionsBanner />}
         </div>
+        <AonLayer user={user} aon={aon} />
       </div>
       <ProblemReportPanel open={reportOpen} onOpenChange={setReportOpen} />
-      <AonLayer user={user} aon={aon} />
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
