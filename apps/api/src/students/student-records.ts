@@ -1,6 +1,8 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Gender, Prisma } from '@prisma/client';
 import { z } from 'zod';
+import { localToday } from '../common/dates.js';
+import { studentDates } from './student-dates.js';
 import { cnicField, nameKey, phoneField, sameName } from '../common/identity.js';
 
 export const guardianInputSchema = z.object({
@@ -23,6 +25,8 @@ export interface NewStudent {
   lastName?: string;
   gender: Gender;
   dateOfBirth?: Date;
+  /** Real admission day; defaults to today. */
+  admittedOn?: Date;
   bFormNo?: string;
   address?: string;
   localityId?: string | null;
@@ -324,6 +328,7 @@ export async function createStudentRecord(
       lastName: input.lastName,
       gender: input.gender,
       dateOfBirth: input.dateOfBirth,
+      ...studentDates({ admittedOn: input.admittedOn, today: localToday() }),
       bFormNo: input.bFormNo,
       address: input.address,
       localityId: input.localityId ?? undefined,

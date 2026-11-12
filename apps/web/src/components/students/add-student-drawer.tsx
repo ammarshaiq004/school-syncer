@@ -7,6 +7,7 @@ import { Select } from "@/components/select";
 import { Alert, Button, Drawer, Field, useToast } from "@/components/ui";
 import { WarningList } from "@/components/students/guardian-dialogs";
 import { api } from "@/lib/api";
+import { todayIso } from "@/lib/format";
 import { saveWarnings, type SaveWarning } from "@/lib/identity";
 import { usePersistedState } from "@/lib/persisted";
 import { useSectionOptions } from "@/lib/sections";
@@ -50,6 +51,7 @@ export function AddStudentDrawer({
           lastName: f.get("lastName") || undefined,
           gender: f.get("gender"),
           dateOfBirth: f.get("dateOfBirth") || undefined,
+          admittedOn: f.get("admittedOn") || undefined,
           bFormNo: f.get("bFormNo") || undefined,
           address: f.get("address") || undefined,
           localityId: f.get("localityId") || undefined,
@@ -132,9 +134,10 @@ export function AddStudentDrawer({
         <Select
           label="Gender"
           name="gender"
-          options={[{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }, { value: "OTHER", label: "Other" }]}
+          options={[{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }, { value: "OTHER", label: "Other" }, { value: "UNSPECIFIED", label: "Not specified" }]}
         />
         <Field label="Date of birth" name="dateOfBirth" type="date" />
+        <Field label="Admission date" name="admittedOn" type="date" max={todayIso()} defaultValue={todayIso()} />
         <Field label="B-Form number" name="bFormNo" placeholder="35202-1234567-1" inputMode="numeric" />
         <Field label="Address" name="address" />
         <LocalitySelect />

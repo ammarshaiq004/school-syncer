@@ -72,7 +72,8 @@ interface Defaulter {
   balance: number;
   lateFine: number;
   daysOverdue: number;
-  student: { id: string; firstName: string; lastName: string | null; admissionNo: string; guardians: { guardian: { name: string; phone: string } }[] };
+  student: { id: string; firstName: string; lastName: string | null; admissionNo: string; feeRemark?: string | null; guardians: { guardian: { name: string; phone: string } }[] };
+  commitment?: { amount: number; promisedOn: string; status: "PENDING" | "KEPT" | "BROKEN"; note: string | null } | null;
 }
 interface FeeHead { id: string; name: string; frequency: string }
 interface Structure { classId: string; feeHeadId: string; amount: number }
@@ -803,6 +804,29 @@ function DefaultersTab() {
       align: "right",
       sortValue: (r) => r.daysOverdue,
       cell: (r) => <Badge tone={r.daysOverdue > 30 ? "danger" : "warning"}>{r.daysOverdue} days</Badge>,
+    },
+    {
+      id: "promise",
+      header: "Promise to pay",
+      hideBelow: "md",
+      cell: (r) =>
+        r.commitment ? (
+          <div>
+            <Badge tone={r.commitment.status === "BROKEN" ? "danger" : "info"}>
+              {rupees(r.commitment.amount)} by {day(r.commitment.promisedOn)}
+              {r.commitment.status === "BROKEN" ? " (broken)" : ""}
+            </Badge>
+            {r.commitment.note && <div className="mt-0.5 text-xs text-fg-muted">{r.commitment.note}</div>}
+          </div>
+        ) : (
+          <span className="text-fg-muted">None</span>
+        ),
+    },
+    {
+      id: "remark",
+      header: "Remark",
+      hideBelow: "lg",
+      cell: (r) => (r.student.feeRemark ? <span className="text-fg-secondary">{r.student.feeRemark}</span> : <span className="text-fg-muted">-</span>),
     },
     {
       id: "guardian",

@@ -22,6 +22,8 @@ export const importRowSchema = z.object({
   lastName: cell,
   gender: cell,
   dateOfBirth: cell,
+  admissionDate: cell,
+  openingBalance: cell,
   class: cell,
   section: cell,
   rollNo: cell,
@@ -52,6 +54,9 @@ export interface ParsedStudent {
   lastName?: string;
   gender: Gender;
   dateOfBirth?: Date;
+  admittedOn?: Date;
+  /** Rupees owed from before (positive) or paid ahead (negative). */
+  openingBalance?: number;
   bFormNo?: string;
   address?: string;
   guardians: GuardianInput[];
@@ -73,6 +78,8 @@ export function parseGender(value: string): Gender | undefined {
   if (['m', 'male', 'boy', 'b'].includes(v)) return Gender.MALE;
   if (['f', 'female', 'girl', 'g'].includes(v)) return Gender.FEMALE;
   if (['o', 'other'].includes(v)) return Gender.OTHER;
+  // Left blank in the old system: keep it unknown rather than guessing.
+  if (['', 'unknown', 'unspecified', 'not specified', 'n/a', '-'].includes(v)) return Gender.UNSPECIFIED;
   return undefined;
 }
 
@@ -133,12 +140,7 @@ export function checkImportRows(
     if (r.lastName.length > 80) errors.push('Last name is too long');
 
     const gender = parseGender(r.gender);
-    if (!gender)
-      errors.push(
-        r.gender
-          ? `Gender "${r.gender}" should be Male or Female`
-          : 'Gender is missing',
-      );
+    if (!gender) errors.push(`Gender "${r.gender}" should be Male, Female or left blank`);
 
     let dateOfBirth: Date | undefined;
     if (r.dateOfBirth) {
@@ -149,6 +151,21 @@ export function checkImportRows(
         );
       else if (dateOfBirth > today)
         errors.push('Date of birth is in the future');
+    }
+
+    let admittedOn: Date | undefined;
+    if (r.admissionDate) {
+      admittedOn = parseDate(r.admissionDate);
+      if (!admittedOn) errors.push(`Admission date "${r.admissionDate}" should look like 21/03/2024`);
+      else if (admittedOn > today) errors.push('Admission date is in the future');
+    }
+
+    let openingBalance: number | undefined;
+    if (r.openingBalance) {
+      const n = Number(r.openingBalance.replace(/[,\s]|rs\.?/gi, ''));
+      if (!Number.isInteger(n) || Math.abs(n) > 10_000_000) {
+        errors.push(`Opening balance "${r.openingBalance}" should be a whole number of rupees (negative if paid ahead)`);
+      } else if (n !== 0) openingBalance = n;
     }
 
     // A single "Class" cell like "Grade 1 A" works when the section column is empty.
@@ -290,6 +307,8 @@ export function checkImportRows(
         lastName: r.lastName || undefined,
         gender,
         dateOfBirth,
+        admittedOn,
+        openingBalance,
         bFormNo,
         address: r.address || undefined,
         guardians,

@@ -11,6 +11,9 @@ export interface HealthSnapshot {
     /** Active enrollment in a current-year section. */
     enrolled: boolean;
     guardianPhones: string[];
+    /** MALE, FEMALE, OTHER or UNSPECIFIED. */
+    gender?: string;
+    guardianCnics?: (string | null)[];
   }[];
   enrollments: { studentId: string; sectionId: string; rollNo: number | null }[];
   sections: {
@@ -87,7 +90,47 @@ export function runHealthChecks(d: HealthSnapshot): HealthCheck[] {
     .filter(([, ids]) => ids.length > 1)
     .flatMap(([k, ids]) => ids.map((id) => ({ id, label: names.get(id)?.name ?? id, detail: `Roll no. ${k.split('|')[1]} is used twice in one section` })));
 
+  // Dates an old system fills in when it has none: 1 Jan 1970 (the epoch), year 0001, or 1900.
+  const placeholderDob = (d: Date | null) => d !== null && ['1970-01-01', '1900-01-01'].includes(d.toISOString().slice(0, 10)) || (d !== null && d.getUTCFullYear() <= 1900);
+  const staffByPhone = new Map<string, HealthSnapshot['staff']>();
+  for (const m of d.staff) {
+    const p = m.phone ? normalizePhone(m.phone) : undefined;
+    if (p) staffByPhone.set(p, [...(staffByPhone.get(p) ?? []), m]);
+  }
+
   const checks: HealthCheck[] = [
+    check(
+      'student-dob-placeholder',
+      'Students with a placeholder birth date (such as 01/01/1970)',
+      'warning',
+      d.students.filter((s) => placeholderDob(s.dateOfBirth)).map(who),
+      '/students',
+      'A date like 1 Jan 1970 or year 0001 usually means the old system had none. Enter the real date of birth.',
+    ),
+    check(
+      'student-gender-missing',
+      'Students with no gender recorded',
+      'warning',
+      d.students.filter((s) => s.gender === 'UNSPECIFIED').map(who),
+      '/students',
+      'Edit the student and pick Male, Female or Other; the boys and girls split leaves them out.',
+    ),
+    check(
+      'guardian-cnic-invalid',
+      'Guardians with a malformed CNIC',
+      'warning',
+      d.students.filter((s) => (s.guardianCnics ?? []).some((c) => c && !normalizeCnic(c))).map(who),
+      '/students',
+      'A CNIC has 13 digits, like 35202-1234567-1.',
+    ),
+    check(
+      'staff-shared-phone',
+      'Staff sharing one phone number',
+      'warning',
+      [...staffByPhone.values()].filter((g) => g.length > 1).flat().map((m) => ({ id: m.id, label: m.name, detail: m.phone ?? undefined })),
+      '/staff',
+      'Payslips and alerts for each person go to the same phone. Give each their own number.',
+    ),
     check(
       'students-not-enrolled',
       'Active students with no class this year',

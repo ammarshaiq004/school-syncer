@@ -32,7 +32,12 @@ export interface FeeSummary {
   totalBilled: number;
   totalPaid: number;
   balance: number;
+  /** Advance paid ahead of any voucher. */
+  credit?: number;
+  /** Balance less credit; negative when the family is ahead. */
+  netBalance?: number;
   overdueBalance: number;
+  feeRemark?: string | null;
   openInvoices: number;
   status: FeeStatus;
   lastPayment: { amount: number; receivedAt: string; receiptNo: string } | null;
@@ -67,6 +72,10 @@ export interface StudentProfile {
   medicalNotes: string | null;
   status: StudentStatus;
   admittedOn: string;
+  leftOn?: string | null;
+  leavingReason?: string | null;
+  leavingRemarks?: string | null;
+  leavingBalance?: number | null;
   campus: { name: string };
   guardians: {
     relation: string;

@@ -10,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { Gender, Prisma, Role, StudentStatus } from '@prisma/client';
@@ -26,7 +27,7 @@ import { AuditService } from '../common/audit.service.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { PermissionService } from '../common/permission.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { dayStart, localToday } from '../common/dates.js';
+import { localToday } from '../common/dates.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -43,6 +44,10 @@ import {
 } from './student-login.js';
 import { bFormField } from '../common/identity.js';
 import { billAdmissionFee } from '../fees/adhoc-vouchers.js';
+import { studentDates } from './student-dates.js';
+import { leavingDetails } from './student-leaving.js';
+import { OPEN_INVOICE } from '../fees/outstanding.js';
+import { applyOpeningBalance } from '../fees/opening-balance.js';
 import { createStudentRecord, guardianInputSchema, importWarnings } from './student-records.js';
 import {
   directoryQuerySchema,
@@ -59,6 +64,8 @@ const createStudentSchema = z.object({
   lastName: z.string().trim().max(80).optional(),
   gender: z.enum(Gender),
   dateOfBirth: z.coerce.date().optional(),
+  /** The real admission day for a student moved from another system; defaults to today. */
+  admittedOn: z.coerce.date().optional(),
   bFormNo: bFormField.optional(),
   address: z.string().trim().max(250).optional(),
   localityId: z.string().min(1).nullable().optional(),
@@ -72,7 +79,13 @@ type CreateStudentInput = z.infer<typeof createStudentSchema>;
 const updateStudentSchema = createStudentSchema
   .omit({ sectionId: true, guardians: true, admissionNo: true, confirmed: true })
   .partial()
-  .extend({ status: z.enum(StudentStatus).optional() });
+  .extend({
+    status: z.enum(StudentStatus).optional(),
+    leftOn: z.coerce.date().optional(),
+    /** One of the school's leaving reasons; needed when the status changes to Left, Graduated or Suspended. */
+    leavingReason: z.string().trim().max(60).optional(),
+    leavingRemarks: z.string().trim().max(300).optional(),
+  });
 type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
 
 const importSchema = z.object({
@@ -235,6 +248,26 @@ export class StudentsController {
       },
     });
     return students.map((s) => (reach.seesPrivate(s) ? s : withoutPrivate(s)));
+  }
+
+  /** The reasons offered when a student leaves, graduates or is suspended. */
+  @Get('leaving-reasons')
+  @Roles(...STAFF_ROLES)
+  async leavingReasons(@CurrentUser() user: AuthUser) {
+    const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId }, select: { leavingReasons: true } });
+    return school.leavingReasons;
+  }
+
+  @Put('leaving-reasons')
+  @Roles(...SETUP_ROLES)
+  async setLeavingReasons(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(z.object({ reasons: z.array(z.string().trim().min(2).max(60).regex(/^[^,]+$/, 'Reasons cannot contain commas')).min(1).max(30) }))) body: { reasons: string[] },
+  ) {
+    const reasons = [...new Set(body.reasons)];
+    await this.prisma.school.update({ where: { id: user.schoolId }, data: { leavingReasons: reasons } });
+    await this.audit.record(user, 'student.leaving_reasons', 'School', user.schoolId, { after: { reasons } });
+    return reasons;
   }
 
   /**
@@ -421,12 +454,26 @@ export class StudentsController {
       .sort((a, b) => Number(!a.admissionNo) - Number(!b.admissionNo));
     await this.prisma.$transaction(
       async (tx) => {
-        for (const s of students) await createStudentRecord(tx, { ...s, schoolId: user.schoolId, confirmed: true });
+        for (const { openingBalance, ...s } of students) {
+          const created = await createStudentRecord(tx, { ...s, schoolId: user.schoolId, confirmed: true });
+          if (openingBalance) {
+            await applyOpeningBalance(tx, { schoolId: user.schoolId, studentId: created.id, amount: openingBalance, userId: user.sub });
+          }
+        }
       },
       { timeout: 300_000, maxWait: 10_000 },
     );
     await this.audit.record(user, 'student.import', 'Student', null, { after: { count: students.length } });
     return { ...summary, imported: students.length };
+  }
+
+  /** What a student owes on open vouchers less any advance credit, in rupees (negative when ahead). */
+  private async balanceOwed(studentId: string) {
+    const [open, credit] = await Promise.all([
+      this.prisma.invoice.aggregate({ where: { studentId, ...OPEN_INVOICE }, _sum: { total: true, paid: true } }),
+      this.prisma.studentCredit.aggregate({ where: { studentId }, _sum: { amount: true } }),
+    ]);
+    return (open._sum.total ?? 0) - (open._sum.paid ?? 0) - (credit._sum.amount ?? 0);
   }
 
   @Patch(':id')
@@ -448,13 +495,25 @@ export class StudentsController {
       await this.subscriptions.assertStudentRoom(user.schoolId, 1);
     }
     const leaving = Boolean(body.status && body.status !== StudentStatus.ACTIVE);
+    const dates = studentDates({ before, status: body.status, admittedOn: body.admittedOn, leftOn: body.leftOn, today: localToday() });
+    const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId }, select: { leavingReasons: true } });
+    const leaving_ = await leavingDetails({
+      before,
+      status: body.status,
+      reason: body.leavingReason,
+      remarks: body.leavingRemarks,
+      reasons: school.leavingReasons,
+      balance: () => this.balanceOwed(id),
+    });
     const [after, offUserIds] = await this.prisma.$transaction(async (tx) => {
+      const { leavingReason: _r, leavingRemarks: _m, ...fields } = body;
       const updated = await tx.student.update({
         where: { id },
         data: {
-          ...body,
-          // Marks the day a student leaves; coming back clears it.
-          ...(body.status === StudentStatus.LEFT ? { leftOn: dayStart(localToday()) } : body.status ? { leftOn: null } : {}),
+          ...fields,
+          ...leaving_,
+          // The day a student leaves (today unless given); coming back clears it.
+          ...dates,
         },
       });
       if (!leaving) return [updated, [] as string[]] as const;

@@ -7,6 +7,7 @@ import {
   ChartNoAxesColumn,
   ExternalLink,
   MessageCircle,
+  FolderOpen,
   Pencil,
   Phone,
   ShieldPlus,
@@ -33,6 +34,9 @@ import {
   Tabs,
   type TabItem,
 } from "@/components/ui";
+import { StudentFilesTab } from "@/components/students/student-files-tab";
+import { CommitmentDialog } from "@/components/fees/commitment-dialog";
+import { CreditDialog } from "@/components/fees/credit-dialog";
 import { day, rupees } from "@/lib/format";
 import { formatCnic } from "@/lib/identity";
 import {
@@ -76,6 +80,7 @@ export function StudentDrawer({
     { value: "contact", label: "Emergency contact", icon: <Phone /> },
     { value: "performance", label: "Performance", icon: <ChartNoAxesColumn /> },
     { value: "attendance", label: "Attendance", icon: <CalendarCheck /> },
+    ...(perms.setup ? [{ value: "files", label: "Documents & notes", icon: <FolderOpen /> }] : []),
     ...(perms.fees ? [{ value: "fees", label: "Fees", icon: <Wallet /> }] : []),
   ];
 
@@ -149,10 +154,15 @@ export function StudentDrawer({
               {perf && <AttendanceTab perf={perf} name={row.name} />}
             </PerfGate>
           </TabPanel>
+          {perms.setup && (
+            <TabPanel value="files">
+              <StudentFilesTab studentId={row.id} />
+            </TabPanel>
+          )}
           {perms.fees && (
             <TabPanel value="fees">
               <PerfGate api={perfApi}>
-                {perf && <FeesTab perf={perf} row={row} onRecordPayment={onRecordPayment} />}
+                {perf && <FeesTab perf={perf} row={row} onRecordPayment={onRecordPayment} onChanged={perfApi.reload} />}
               </PerfGate>
             </TabPanel>
           )}
@@ -205,6 +215,9 @@ function BioTab({ profile: s }: { profile: StudentProfile }) {
           items={[
             { label: "Admission no.", value: <span className="font-mono">{s.admissionNo}</span> },
             { label: "Admitted", value: day(s.admittedOn) },
+            ...(s.status !== "ACTIVE" && (s.leavingReason || s.leftOn)
+              ? [{ label: s.status === "LEFT" ? "Left" : s.status === "GRADUATED" ? "Graduated" : "Suspended", value: [s.leftOn ? day(s.leftOn) : null, s.leavingReason, s.leavingBalance != null ? `owed ${rupees(s.leavingBalance)} then` : null].filter(Boolean).join(" · ") }]
+              : []),
             { label: "Class", value: current ? `${current.section.class.name} ${current.section.name}` : "Not enrolled" },
             { label: "Roll no.", value: current?.rollNo != null ? <span className="tabular-nums">{current.rollNo}</span> : "Not set" },
             { label: "Academic year", value: current?.academicYear.name ?? "None" },
@@ -386,19 +399,23 @@ function AttendanceTab({ perf, name }: { perf: StudentPerformance; name: string 
   );
 }
 
-function FeesTab({ perf, row, onRecordPayment }: { perf: StudentPerformance; row: DirectoryRow; onRecordPayment: (id: string, name: string) => void }) {
+function FeesTab({ perf, row, onRecordPayment, onChanged }: { perf: StudentPerformance; row: DirectoryRow; onRecordPayment: (id: string, name: string) => void; onChanged: () => void }) {
   const f = perf.feeSummary;
+  const [crediting, setCrediting] = useState(false);
+  const [promising, setPromising] = useState(false);
   if (!f) {
     return <p className="text-sm text-fg-muted">Fee details are not available for your role.</p>;
   }
+  const net = f.netBalance ?? f.balance;
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-[13px] text-fg-muted">Outstanding balance</p>
-          <p className={`font-display text-2xl font-semibold tabular-nums ${f.balance > 0 ? "text-danger-text" : "text-fg"}`}>
-            {f.balance > 0 ? rupees(f.balance) : "Nothing due"}
+          <p className={`font-display text-2xl font-semibold tabular-nums ${net > 0 ? "text-danger-text" : "text-fg"}`}>
+            {net > 0 ? rupees(net) : net < 0 ? `${rupees(-net)} ahead` : "Nothing due"}
           </p>
+          {(f.credit ?? 0) > 0 && <p className="text-[13px] text-fg-muted">Includes {rupees(f.credit ?? 0)} advance credit</p>}
         </div>
         <StatusPill status={f.status} />
       </div>
@@ -432,10 +449,20 @@ function FeesTab({ perf, row, onRecordPayment }: { perf: StudentPerformance; row
             Record payment
           </Button>
         )}
+        <Button type="button" size="sm" variant="secondary" onClick={() => setCrediting(true)}>
+          Credit / opening balance
+        </Button>
+        {f.openInvoices > 0 && (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setPromising(true)}>
+            Promise to pay
+          </Button>
+        )}
         <Link href={`/students/${row.id}`} className={buttonClass("secondary", "sm")}>
           See all invoices
         </Link>
       </div>
+      <CommitmentDialog studentId={row.id} name={row.name} remark={f.feeRemark} open={promising} onOpenChange={setPromising} onSaved={onChanged} />
+      <CreditDialog studentId={row.id} name={row.name} open={crediting} onOpenChange={setCrediting} onSaved={onChanged} />
     </div>
   );
 }

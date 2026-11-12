@@ -5,6 +5,12 @@ export const SERIAL_PREFIX: Record<CertificateType | 'EXPERIENCE', string> = {
   LEAVING: 'SLC',
   CHARACTER: 'CC',
   ENROLMENT: 'EC',
+  BIRTH: 'BC',
+  STUDY: 'STC',
+  PROVISIONAL: 'PC',
+  SPORTS: 'SPC',
+  APPRECIATION: 'APC',
+  WARNING: 'WL',
   EXPERIENCE: 'EXP', // staff experience certificates
 };
 

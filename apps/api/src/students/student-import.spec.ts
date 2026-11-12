@@ -104,7 +104,7 @@ describe('checkImportRows', () => {
     expect(r.student).toBeUndefined();
     expect(r.errors).toEqual([
       'First name is missing',
-      'Gender "X" should be Male or Female',
+      'Gender "X" should be Male, Female or left blank',
       'Date of birth "2015/40/1" should look like 21/03/2015',
       'No section "Grade 9 A" this year',
       'Guardian phone "12345" should be a mobile number like 0300 1234567',
@@ -230,5 +230,43 @@ describe('checkImportRows', () => {
     expect(elsewhere.errors).toEqual([
       "Your login can't add students at Johar Town",
     ]);
+  });
+});
+
+describe('gender and admission date', () => {
+  it('keeps a blank gender unspecified instead of forcing Male', () => {
+    expect(parseGender('')).toBe(Gender.UNSPECIFIED);
+    const [r] = checkImportRows([row({ gender: '' })], sections, new Set());
+    expect(r.errors).toEqual([]);
+    expect(r.student?.gender).toBe(Gender.UNSPECIFIED);
+  });
+
+  it('reads a back-dated admission date and rejects bad or future ones', () => {
+    const today = new Date('2026-11-12T00:00:00Z');
+    const [ok, bad, future] = checkImportRows(
+      [row({ admissionDate: '01/04/2023' }), row({ admissionDate: 'April' }), row({ admissionDate: '01/01/2027' })],
+      sections,
+      new Set(),
+      new Set(),
+      [],
+      today,
+    );
+    expect(ok.student?.admittedOn?.toISOString()).toBe('2023-04-01T00:00:00.000Z');
+    expect(bad.errors[0]).toContain('Admission date "April"');
+    expect(future.errors).toContain('Admission date is in the future');
+  });
+});
+
+describe('opening balance', () => {
+  it('reads owed and paid-ahead amounts and rejects junk', () => {
+    const [owed, ahead, junk, zero] = checkImportRows(
+      [row({ openingBalance: 'Rs. 4,500' }), row({ openingBalance: '-700' }), row({ openingBalance: 'a lot' }), row({ openingBalance: '0' })],
+      sections,
+      new Set(),
+    );
+    expect(owed.student?.openingBalance).toBe(4500);
+    expect(ahead.student?.openingBalance).toBe(-700);
+    expect(junk.errors[0]).toContain('Opening balance "a lot"');
+    expect(zero.student?.openingBalance).toBeUndefined();
   });
 });

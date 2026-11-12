@@ -29,7 +29,8 @@ export class DataHealthController {
           admissionNo: true,
           dateOfBirth: true,
           bFormNo: true,
-          guardians: { select: { guardian: { select: { phone: true } } } },
+          gender: true,
+          guardians: { select: { guardian: { select: { phone: true, cnic: true } } } },
         },
       }),
       this.prisma.enrollment.findMany({
@@ -74,6 +75,8 @@ export class DataHealthController {
         bFormNo: s.bFormNo,
         enrolled: enrolledIds.has(s.id),
         guardianPhones: s.guardians.map((g) => g.guardian.phone),
+        gender: s.gender,
+        guardianCnics: s.guardians.map((g) => g.guardian.cnic),
       })),
       enrollments,
       sections: sections

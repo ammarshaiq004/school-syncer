@@ -19,7 +19,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { z } from 'zod';
-import { assertSchoolWide, campusScopeFor, FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, campusScopeFor, FEE_ROLES, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -31,6 +31,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { dayStart, localToday } from '../common/dates.js';
 import { createAdhocVoucher } from './adhoc-vouchers.js';
 import { daysLate, fineDue, fineRule, siblingPercent } from './fee-calculator.js';
+import { commitmentsWithStatus } from './commitments.js';
 import { billedOf, feeOutstanding, OPEN_INVOICE, overdueWhere } from './outstanding.js';
 import { PaymentsService } from './payments.service.js';
 import { schoolSiblings } from './siblings.js';
@@ -73,7 +74,7 @@ const generateSchema = z.object({
   // Defaults to the school's fee rule.
   carryForward: z.boolean().optional(),
 });
-const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const isoDay = z.iso.date('Enter a real date, like 2026-11-30').refine((d) => d >= '2000-01-01' && d <= '2100-12-31', 'Enter a year between 2000 and 2100');
 const adhocSchema = z.object({
   lines: z
     .array(
@@ -112,6 +113,10 @@ const paymentSchema = z.object({
   amount: z.number().int().positive(),
   method: z.enum(PaymentMethod),
   reference: z.string().trim().max(80).optional(),
+  /** Day the money was received (YYYY-MM-DD), for a receipt entered later; defaults to today. */
+  paidOn: z.iso.date().optional(),
+  /** Who took the money, when it was not the person entering it (a staff user of this school). */
+  receivedById: z.string().min(1).optional(),
   // Sent by the client so a retried or double-clicked save records the payment once.
   // Namespaced so it can never match a gateway's key.
   idempotencyKey: z
@@ -336,7 +341,10 @@ export class FeesController {
       return { feeHeadId: l.feeHeadId ?? null, description, amount: l.amount };
     });
     const today = localToday();
-    if (body.dueDate && body.dueDate < today) throw new BadRequestException('The due date cannot be in the past.');
+    // Admins may back-date a voucher (to recreate history); fee staff may not.
+    if (body.dueDate && body.dueDate < today && !hasAnyRole(user, SETUP_ROLES)) {
+      throw new BadRequestException('The due date cannot be in the past.');
+    }
     const invoice = await this.prisma.$transaction((tx) =>
       createAdhocVoucher(tx, { schoolId: user.schoolId, studentId, lines, dueDate: body.dueDate ?? today }),
     );
@@ -531,7 +539,7 @@ export class FeesController {
     const where = { schoolId: user.schoolId, student: inFeeScope(user) };
     const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId } });
     const [owed, overdue] = await Promise.all([
-      feeOutstanding(this.prisma, where, today),
+      feeOutstanding(this.prisma, where, today, true),
       this.prisma.invoice.findMany({
         where: { ...where, ...overdueWhere(today) },
         select: { dueDate: true, total: true, paid: true, status: true, fineBooked: true, fineWaivedAt: true },
@@ -577,6 +585,17 @@ export class FeesController {
     return { ...invoice, lateFine: fine, balance: owing ? Math.max(0, invoice.total - invoice.paid) : 0 };
   }
 
+  /** Staff who can be named as the receiver of a payment (for entering a receipt on someone's behalf). */
+  @Get('receivers')
+  @Roles(...FEE_ROLES)
+  receivers(@CurrentUser() user: AuthUser) {
+    return this.prisma.user.findMany({
+      where: { schoolId: user.schoolId, isActive: true, roles: { some: { role: { in: STAFF_ROLES } } } },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    });
+  }
+
   /** Records a counter or bank payment. */
   @Post('invoices/:id/payments')
   @Roles(...FEE_ROLES)
@@ -589,10 +608,16 @@ export class FeesController {
       where: { id, schoolId: user.schoolId, student: inFeeScope(user) },
     });
     if (!owned) throw new NotFoundException('Invoice not found');
+    if (body.receivedById && body.receivedById !== user.sub) {
+      const staff = await this.prisma.user.count({
+        where: { id: body.receivedById, schoolId: user.schoolId, isActive: true, roles: { some: { role: { in: STAFF_ROLES } } } },
+      });
+      if (!staff) throw new BadRequestException('Pick a staff member of this school as the receiver.');
+    }
     const result = await this.payments.record(user.schoolId, {
       invoiceId: id,
       ...body,
-      receivedById: user.sub,
+      receivedById: body.receivedById ?? user.sub,
     });
     await this.audit.record(user, 'payment.create', 'Payment', result.payment.id, { after: result.payment });
     return result;
@@ -617,12 +642,18 @@ export class FeesController {
             firstName: true,
             lastName: true,
             admissionNo: true,
+            feeRemark: true,
             guardians: { where: { isPrimary: true }, select: { guardian: { select: { name: true, phone: true } } } },
           },
         },
       },
     });
+    // The promise to pay still standing (or last broken) for each student.
+    const promises = await commitmentsWithStatus(this.prisma, { schoolId: user.schoolId, studentId: { in: [...new Set(overdue.map((i) => i.studentId))] } }, today);
+    const promiseOf = new Map<string, (typeof promises)[number]>();
+    for (const c of promises.filter((c) => c.status !== 'KEPT')) promiseOf.set(c.studentId, c);
     return overdue.map((i) => ({
+      commitment: promiseOf.get(i.studentId) ?? null,
       invoiceId: i.id,
       voucherNo: i.voucherNo,
       period: i.period,

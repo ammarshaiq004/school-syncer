@@ -413,7 +413,7 @@ describe('Campus scope (e2e)', () => {
 
   describe('plan limits', () => {
     it('counts bringing back a student who left against the plan', async () => {
-      await request(server).patch(`/api/students/${kid.other}`).set(h.owner).send({ status: 'LEFT' }).expect(200);
+      await request(server).patch(`/api/students/${kid.other}`).set(h.owner).send({ status: 'LEFT', leavingReason: 'Other' }).expect(200);
       const plan = await prisma.plan.create({
         data: { code: `full-${run}`, name: 'Full', pricePerStudent: 1, minimumMonthly: 1, maxStudents: 3, features: [], isPublic: false },
       });

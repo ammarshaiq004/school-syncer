@@ -105,3 +105,31 @@ describe('data health checks', () => {
     expect(healthScore(Array(30).fill({ ...err[0], count: 5, severity: 'error' }), 1)).toBe(0);
   });
 });
+
+describe('migration data checks', () => {
+  it('flags placeholder birth dates, missing gender, bad guardian CNICs and staff sharing a phone', () => {
+    const keys = failing(
+      clean({
+        students: [
+          student({ id: 'a', dateOfBirth: new Date('1970-01-01') }),
+          student({ id: 'b', name: 'B', dateOfBirth: new Date('0001-01-01T00:00:00Z') }),
+          student({ id: 'c', name: 'C', gender: 'UNSPECIFIED', guardianCnics: ['123'] }),
+        ],
+        staff: [
+          { id: 't1', name: 'Sara', phone: '0300 1234567' },
+          { id: 't2', name: 'Ayesha', phone: '+92 300 1234567' },
+        ],
+      }),
+    );
+    expect(keys).toEqual(expect.arrayContaining(['student-dob-placeholder', 'student-gender-missing', 'guardian-cnic-invalid', 'staff-shared-phone']));
+    const dob = runHealthChecks(clean({ students: [student({ dateOfBirth: new Date('1970-01-01') }), student({ id: 'x', name: 'X' })] })).find((c) => c.key === 'student-dob-placeholder');
+    expect(dob?.count).toBe(1);
+  });
+
+  it('leaves real dates, recorded genders and valid CNICs alone', () => {
+    const keys = failing(clean({ students: [student({ gender: 'MALE', guardianCnics: ['35202-1234567-1', null] })] }));
+    expect(keys).not.toContain('student-dob-placeholder');
+    expect(keys).not.toContain('student-gender-missing');
+    expect(keys).not.toContain('guardian-cnic-invalid');
+  });
+});

@@ -12,6 +12,7 @@ import {
   Award,
   Clock,
   FileText,
+  HandCoins,
   Lock,
   Scale,
   Upload,
@@ -62,11 +63,13 @@ import { day, rupees, thisMonth, todayIso } from "@/lib/format";
 import { FEES, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 import { CvBankTab } from "./cv-bank-tab";
+import { SecurityTab } from "./security-tab";
+import { Checkbox } from "@/components/kit/inputs";
 import { ExperienceCertificateDialog } from "./experience-certificate-dialog";
 import { PayrollRulesTab } from "./rules-tab";
 import { ShortLeaveTab } from "./short-leave-tab";
 
-type Tab = "staff" | "attendance" | "leave" | "shortleave" | "payroll" | "rules" | "cv" | "payslips";
+type Tab = "staff" | "attendance" | "leave" | "shortleave" | "payroll" | "rules" | "security" | "cv" | "payslips";
 
 export default function HrPage() {
   const user = useSession();
@@ -84,6 +87,7 @@ export default function HrPage() {
     { value: "shortleave", label: "Short leave", icon: <Clock /> },
     ...(isPayroll ? [{ value: "payroll", label: "Payroll", icon: <Wallet /> }] : []),
     ...(isAdmin ? [{ value: "rules", label: "Pay rules", icon: <Scale /> }] : []),
+    ...(isPayroll ? [{ value: "security", label: "Security", icon: <HandCoins /> }] : []),
     ...(isAdmin ? [{ value: "cv", label: "CV bank", icon: <UserSearch /> }] : []),
     { value: "payslips", label: "My payslips", icon: <ReceiptText /> },
   ];
@@ -150,6 +154,11 @@ export default function HrPage() {
             <PayrollRulesTab editable />
           </TabPanel>
         )}
+        {isPayroll && (
+          <TabPanel value="security">
+            <SecurityTab canRefund={isAdmin} />
+          </TabPanel>
+        )}
         {isAdmin && (
           <TabPanel value="cv">
             <CvBankTab />
@@ -167,7 +176,7 @@ type Loaded<T> = { data: T | null; error: string; reload: () => Promise<void> };
 
 // ---- Staff -----------------------------------------------------------------
 
-interface PayItem { name: string; type: "ALLOWANCE" | "DEDUCTION"; amount: number }
+interface PayItem { name: string; type: "ALLOWANCE" | "DEDUCTION"; amount: number; isSecurity?: boolean }
 interface Profile {
   employeeNo: string;
   designation: string;
@@ -409,6 +418,14 @@ function ProfileForm({ member, open, onOpenChange, onSaved }: { member: StaffMem
                 options={[{ value: "ALLOWANCE", label: "Allowance" }, { value: "DEDUCTION", label: "Deduction" }]}
               />
               <Input className="h-9 w-24 shrink-0 text-right tabular-nums" type="number" min={0} value={it.amount} aria-label={`Item ${i + 1} amount`} onChange={(e) => setItems(items.map((x, k) => (k === i ? { ...x, amount: Number(e.target.value) } : x)))} />
+              {it.type === "DEDUCTION" && (
+                <Checkbox
+                  checked={!!it.isSecurity}
+                  onCheckedChange={(c) => setItems(items.map((x, k) => (k === i ? { ...x, isSecurity: c } : x)))}
+                  aria-label={`Item ${i + 1} is a security deposit`}
+                  label={<span className="text-xs text-fg-muted">Security</span>}
+                />
+              )}
               <IconButton aria-label={`Remove ${it.name || `item ${i + 1}`}`} variant="ghost" onClick={() => setItems(items.filter((_, k) => k !== i))}>
                 <Trash2 />
               </IconButton>

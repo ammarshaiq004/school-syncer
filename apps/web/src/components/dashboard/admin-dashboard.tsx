@@ -54,6 +54,7 @@ import {
   type QuickAction,
 } from "./shared";
 import { SetupChecklistCard } from "./setup-checklist";
+import { AdmissionsWithdrawalsCard, BirthdaysCard, CommitmentsCard, ComplaintsCard, ExpensesCard, GenderSplitCard, VoucherStatusCard } from "./dashboard-widgets";
 
 interface DayAttendance {
   date: string;
@@ -70,6 +71,7 @@ interface RecentPayment {
   method: string;
   receiptNo: string;
   receivedAt: string;
+  receivedBy?: string | null;
   invoiceId: string;
   period: string;
   invoiceStatus: string;
@@ -93,6 +95,14 @@ interface UpcomingExam {
 export interface Summary {
   students: number;
   newStudentsThisMonth?: number;
+  withdrawalsThisMonth?: number;
+  genderSplit?: { male: number; female: number; other: number };
+  birthdaysToday?: { id: string; name: string; admissionNo: string; turns: number }[];
+  challans?: { period: string; paid: number; partial: number; unpaid: number; total: number } | null;
+  expenses?: { thisMonth: number; lastMonth: number } | null;
+  complaintsOpen?: number;
+  commitments?: import("./dashboard-widgets").WidgetData["commitments"];
+  staffWithoutDesignation?: number;
   staff?: number;
   teachers?: number;
   attendanceToday: {
@@ -116,7 +126,7 @@ export interface Summary {
   };
   overdue?: { invoices: number; amount: number };
   /** Every open voucher's balance: the same figure as the fees page and the outstanding report. */
-  outstanding?: { invoices: number; amount: number };
+  outstanding?: { invoices: number; amount: number; credits?: number; gross?: number };
   collectionTrend?: { period: string; billed: number; collected: number }[];
   recentPayments?: RecentPayment[];
   topDefaulters?: Defaulter[];
@@ -174,7 +184,7 @@ export function AdminDashboard() {
 
   const quickActions: QuickAction[] = (
     [
-      { href: "/students", label: "Add student", description: "Enrol a new pupil", icon: <Plus /> },
+      { href: "/students?add=1", label: "Add student", description: "Enrol a new pupil", icon: <Plus /> },
       { href: "/attendance", label: "Take attendance", description: "Mark today's register", icon: <CalendarCheck /> },
       { href: "/fees", label: "Collect fees", description: "Record a payment", icon: <Receipt /> },
       { href: "/announcements", label: "Post a notice", description: "Message parents and staff", icon: <Megaphone /> },
@@ -203,6 +213,7 @@ export function AdminDashboard() {
     },
     { id: "receipt", header: "Receipt", cell: (p) => <span className="tabular-nums text-fg-secondary">{p.receiptNo}</span>, hideBelow: "md" },
     { id: "method", header: "Method", cell: (p) => <Badge tone="neutral">{p.method === "CASH" ? "Cash" : p.method.charAt(0) + p.method.slice(1).toLowerCase().replace(/_/g, " ")}</Badge>, hideBelow: "lg" },
+    { id: "by", header: "By", cell: (p) => <span className="text-fg-secondary">{p.receivedBy ?? ""}</span>, hideBelow: "lg" },
     { id: "when", header: "Received", cell: (p) => <time dateTime={p.receivedAt} className="text-fg-secondary">{relativeTime(p.receivedAt)}</time>, hideBelow: "sm" },
     { id: "amount", header: "Amount", align: "right", cell: (p) => <span className="font-medium text-fg">{rupees(p.amount)}</span> },
     { id: "status", header: "Invoice", cell: (p) => <StatusPill status={p.invoiceStatus} /> },
@@ -246,7 +257,7 @@ export function AdminDashboard() {
               </Link>
             )}
             {reachable.has("/students") && (
-              <Link href="/students" className={buttonClass("primary")}>
+              <Link href="/students?add=1" className={buttonClass("primary")}>
                 <Plus aria-hidden />
                 Add student
               </Link>
@@ -276,7 +287,7 @@ export function AdminDashboard() {
           href={reachable.has("/staff") ? "/staff" : undefined}
           loading={loading}
           error={!s && !!summary.error}
-          hint={s?.teachers !== undefined ? `${s.teachers} teaching staff` : undefined}
+          hint={s?.teachers !== undefined ? `${s.teachers} teaching staff${s.staffWithoutDesignation ? `, ${s.staffWithoutDesignation} without a designation` : ""}` : undefined}
         />
         <KpiCard
           label="Attendance today"
@@ -426,7 +437,7 @@ export function AdminDashboard() {
                     <FeeStat
                       label="Outstanding"
                       value={rupees(s.outstanding?.amount ?? fees.outstanding ?? Math.max(0, fees.billed - fees.collected))}
-                      note={s.outstanding ? "All months" : undefined}
+                      note={s.outstanding ? (s.outstanding.credits ? `All months, after ${rupees(s.outstanding.credits)} advance credit` : "All months") : undefined}
                     />
                     <FeeStat
                       label="Overdue"
@@ -570,6 +581,15 @@ export function AdminDashboard() {
               </SectionState>
             </Card>
           )}
+
+          {/* Students and school life */}
+          <GenderSplitCard s={s ?? undefined} />
+          <AdmissionsWithdrawalsCard />
+          <BirthdaysCard s={s ?? undefined} loading={!s} error={summary.error} onRetry={summary.reload} />
+          {canFees && <VoucherStatusCard s={s ?? undefined} />}
+          {canFees && <CommitmentsCard s={s ?? undefined} />}
+          {canFees && <ExpensesCard s={s ?? undefined} />}
+          <ComplaintsCard s={s ?? undefined} />
 
           {/* Admissions pipeline */}
           {reachable.has("/admissions") && (
