@@ -57,6 +57,7 @@ import { LifecycleDialog, type LifecycleAction } from "@/components/platform/lif
 import { ReasonDialog } from "@/components/platform/reason-dialog";
 import { SchoolFeatures, type FeatureState } from "@/components/platform/school-features";
 import { SchoolLifecycle } from "@/components/platform/school-lifecycle";
+import { SchoolWhatsApp } from "@/components/platform/school-whatsapp";
 import { SchoolUsageCard } from "@/components/platform/watch";
 import { SchoolContacts } from "@/components/platform/school-contacts";
 import { SchoolBilling } from "@/components/platform/school-billing";
@@ -398,6 +399,7 @@ export default function SchoolDetailPage() {
               onSaved={school.reload}
             />
           )}
+          <SchoolWhatsApp schoolId={s.id} canEdit featureOn={!!sub?.features.includes("whatsapp_link")} />
         </TabPanel>
 
         <TabPanel value="subscription" className="pt-5">

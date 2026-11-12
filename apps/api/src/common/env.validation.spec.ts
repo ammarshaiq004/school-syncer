@@ -118,6 +118,9 @@ describe('validateEnv', () => {
     expect(problemsOf({ NOTIFY_DRIVER: 'telegram' })).toContain('NOTIFY_DRIVER must be one of');
     expect(problemsOf({ NOTIFY_DRIVER: 'sms' })).toContain('NOTIFY_DRIVER=sms needs SMS_GATEWAY_URL');
     expect(problemsOf({ NOTIFY_DRIVER: 'sms', SMS_GATEWAY_URL: 'https://sms.example.pk/send' })).toBe('');
+    expect(problemsOf({ EVOLUTION_API_URL: 'http://evolution:8080' })).toContain('must be set together');
+    expect(problemsOf({ EVOLUTION_API_KEY: 'k' })).toContain('must be set together');
+    expect(problemsOf({ EVOLUTION_API_URL: 'http://evolution:8080', EVOLUTION_API_KEY: 'k' })).toBe('');
     expect(problemsOf({ JOBS_WORKER: 'no' })).toContain('JOBS_WORKER must be');
     expect(problemsOf({ JOBS_WORKER: 'off' })).toBe('');
   });

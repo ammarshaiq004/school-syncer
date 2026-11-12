@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Put } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Post, Put } from '@nestjs/common';
 import { z } from 'zod';
 import { assertSchoolWide, SETUP_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
@@ -9,6 +9,8 @@ import { sealSecrets, secretKey } from '../fees/gateways/school-accounts.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { smsGatewayConfig } from './drivers.js';
 import { MessagingSenders } from './senders.js';
+import { evolutionConfig } from './evolution.js';
+import { WhatsAppLinkService } from './whatsapp-link.service.js';
 
 const senderSchema = z.object({
   enabled: z.boolean(),
@@ -21,6 +23,7 @@ const senderSchema = z.object({
   token: z.string().trim().max(1000).optional(),
 });
 type SenderInput = z.infer<typeof senderSchema>;
+const testSchema = z.object({ phone: z.string().trim().min(5).max(30) });
 
 /** Every campus's messages go out from this number, so a campus-limited admin cannot change it. */
 const NOT_WIDE = 'Only school-wide administrators can change how messages are sent';
@@ -38,6 +41,7 @@ export class MessagingSettingsController {
     private readonly prisma: PrismaService,
     private readonly senders: MessagingSenders,
     private readonly audit: AuditService,
+    private readonly link: WhatsAppLinkService,
   ) {}
 
   @Get()
@@ -57,7 +61,9 @@ export class MessagingSettingsController {
         whatsapp: driver === 'whatsapp' && Boolean(env.WHATSAPP_TOKEN?.trim() && env.WHATSAPP_PHONE_NUMBER_ID?.trim()),
         sms: driver === 'sms' && Boolean(smsGatewayConfig(env)),
       },
-      ownSender: row
+      /** Linking the school's own number by QR (the link card asks GET link for the live state). */
+      link: { serverReady: Boolean(evolutionConfig(env)), allowed: await this.senders.linkAllowed(user.schoolId), number: row?.linkEnabled ? row.linkedNumber : null },
+      ownSender: row && (row.phoneNumberId || row.secrets)
         ? {
             enabled: row.enabled,
             phoneNumberId: row.phoneNumberId,
@@ -107,9 +113,47 @@ export class MessagingSettingsController {
   @HttpCode(200)
   async remove(@CurrentUser() user: AuthUser) {
     assertSchoolWide(user, NOT_WIDE);
-    await this.prisma.schoolMessagingSender.deleteMany({ where: { schoolId: user.schoolId } });
+    // A linked number (QR) is a separate sender: only the Cloud API fields go.
+    await this.prisma.schoolMessagingSender.deleteMany({ where: { schoolId: user.schoolId, linkEnabled: false } });
+    await this.prisma.schoolMessagingSender.updateMany({
+      where: { schoolId: user.schoolId, linkEnabled: true },
+      data: { enabled: false, phoneNumberId: '', secrets: '' },
+    });
     this.senders.forget(user.schoolId);
     await this.audit.record(user, 'messaging.sender.remove', 'SchoolMessagingSender', user.schoolId);
     return this.get(user);
+  }
+
+  /** The live state of the school's QR-linked number; while a QR is up the screen asks again every few seconds. */
+  @Get('link')
+  linkStatus(@CurrentUser() user: AuthUser) {
+    return this.link.status(user.schoolId, true);
+  }
+
+  /** Starts linking and returns the QR to scan. */
+  @Post('link/connect')
+  @HttpCode(200)
+  async linkConnect(@CurrentUser() user: AuthUser) {
+    assertSchoolWide(user, NOT_WIDE);
+    const view = await this.link.connect(user.schoolId);
+    await this.audit.record(user, 'messaging.link.connect', 'SchoolMessagingSender', user.schoolId);
+    return view;
+  }
+
+  @Post('link/disconnect')
+  @HttpCode(200)
+  async linkDisconnect(@CurrentUser() user: AuthUser) {
+    assertSchoolWide(user, NOT_WIDE);
+    await this.link.disconnect(user.schoolId);
+    await this.audit.record(user, 'messaging.link.disconnect', 'SchoolMessagingSender', user.schoolId);
+    return this.link.status(user.schoolId, true);
+  }
+
+  /** One test message from the linked number. */
+  @Post('link/test')
+  @HttpCode(200)
+  linkTest(@CurrentUser() user: AuthUser, @Body(new ZodValidationPipe(testSchema)) body: z.infer<typeof testSchema>) {
+    assertSchoolWide(user, NOT_WIDE);
+    return this.link.sendTest(user.schoolId, body.phone);
   }
 }

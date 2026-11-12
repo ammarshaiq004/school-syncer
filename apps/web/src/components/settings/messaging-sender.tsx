@@ -5,6 +5,7 @@ import { MessageCircle } from "lucide-react";
 import { Alert, Badge, Button, Card, CardHeader, ErrorState, SkeletonRows, Switch, TextField, useToast, type Tone } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
+import { WhatsAppLinkCard } from "./whatsapp-link-card";
 
 /** Shape of GET /school/messaging (apps/api/src/notifications/messaging-settings.controller.ts). */
 export type SenderSource = "school" | "platform" | "log";
@@ -12,6 +13,7 @@ interface Messaging {
   canSaveSecrets: boolean;
   active: { source: SenderSource; channel: "WHATSAPP" | "SMS" | null };
   platform: { whatsapp: boolean; sms: boolean };
+  link: { serverReady: boolean; allowed: boolean; number: string | null };
   ownSender: { enabled: boolean; phoneNumberId: string; tokenSet: boolean; updatedAt: string } | null;
 }
 
@@ -38,10 +40,28 @@ export function MessagingSender({ readOnly }: { readOnly: boolean }) {
         <SkeletonRows rows={4} columns={2} />
       </Card>
     );
-  return <SenderForm key={JSON.stringify(data.ownSender)} data={data} readOnly={readOnly} onSaved={setSaved} />;
+  return (
+    <SenderForm
+      key={JSON.stringify(data.ownSender)}
+      data={data}
+      readOnly={readOnly}
+      onSaved={setSaved}
+      onLinkChanged={() => void messaging.reload().then(() => setSaved(null))}
+    />
+  );
 }
 
-function SenderForm({ data, readOnly, onSaved }: { data: Messaging; readOnly: boolean; onSaved: (m: Messaging) => void }) {
+function SenderForm({
+  data,
+  readOnly,
+  onSaved,
+  onLinkChanged,
+}: {
+  data: Messaging;
+  readOnly: boolean;
+  onSaved: (m: Messaging) => void;
+  onLinkChanged: () => void;
+}) {
   const toast = useToast();
   const [enabled, setEnabled] = useState(data.ownSender?.enabled ?? true);
   const [phoneNumberId, setPhoneNumberId] = useState(data.ownSender?.phoneNumberId ?? "");
@@ -86,9 +106,10 @@ function SenderForm({ data, readOnly, onSaved }: { data: Messaging; readOnly: bo
       {data.active.source === "log" && (
         <Alert tone="warning" title="Messages are not being delivered">
           No WhatsApp number or SMS gateway is set up, so attendance alerts, fee messages and password reset codes are only written to
-          the message log. Add your WhatsApp Business number below, or ask SchoolSyncer to switch on their sender.
+          the message log. {data.link.allowed ? "Link your WhatsApp number by QR code or add your WhatsApp Business number below" : "Add your WhatsApp Business number below"}, or ask SchoolSyncer to switch on their sender.
         </Alert>
       )}
+      <WhatsAppLinkCard readOnly={readOnly} onChanged={onLinkChanged} />
       <Card>
         <CardHeader
           icon={<MessageCircle />}

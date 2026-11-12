@@ -100,6 +100,9 @@ export function validateEnv(env: Env): Env {
     problems.push(`NOTIFY_DRIVER must be one of log, whatsapp or sms (got "${notify}")`);
   }
   if (notify === 'sms' && !text(env, 'SMS_GATEWAY_URL')) problems.push('NOTIFY_DRIVER=sms needs SMS_GATEWAY_URL');
+  if (Boolean(text(env, 'EVOLUTION_API_URL')) !== Boolean(text(env, 'EVOLUTION_API_KEY'))) {
+    problems.push('EVOLUTION_API_URL and EVOLUTION_API_KEY must be set together (WhatsApp by QR link)');
+  }
   const worker = text(env, 'JOBS_WORKER').toLowerCase();
   if (worker && !['on', 'off'].includes(worker)) problems.push(`JOBS_WORKER must be "on" or "off" (got "${worker}")`);
 

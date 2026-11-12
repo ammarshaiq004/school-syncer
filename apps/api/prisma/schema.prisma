@@ -2727,6 +2727,12 @@ model SchoolMessagingSender {
   phoneNumberId String   @default("")
   /// Encrypted JSON { token } (PAYMENTS_SECRET_KEY, like merchant secrets).
   secrets       String   @default("")
+  /// The school linked its own WhatsApp number by QR (Evolution API, instance ss-<schoolId>). Used when the Cloud API
+  /// fields above are not complete; WhatsApp can drop the link, so delivery checks the live state.
+  linkEnabled   Boolean  @default(false)
+  /// Last seen linked number (digits with country code) and profile name, for the console.
+  linkedNumber  String   @default("")
+  linkedName    String   @default("")
   updatedById   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

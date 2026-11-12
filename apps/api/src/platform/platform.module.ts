@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { PlatformReportsController } from './platform-reports.controller.js';
+import { PlatformWhatsAppController } from './platform-whatsapp.controller.js';
 import { PlatformSchoolsController } from './platform-schools.controller.js';
 import { PlatformStaffController } from './platform-staff.controller.js';
 
@@ -13,6 +14,7 @@ import { PlatformStaffController } from './platform-staff.controller.js';
   controllers: [
     PlatformStaffController,
     PlatformSchoolsController,
+    PlatformWhatsAppController,
     PlatformReportsController,
   ],
 })

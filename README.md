@@ -251,6 +251,7 @@ All routes are under `/api` and need `Authorization: Bearer <token>` except heal
 | GET | `/parent/children` | parents |
 | GET | `/notifications`, `/notifications/delivery` | owner, principal or admin |
 | GET, PUT, DELETE | `/school/messaging` | owner, principal or admin (changes: school-wide only); the school's own WhatsApp number |
+| GET, POST | `/school/messaging/link`, `/link/connect`, `/link/disconnect`, `/link/test` | same; the school's number linked by QR (plan feature `whatsapp_link`); console: GET `/platform/schools/:id/whatsapp`, POST `.../unlink` |
 | GET, POST, PATCH | `/transport/vehicles`, `/transport/routes`, PUT `/transport/routes/:id/stops`, GET `/transport/routes/:id` | staff can read; changes need owner, principal or admin |
 | GET, POST | `/transport/students/:id`, `/transport/assignments`, `/transport/assignments/:id/end` | staff can read; changes need owner, principal or admin |
 | GET, POST, PATCH | `/library/books`, `/library/books/:id`, `/library/books/:id/copies`, `/library/copies/:id`, `/library/settings` | staff can read and lend; rules need owner, principal or admin |
@@ -295,6 +296,7 @@ Every outgoing message (absence alerts, fee vouchers and reminders, receipts, pa
 Who sends a school's messages, first match wins:
 
 1. **The school's own WhatsApp number**: **System settings > Messaging**, with the WhatsApp Cloud API phone number id and a permanent access token. The token is encrypted with `PAYMENTS_SECRET_KEY` (like merchant secrets), so the server needs that key set.
+1b. **The school's own number linked by QR code** (ported from ShopSyncer; see below), when the school has linked it and the console switched on its **WhatsApp by QR link** module. Used when the Cloud API number above is not complete.
 2. **The platform WhatsApp number**: `NOTIFY_DRIVER=whatsapp` with `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
 3. **The platform SMS gateway**: `NOTIFY_DRIVER=sms` with `SMS_GATEWAY_URL`. A generic HTTP gateway, so any Pakistani aggregator can be plugged in: put `{to}`, `{from}`, `{message}` and `{apiKey}` placeholders in the URL for query-string gateways (`SMS_GATEWAY_METHOD=GET` or `POST`), or leave them out to get a JSON POST of `{ to, from, message }` with `Authorization: Bearer <SMS_GATEWAY_API_KEY>`. `SMS_SENDER_ID` is the mask; `SMS_GATEWAY_SUCCESS_MATCH` is a pattern the response must match, for gateways that answer 200 with an error. Off unless configured.
 4. Otherwise nobody (`NOTIFY_DRIVER=log`, the default): messages are logged and marked Not delivered.
@@ -302,6 +304,15 @@ Who sends a school's messages, first match wins:
 For WhatsApp (either number), create and get approval in Meta Business Manager for these templates (names and parameter order must match `apps/api/src/notifications/templates.ts`): `attendance_absent`, `fee_voucher`, `fee_reminder`, `fee_paid`, `parent_invite`, `exam_result`, `homework_assigned`, `school_announcement`, and `password_reset` as an **Authentication** template with a copy-code button. Phone numbers are masked in the server log; passwords and reset codes are masked in the message log and kept out of the job queue in plain text when `PAYMENTS_SECRET_KEY` is set.
 
 **What a school owner must do to deliver messages:** either add the school's own WhatsApp Business number in System settings > Messaging (Meta Business account, a verified number, a permanent system-user token with `whatsapp_business_messaging`, and the approved templates above), or ask SchoolSyncer to switch on the platform WhatsApp number or SMS gateway. Until one of these is set, the message log says "Not delivered" and forgot-password sends people to the office.
+
+### WhatsApp by QR link (no Meta account)
+
+Like ShopSyncer, a school can link its own WhatsApp number by scanning a QR code (Linked devices), instead of setting up a Meta Business account, token and templates. Messages then go out as plain text, using the school's own wording (**Communication > Templates**), from that number. It runs on a self-hosted [Evolution API](https://github.com/EvolutionAPI/evolution-api) (Baileys, one instance per school named `ss-<schoolId>`), which is unofficial: WhatsApp can ban a number that messages people who did not ask, so it is **off for every school until the console switches it on** (console > school > Plan & features > **WhatsApp by QR link**; it is in no default plan).
+
+- **Server:** run Evolution on the private network (`docker compose -f docker-compose.whatsapp.yml up -d`, with `EVOLUTION_API_KEY` set to a long random value) and set `EVOLUTION_API_URL` (for example `http://evolution:8080`) and `EVOLUTION_API_KEY` on the API. Both blank = linking says it is not set up.
+- **School:** **System settings > Messaging > Link your WhatsApp by QR code** (school-wide admins): scan the code, then **Send test**. The page moves on by itself once scanned. **Unlink** removes the session. If WhatsApp drops the link (the phone was offline for long, or the number was banned) messages fall back to the platform sender, or fail with "The school's WhatsApp is not connected" while it is the only sender, and the card goes back to Not linked.
+- **Console:** the school's **Plan & features** tab shows the linked number and an **Unlink** with a recorded reason (also in the school's audit log).
+- **Not ported / not built:** parents' replies to a linked number are not captured in the WhatsApp inbox (they stay on the phone; the inbox still works for the Cloud API number), delivery and read receipts are not tracked for linked messages, ShopSyncer's per-message bill note is not needed here because each message wording is already editable per school.
 
 ## Background jobs
 
