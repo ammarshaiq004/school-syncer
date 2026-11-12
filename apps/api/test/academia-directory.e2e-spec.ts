@@ -517,7 +517,10 @@ describe('Attendance matrix and student directory (e2e)', () => {
         guardian: { name: 'Khan Sahib', phone: phone(5), relation: 'Father' },
         feeStatus: 'OVERDUE',
         balance: 8000,
+        credit: 0,
         status: 'ACTIVE',
+        leavingReason: null,
+        leftOn: null,
       });
       const by = Object.fromEntries(res.items.map((i) => [i.name, i]));
       expect(by['Sana Iqbal']).toMatchObject({

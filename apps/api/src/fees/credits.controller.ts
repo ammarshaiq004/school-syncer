@@ -29,7 +29,7 @@ const openingSchema = z.object({
 });
 
 /** Advance credits: money a family paid ahead of any voucher, kept per student. */
-@Controller('fees/credits')
+@Controller('fees')
 @Permission('fees')
 export class CreditsController {
   constructor(
@@ -47,7 +47,7 @@ export class CreditsController {
   }
 
   /** A student's credit and the entries behind it. */
-  @Get()
+  @Get('credits')
   @Roles(...FEE_ROLES)
   async list(@CurrentUser() user: AuthUser, @Query('studentId') studentId: string) {
     await this.student(user, studentId);
@@ -58,7 +58,7 @@ export class CreditsController {
     return { balance: entries.reduce((s, e) => s + e.amount, 0), entries };
   }
 
-  @Post()
+  @Post('credits')
   @Roles(...FEE_ROLES)
   async add(@CurrentUser() user: AuthUser, @Body(new ZodValidationPipe(entrySchema)) body: z.infer<typeof entrySchema>) {
     await this.student(user, body.studentId);

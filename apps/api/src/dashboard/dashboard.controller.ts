@@ -381,7 +381,7 @@ export class DashboardController {
       this.prisma.invoice.findMany({
         where: { schoolId, studentId: { in: ranked.map((r) => r.studentId) }, kind: 'MONTHLY', status: { not: InvoiceStatus.CANCELLED } },
         orderBy: { period: 'desc' },
-        select: { studentId: true, total: true, arrears: true, fineBooked: true },
+        select: { studentId: true, lines: { where: { kind: 'FEE' }, select: { amount: true } } },
       }),
       this.prisma.invoice.groupBy({
         by: ['studentId', 'period'],
@@ -390,7 +390,8 @@ export class DashboardController {
     ]);
     const top = ranked.map((r) => {
       const latest = monthly.find((m) => m.studentId === r.studentId);
-      const fee = latest ? latest.total - latest.arrears - latest.fineBooked : 0;
+      // The fee lines alone: credits, fines and carried arrears on the voucher are not the monthly fee.
+      const fee = latest ? latest.lines.reduce((n, l) => n + l.amount, 0) : 0;
       const openMonths = months.filter((m) => m.studentId === r.studentId).length;
       return { studentId: r.studentId, balance: r.balance, monthsOwed: monthsOwed(r.balance, fee, openMonths) };
     });
