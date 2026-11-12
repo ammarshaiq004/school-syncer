@@ -48,3 +48,33 @@ export function multiMonth(open: OpenMonth[], min: number) {
 
 /** Percentage rounded to one decimal; 0 when there is nothing to divide by. */
 export const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0);
+
+export interface SummaryInvoice {
+  period: string;
+  status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'CANCELLED' | 'CARRIED_FORWARD';
+  total: number;
+  paid: number;
+  arrears: number;
+}
+
+/**
+ * One line per billing month: what was billed (arrears carried in are not new
+ * billing), what came in, what is still owed on open vouchers and what moved
+ * onto a later voucher. Voided vouchers are left out; newest month first.
+ */
+export function monthlyFeeSummary(invoices: SummaryInvoice[]) {
+  const rows = new Map<string, { period: string; vouchers: number; billed: number; collected: number; outstanding: number; carried: number }>();
+  for (const i of invoices) {
+    if (i.status === 'CANCELLED') continue;
+    const row = rows.get(i.period) ?? { period: i.period, vouchers: 0, billed: 0, collected: 0, outstanding: 0, carried: 0 };
+    row.vouchers += 1;
+    row.billed += i.total - i.arrears;
+    row.collected += i.paid;
+    if (i.status === 'CARRIED_FORWARD') row.carried += Math.max(0, i.total - i.paid);
+    else if (i.status !== 'PAID') row.outstanding += Math.max(0, i.total - i.paid);
+    rows.set(i.period, row);
+  }
+  return [...rows.values()]
+    .map((r) => ({ ...r, collectedPct: pct(r.collected, r.collected + r.outstanding) }))
+    .sort((a, b) => b.period.localeCompare(a.period));
+}

@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { AttendanceStatus, LeaveStatus, LeaveType, PayrollStatus, Prisma, StaffStatus } from '@prisma/client';
 import { z } from 'zod';
@@ -13,7 +14,7 @@ import { assertSchoolWide, campusScopeFor, FEE_ROLES, hasAnyRole, STAFF_ROLES } 
 import { AuditService } from '../common/audit.service.js';
 import { retryOnConflict } from '../common/serializable.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { dayStart } from '../common/dates.js';
+import { dayStart, localToday } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -188,6 +189,52 @@ export class PayrollController {
       after: { period: body.period, staff: slips.length },
     });
     return this.run(user, run.id);
+  }
+
+  /**
+   * What each staff member was paid, month by month, over finalised months
+   * (the last twelve by default). Declared before payroll/:id so it isn't
+   * read as a run id.
+   */
+  @Get('payroll/history')
+  @Roles(...FEE_ROLES)
+  async history(
+    @CurrentUser() user: AuthUser,
+    @Query('from', new ZodValidationPipe(period.optional())) from?: string,
+    @Query('to', new ZodValidationPipe(period.optional())) to?: string,
+  ) {
+    const last = to ?? localToday().slice(0, 7);
+    const [y, m] = last.split('-').map(Number);
+    const first = from ?? new Date(Date.UTC(y, m - 12, 1)).toISOString().slice(0, 7);
+    const slips = await this.prisma.payslip.findMany({
+      where: { ...slipsInScope(user), run: { schoolId: user.schoolId, status: PayrollStatus.FINALIZED, period: { gte: first, lte: last } } },
+      orderBy: [{ run: { period: 'desc' } }, { user: { name: 'asc' } }],
+      take: 3000,
+      select: {
+        userId: true,
+        basic: true,
+        allowances: true,
+        deductions: true,
+        unpaidDeduction: true,
+        lateDeduction: true,
+        shortLeaveDeduction: true,
+        net: true,
+        paidAt: true,
+        run: { select: { period: true } },
+        user: { select: { name: true, staffProfile: { select: { employeeNo: true, designation: true } } } },
+      },
+    });
+    return {
+      from: first,
+      to: last,
+      rows: slips.map(({ run, user: u, ...p }) => ({
+        ...p,
+        period: run.period,
+        name: u.name,
+        employeeNo: u.staffProfile?.employeeNo ?? '',
+        designation: u.staffProfile?.designation ?? '',
+      })),
+    };
   }
 
   @Get('payroll/:id')

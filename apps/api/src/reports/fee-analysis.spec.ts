@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { discountKind, isAdvance, multiMonth, pct } from './fee-analysis.js';
+import { discountKind, isAdvance, monthlyFeeSummary, multiMonth, pct, type SummaryInvoice } from './fee-analysis.js';
 
 describe('discountKind', () => {
   it('names each kind of negative line and ignores the rest', () => {
@@ -40,5 +40,26 @@ describe('pct', () => {
   it('rounds to a tenth and survives an empty whole', () => {
     expect(pct(1, 3)).toBe(33.3);
     expect(pct(5, 0)).toBe(0);
+  });
+});
+
+describe('monthlyFeeSummary', () => {
+  const inv = (period: string, status: SummaryInvoice['status'], total: number, paid: number, arrears = 0): SummaryInvoice => ({ period, status, total, paid, arrears });
+
+  it('adds up each month, newest first, without voided vouchers or carried-in arrears', () => {
+    const rows = monthlyFeeSummary([
+      inv('2026-10', 'PAID', 5000, 5000),
+      inv('2026-10', 'PARTIAL', 5000, 2000),
+      inv('2026-10', 'CANCELLED', 5000, 0),
+      inv('2026-10', 'CARRIED_FORWARD', 5000, 1000),
+      inv('2026-11', 'UNPAID', 7000, 0, 2000),
+    ]);
+    expect(rows.map((r) => r.period)).toEqual(['2026-11', '2026-10']);
+    expect(rows[1]).toEqual({ period: '2026-10', vouchers: 3, billed: 15000, collected: 8000, outstanding: 3000, carried: 4000, collectedPct: 72.7 });
+    expect(rows[0]).toMatchObject({ billed: 5000, outstanding: 7000, collectedPct: 0 });
+  });
+
+  it('is empty with no vouchers', () => {
+    expect(monthlyFeeSummary([])).toEqual([]);
   });
 });
