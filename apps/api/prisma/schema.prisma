@@ -57,32 +57,32 @@ model School {
   subjects             Subject[]
   users                User[]
   auditLogs            AuditLog[]
-  lateFeePerDay        Int            @default(0)
-  feeDueDay            Int            @default(10)
+  lateFeePerDay        Int                 @default(0)
+  feeDueDay            Int                 @default(10)
   /// Late fine caps: at most this many days are charged, and at most this many
   /// rupees on one voucher. Null means no cap.
   lateFeeMaxDays       Int?
   lateFeeCap           Int?
   /// Sibling discount (SCHOOL-140): percent off the listed fee heads for the
   /// second child of a family, and for the third and later children.
-  siblingSecondPercent Int            @default(0)
-  siblingThirdPercent  Int            @default(0)
-  siblingFeeHeadIds    String[]       @default([])
+  siblingSecondPercent Int                 @default(0)
+  siblingThirdPercent  Int                 @default(0)
+  siblingFeeHeadIds    String[]            @default([])
   /// Reasons offered when a student leaves, graduates or is suspended (Setup > Students).
   /// Kinds of document kept on a student's file (Setup > Students).
-  documentTypes        String[]       @default(["Birth certificate / B-Form", "Previous school leaving certificate", "Previous report card", "Guardian CNIC copy", "Medical record", "Other"])
-  leavingReasons       String[]       @default(["Fee Defaulter", "Migration", "Misbehaviour", "Regular Absents", "Duplicate Entry", "Wrong Entry", "Course Completed", "Other"])
+  documentTypes        String[]            @default(["Birth certificate / B-Form", "Previous school leaving certificate", "Previous report card", "Guardian CNIC copy", "Medical record", "Other"])
+  leavingReasons       String[]            @default(["Fee Defaulter", "Migration", "Misbehaviour", "Regular Absents", "Duplicate Entry", "Wrong Entry", "Course Completed", "Other"])
   /// A one-time fee head billed on its own voucher when a student is admitted,
   /// at the amount the fee setup gives the student's class. Null = none.
   admissionFeeHeadId   String?
   /// Monthly runs move an earlier voucher's unpaid balance onto the new voucher.
-  carryForwardArrears  Boolean        @default(false)
+  carryForwardArrears  Boolean             @default(false)
   /// Aon, the in-app assistant panel: the school's own switch, and the
   /// monthly token budget SchoolSyncer staff set for it (null = server default).
-  aonEnabled           Boolean        @default(true)
+  aonEnabled           Boolean             @default(true)
   aiMonthlyTokens      Int?
   /// QR scans after this local time (HH:MM) count as late.
-  attendanceLateAfter  String         @default("08:30")
+  attendanceLateAfter  String              @default("08:30")
 
   students          Student[]
   aonMemory         AonMemoryNote[]
@@ -119,11 +119,11 @@ model School {
   transportRoutes   TransportRoute[]
   books             Book[]
   certificates      Certificate[]
-  libraryLoanDays   Int               @default(14)
-  libraryFinePerDay Int               @default(5)
-  libraryMaxLoans   Int               @default(2)
+  libraryLoanDays   Int                   @default(14)
+  libraryFinePerDay Int                   @default(5)
+  libraryMaxLoans   Int                   @default(2)
   /// The school's own list of fathers' occupations, offered when a guardian is entered.
-  occupations       String[]          @default([])
+  occupations       String[]              @default([])
 
   customRoles     CustomRole[]
   rolePermissions BuiltinRolePermission[]
@@ -151,11 +151,11 @@ model School {
   gatewayStatements    GatewayStatement[]
   paymentGateways      SchoolPaymentGateway[]
 
-  messagingSender SchoolMessagingSender?
+  messagingSender  SchoolMessagingSender?
   messageTemplates MessageTemplate[]
   whatsappMessages WhatsappMessage[]
   bookReservations BookReservation[]
-  passwordResets  PasswordResetCode[]
+  passwordResets   PasswordResetCode[]
 
   /// The owner hid the setup checklist on the dashboard before finishing it.
   setupChecklistDismissedAt DateTime?
@@ -259,7 +259,8 @@ model Section {
   assignments Assignment[]
   quizzes     Quiz[]
 
-  lessonPlans LessonPlan[]
+  lessonPlans    LessonPlan[]
+  syllabusTopics SyllabusTopic[]
 
   @@unique([classId, academicYearId, name])
   @@index([schoolId])
@@ -285,7 +286,8 @@ model Subject {
   assignments Assignment[]
   quizzes     Quiz[]
 
-  lessonPlans LessonPlan[]
+  lessonPlans    LessonPlan[]
+  syllabusTopics SyllabusTopic[]
 
   @@unique([schoolId, name])
 }
@@ -339,17 +341,17 @@ model User {
   timetableSlots   TimetableSlot[]
   homeworkAssigned Homework[]
 
-  staffProfile       StaffProfile?
-  staffAttendance    StaffAttendance[]
-  leaveRequests      LeaveRequest[]
+  staffProfile            StaffProfile?
+  staffAttendance         StaffAttendance[]
+  leaveRequests           LeaveRequest[]
   shortLeaves             ShortLeave[]
-  staffCertificates       StaffCertificate[] @relation("StaffCertificateSubject")
-  staffCertificatesIssued StaffCertificate[] @relation("StaffCertificateIssuer")
-  payslips           Payslip[]
-  securityEntries    StaffSecurityEntry[]
-  bookLoans          BookLoan[]        @relation("BookLoans")
-  bookReservations   BookReservation[] @relation("BookReservations")
-  certificatesIssued Certificate[]
+  staffCertificates       StaffCertificate[]   @relation("StaffCertificateSubject")
+  staffCertificatesIssued StaffCertificate[]   @relation("StaffCertificateIssuer")
+  payslips                Payslip[]
+  securityEntries         StaffSecurityEntry[]
+  bookLoans               BookLoan[]           @relation("BookLoans")
+  bookReservations        BookReservation[]    @relation("BookReservations")
+  certificatesIssued      Certificate[]
 
   studentProfile     Student?
   coursesTaught      Course[]
@@ -479,27 +481,27 @@ enum StudentStatus {
 }
 
 model Student {
-  id           String        @id @default(cuid())
-  schoolId     String
-  campusId     String
-  admissionNo  String
-  firstName    String
-  lastName     String?
-  gender       Gender
-  dateOfBirth  DateTime?     @db.Date
-  bFormNo      String? // NADRA B-Form number, 13 digits
+  id             String        @id @default(cuid())
+  schoolId       String
+  campusId       String
+  admissionNo    String
+  firstName      String
+  lastName       String?
+  gender         Gender
+  dateOfBirth    DateTime?     @db.Date
+  bFormNo        String? // NADRA B-Form number, 13 digits
   /// A stable signed link to the photo (see students/student-photo.ts), for avatars and ID cards.
-  photoUrl     String?
+  photoUrl       String?
   /// The uploaded photo behind photoUrl; replacing or removing it deletes the old file.
-  photoFileId  String?       @unique
-  address      String?
+  photoFileId    String?       @unique
+  address        String?
   /// The area the family lives in (Setup > Localities), for mailing lists and transport planning.
-  localityId   String?
-  medicalNotes String?
-  status       StudentStatus @default(ACTIVE)
-  admittedOn   DateTime      @default(now()) @db.Date
+  localityId     String?
+  medicalNotes   String?
+  status         StudentStatus @default(ACTIVE)
+  admittedOn     DateTime      @default(now()) @db.Date
   /// The day the student left (status LEFT); null while enrolled or graduated. Feeds the admissions and withdrawals report.
-  leftOn       DateTime?     @db.Date
+  leftOn         DateTime?     @db.Date
   /// Why the student left, graduated or was suspended (one of the school's leavingReasons), with optional remarks.
   leavingReason  String?
   leavingRemarks String?
@@ -508,9 +510,9 @@ model Student {
   /// What the student owed (net of advance credit) the day they left; negative when the family was ahead.
   leavingBalance Int?
   /// The student's own sign-in (a User with the STUDENT role), if one was created.
-  userId       String?       @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  userId         String?       @unique
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   school      School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   campus      Campus             @relation(fields: [campusId], references: [id], onDelete: Restrict)
@@ -528,15 +530,15 @@ model Student {
   concessions Concession[]
   application Application?
 
-  marks        Mark[]
-  examResults  ExamResult[]
-  transport    TransportAssignment[]
-  bookLoans    BookLoan[]
-  bookReservations BookReservation[]
-  certificates Certificate[]
-  promotions   Promotion[]
-  studentShortLeaves  StudentShortLeave[]
-  complaints   Complaint[]
+  marks              Mark[]
+  examResults        ExamResult[]
+  transport          TransportAssignment[]
+  bookLoans          BookLoan[]
+  bookReservations   BookReservation[]
+  certificates       Certificate[]
+  promotions         Promotion[]
+  studentShortLeaves StudentShortLeave[]
+  complaints         Complaint[]
 
   lessonProgress LessonProgress[]
   liveAttendance LiveAttendance[]
@@ -1267,11 +1269,11 @@ enum PayItemType {
 
 // A fixed monthly allowance or deduction, e.g. "House rent" or "Provident fund".
 model StaffPayItem {
-  id        String      @id @default(cuid())
-  profileId String
-  name      String
-  type      PayItemType
-  amount    Int
+  id         String      @id @default(cuid())
+  profileId  String
+  name       String
+  type       PayItemType
+  amount     Int
   /// A deduction the school holds as security and owes back; each finalised payslip adds it to the employee's security balance.
   isSecurity Boolean     @default(false)
 
@@ -1465,23 +1467,23 @@ model PayrollRun {
 }
 
 model Payslip {
-  id              String    @id @default(cuid())
-  runId           String
-  userId          String
-  basic           Int
-  allowances      Int
-  deductions      Int
-  unpaidDays      Int
-  unpaidDeduction Int
+  id                  String    @id @default(cuid())
+  runId               String
+  userId              String
+  basic               Int
+  allowances          Int
+  deductions          Int
+  unpaidDays          Int
+  unpaidDeduction     Int
   /// Payroll rules: late arrivals and short leaves (SCHOOL HR rules).
   lateDeduction       Int       @default(0)
   shortLeaveDeduction Int       @default(0)
-  net             Int
+  net                 Int
   // [{ name, type, amount }] as calculated
-  lines           Json
-  paidAt          DateTime?
-  paidById        String?
-  paymentMethod   String?
+  lines               Json
+  paidAt              DateTime?
+  paidById            String?
+  paymentMethod       String?
 
   run  PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   user User       @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -2723,19 +2725,19 @@ model StoredFile {
   uploadedById String?
   createdAt    DateTime    @default(now())
 
-  school        School         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  uploadedBy    User?          @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  lesson        Lesson?
-  assignment    Assignment?    @relation("AssignmentAttachment")
-  submission    Submission?    @relation("SubmissionFile")
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  uploadedBy      User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  lesson          Lesson?
+  assignment      Assignment?      @relation("AssignmentAttachment")
+  submission      Submission?      @relation("SubmissionFile")
   /// A student's photo (purpose STUDENT_PHOTO).
-  studentPhoto  Student?       @relation("StudentPhoto")
+  studentPhoto    Student?         @relation("StudentPhoto")
   /// A screenshot sent with a problem report (purpose PROBLEM_REPORT).
-  problemReport ProblemReport? @relation("ProblemReportScreenshot")
+  problemReport   ProblemReport?   @relation("ProblemReportScreenshot")
   /// Proof of a payment to SchoolSyncer (purpose PAYMENT_PROOF).
-  paymentClaim  PaymentClaim?  @relation("PaymentClaimProof")
+  paymentClaim    PaymentClaim?    @relation("PaymentClaimProof")
   /// A job candidate's CV in the HR CV bank (purpose CANDIDATE_CV).
-  candidateCv   Candidate?     @relation("CandidateCv")
+  candidateCv     Candidate?       @relation("CandidateCv")
   /// A document kept on a student's file (purpose STUDENT_DOCUMENT).
   studentDocument StudentDocument? @relation("StudentDocumentFile")
 
@@ -3429,6 +3431,7 @@ model PosSaleLine {
   @@index([saleId])
   @@index([itemId])
 }
+
 // ----- Front office: visitor book, post register, short leave, complaints, phone book, localities -----
 // campusId on these is a plain column (no relation): it only scopes who sees a row.
 
@@ -3558,4 +3561,29 @@ model Locality {
   students Student[]
 
   @@unique([schoolId, name])
+}
+
+enum SyllabusStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+}
+
+/// One topic of a section's syllabus for a subject; progress is the share marked done.
+model SyllabusTopic {
+  id          String         @id @default(cuid())
+  schoolId    String
+  sectionId   String
+  subjectId   String
+  title       String
+  position    Int
+  status      SyllabusStatus @default(PENDING)
+  completedOn DateTime?      @db.Date
+  createdById String?
+  createdAt   DateTime       @default(now())
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, sectionId, subjectId, position])
 }

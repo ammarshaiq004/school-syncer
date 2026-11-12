@@ -310,4 +310,20 @@ describe('EduPortal gap closure (e2e)', () => {
     const refund = await request(server).post(`/api/hr/security/${staff.id}/refund`).set(owner).send({ amount: 400, note: 'Part refund' }).expect(201);
     expect(refund.body.balance).toBe(600);
   });
+  it('tracks syllabus topics and progress per section and subject', async () => {
+    const teacher = (await request(server).post('/api/users').set(owner).send({ name: 'Syllabus Teacher', phone: phone(6), password: 'password123', roles: [{ role: 'TEACHER' }] }).expect(201)).body;
+    const subject = (await request(server).post('/api/subjects').set(owner).send({ name: 'Maths' }).expect(201)).body.id;
+    await request(server).put(`/api/classes/sections/${sectionId}/subjects`).set(owner).send({ subjects: [{ subjectId: subject, teacherId: teacher.id }] }).expect(200);
+    const q = `sectionId=${sectionId}&subjectId=${subject}`;
+    await request(server).post('/api/syllabus').set(owner).send({ sectionId, subjectId: subject, topics: '1. Fractions\n2. Decimals\n\n- Ratio\nfractions' }).expect(201);
+    const listed = (await request(server).get(`/api/syllabus?${q}`).set(owner).expect(200)).body;
+    expect(listed.topics.map((t: { title: string }) => t.title)).toEqual(['Fractions', 'Decimals', 'Ratio']);
+    await request(server).patch(`/api/syllabus/${listed.topics[0].id}`).set(owner).send({ status: 'DONE' }).expect(200);
+    const after = (await request(server).get(`/api/syllabus?${q}`).set(owner)).body;
+    expect(after.progress).toMatchObject({ total: 3, done: 1, percent: 33 });
+    const overview = (await request(server).get('/api/syllabus/overview').set(owner).expect(200)).body;
+    expect(overview.find((o: { subjectId: string }) => o.subjectId === subject)).toMatchObject({ total: 3, done: 1 });
+    await request(server).delete(`/api/syllabus/${listed.topics[2].id}`).set(owner).expect(200);
+    await request(server).get(`/api/syllabus?sectionId=${sectionId}&subjectId=nope`).set(owner).expect(404);
+  });
 });
