@@ -8,9 +8,10 @@ import { todayIso } from "@/lib/format";
 import { useSectionOptions } from "@/lib/sections";
 import { hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
+import { BlankSheet } from "./blank-sheet";
 import { META_BY_STATUS, type AttendanceStatus } from "./status";
 
-type Report = "daily" | "class" | "staff" | "staffRank";
+type Report = "daily" | "class" | "staff" | "staffRank" | "blank";
 
 interface DailyRow { studentId: string; name: string; admissionNo: string; section: string; status: AttendanceStatus; note: string | null; scannedAt: string | null }
 interface ClassReport {
@@ -44,6 +45,7 @@ export function ReportsTab() {
   const [from, setFrom] = useState(daysAgo(29));
   const [to, setTo] = useState(todayIso());
   const [sectionId, setSectionId] = useState("");
+  const [month, setMonth] = useState(todayIso().slice(0, 7));
   const sections = useSectionOptions({ enabled: isAdmin });
   const mine = useApi<{ id: string; name: string }[]>(isAdmin ? null : "/attendance/sections");
   const sectionOptions = isAdmin ? sections.options : (mine.data ?? []).map((s) => ({ value: s.id, label: s.name }));
@@ -51,6 +53,7 @@ export function ReportsTab() {
   const options = [
     { value: "daily", label: "Students absent, late or on leave" },
     { value: "class", label: "Class by date" },
+    { value: "blank", label: "Blank attendance sheet (to print)" },
     ...(isAdmin ? [{ value: "staff", label: "Staff absent or late" }, { value: "staffRank", label: "Most absent staff" }] : []),
   ];
   const wantsDate = report === "daily" || report === "staff";
@@ -115,10 +118,12 @@ export function ReportsTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Card padding="sm">
+      <Card padding="sm" className="print:hidden">
         <div className="flex flex-wrap items-end gap-3">
           <SelectField label="Report" value={report} onChange={(e) => setReport(e.target.value as Report)} options={options} wrapperClassName="w-full sm:w-64" />
-          {wantsDate ? (
+          {report === "blank" ? (
+            <TextField label="Month" type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} wrapperClassName="w-full sm:w-44" />
+          ) : wantsDate ? (
             <TextField label="Date" type="date" value={date} max={todayIso()} onChange={(e) => setDate(e.target.value)} wrapperClassName="w-full sm:w-44" />
           ) : (
             <>
@@ -126,7 +131,7 @@ export function ReportsTab() {
               <TextField label="To" type="date" value={to} max={todayIso()} onChange={(e) => setTo(e.target.value)} wrapperClassName="w-full sm:w-44" error={rangeOk ? undefined : "Start must be before the end"} />
             </>
           )}
-          {report === "class" && (
+          {(report === "class" || report === "blank") && (
             <SelectField label="Class and section" value={sectionId} onChange={(e) => setSectionId(e.target.value)} placeholder="Choose a section" options={sectionOptions} wrapperClassName="w-full sm:w-64" />
           )}
           {wantsStatus && (
@@ -134,7 +139,7 @@ export function ReportsTab() {
               <NativeSelect aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_FILTERS} />
             </div>
           )}
-          <Button type="button" variant="secondary" icon={<Download />} onClick={exportCsv} className="sm:ml-auto">
+          <Button type="button" variant="secondary" icon={<Download />} onClick={exportCsv} disabled={report === "blank"} className="sm:ml-auto">
             Export CSV
           </Button>
         </div>
@@ -152,6 +157,12 @@ export function ReportsTab() {
           </>
         ) : (
           <Card><p className="text-sm text-fg-muted">Choose a section to see its attendance by date.</p></Card>
+        ))}
+      {report === "blank" &&
+        (sectionId ? (
+          <BlankSheet sectionId={sectionId} month={month} />
+        ) : (
+          <Card><p className="text-sm text-fg-muted">Choose a section to see its blank sheet.</p></Card>
         ))}
       {report === "staff" && (
         <DataTable label="Staff absent, late or on leave" columns={staffCols} data={staff.data?.rows} error={staff.error} onRetry={staff.reload} getRowId={(r) => r.userId} empty={{ title: "No one in this list", description: "No staff were absent, late or on leave on this day." }} />
