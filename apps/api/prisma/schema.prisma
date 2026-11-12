@@ -1250,6 +1250,8 @@ model StaffProfile {
   designation String
   department  String?
   joinedOn    DateTime?   @db.Date
+  /// For the birthdays list; not required.
+  dateOfBirth DateTime?   @db.Date
   cnic        String?
   basicSalary Int         @default(0)
   bankName    String?

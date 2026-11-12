@@ -48,6 +48,7 @@ const profileSchema = z.object({
   designation: z.string().trim().min(2).max(60),
   department: z.string().trim().max(60).optional(),
   joinedOn: isoDate.optional(),
+  dateOfBirth: isoDate.nullable().optional(),
   cnic: cnicField.optional(),
   basicSalary: rupees,
   bankName: z.string().trim().max(60).optional(),
@@ -143,6 +144,8 @@ export class HrController {
       ...fields,
       employeeNo,
       joinedOn: body.joinedOn ? dayStart(body.joinedOn) : null,
+      // Left alone unless the form sends it, so other clients of this endpoint don't wipe it.
+      ...(body.dateOfBirth === undefined ? {} : { dateOfBirth: body.dateOfBirth ? dayStart(body.dateOfBirth) : null }),
       cnic: body.cnic,
     };
     try {

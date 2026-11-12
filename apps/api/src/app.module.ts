@@ -39,6 +39,7 @@ import { FamiliesController } from './fees/families.controller.js';
 import { InstallmentsController } from './fees/installments.controller.js';
 import { FeeReportsController } from './reports/fee-reports.controller.js';
 import { InsightsController } from './reports/insights.controller.js';
+import { PeopleReportsController } from './reports/people-reports.controller.js';
 import { ReportsController } from './reports/reports.controller.js';
 import { FeeCorrectionsController } from './fees/fee-corrections.controller.js';
 import { FeeCorrectionsService } from './fees/fee-corrections.service.js';
@@ -201,6 +202,7 @@ import { UsersController } from './users/users.controller.js';
     InstallmentsController,
     FeeReportsController,
     InsightsController,
+    PeopleReportsController,
     ReportsController,
     PaymentWebhookController,
     PaymentGatewayController,

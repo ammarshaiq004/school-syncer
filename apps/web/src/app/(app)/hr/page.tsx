@@ -182,6 +182,7 @@ interface Profile {
   designation: string;
   department: string | null;
   joinedOn: string | null;
+  dateOfBirth?: string | null;
   cnic: string | null;
   basicSalary: number;
   bankName: string | null;
@@ -352,6 +353,7 @@ function ProfileForm({ member, open, onOpenChange, onSaved }: { member: StaffMem
           designation: f.get("designation"),
           department: text("department"),
           joinedOn: text("joinedOn"),
+          dateOfBirth: text("dateOfBirth") ?? null,
           cnic: text("cnic"),
           basicSalary: Number(f.get("basicSalary")),
           bankName: text("bankName"),
@@ -393,6 +395,7 @@ function ProfileForm({ member, open, onOpenChange, onSaved }: { member: StaffMem
           <Field label="Designation" name="designation" defaultValue={p?.designation} required />
           <Field label="Department" name="department" defaultValue={p?.department ?? ""} />
           <Field label="Joined" name="joinedOn" type="date" defaultValue={p?.joinedOn?.slice(0, 10)} />
+          <Field label="Date of birth" name="dateOfBirth" type="date" defaultValue={p?.dateOfBirth?.slice(0, 10)} max={todayIso()} />
           <Field label="CNIC" name="cnic" defaultValue={p?.cnic ?? ""} placeholder="35202-1234567-1" />
           <Field label="Basic salary (Rs)" name="basicSalary" type="number" min={0} defaultValue={p?.basicSalary ?? 0} required className="tabular-nums" />
           <Field label="Bank" name="bankName" defaultValue={p?.bankName ?? ""} />
