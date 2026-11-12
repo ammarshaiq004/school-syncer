@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Query } from '@nestjs/common';
 import { StaffStatus, StudentStatus } from '@prisma/client';
 import { z } from 'zod';
 import { adminScope, SETUP_ROLES } from '../common/admin-roles.js';
@@ -94,6 +94,53 @@ export class PeopleReportsController {
         address: s.address ?? '',
         guardian: s.guardians[0] ? `${s.guardians[0].guardian.name} (${s.guardians[0].relation})` : '',
         phone: s.guardians[0]?.guardian.phone ?? '',
+      })),
+    };
+  }
+
+  /** Everything the office keeps about a section's students on one sheet: a class list to print or file. */
+  @Get('class-info')
+  async classInfo(@CurrentUser() user: AuthUser, @Query('sectionId', new ZodValidationPipe(z.string().min(1))) sectionId: string) {
+    const scope = adminScope(user);
+    const section = await this.prisma.section.findFirst({
+      where: { id: sectionId, class: { schoolId: user.schoolId, ...(scope ? { campusId: { in: scope } } : {}) } },
+      select: { name: true, class: { select: { name: true } } },
+    });
+    if (!section) throw new NotFoundException('Section not found');
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: { sectionId, status: 'ACTIVE', student: { schoolId: user.schoolId } },
+      orderBy: [{ rollNo: 'asc' }, { student: { firstName: 'asc' } }],
+      select: {
+        rollNo: true,
+        student: {
+          select: {
+            admissionNo: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            dateOfBirth: true,
+            bFormNo: true,
+            address: true,
+            admittedOn: true,
+            locality: { select: { name: true } },
+            guardians: { orderBy: { isPrimary: 'desc' }, take: 2, select: { relation: true, guardian: { select: { name: true, phone: true } } } },
+          },
+        },
+      },
+    });
+    return {
+      section: `${section.class.name} ${section.name}`,
+      students: enrollments.map(({ rollNo, student: s }) => ({
+        rollNo,
+        admissionNo: s.admissionNo,
+        name: [s.firstName, s.lastName].filter(Boolean).join(' '),
+        gender: s.gender,
+        dateOfBirth: s.dateOfBirth ? iso(s.dateOfBirth) : null,
+        bFormNo: s.bFormNo,
+        admittedOn: iso(s.admittedOn),
+        address: s.address ?? '',
+        locality: s.locality?.name ?? '',
+        guardians: s.guardians.map((g) => ({ relation: g.relation, name: g.guardian.name, phone: g.guardian.phone })),
       })),
     };
   }

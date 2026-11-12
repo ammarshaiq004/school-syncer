@@ -4,15 +4,17 @@ import { useState } from "react";
 import { Cake, Download, MapPin, Printer } from "lucide-react";
 import { Button, Card, Checkbox, DataTable, SelectField, SkeletonRows, type Column } from "@/components/ui";
 import { downloadCsv } from "@/lib/csv";
+import { useSectionOptions } from "@/lib/sections";
 import { day, rupees, todayIso } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-type Report = "birthdays" | "localities" | "staff";
+type Report = "birthdays" | "localities" | "classInfo" | "staff";
 const REPORTS: { value: Report; label: string }[] = [
   { value: "birthdays", label: "Birthdays" },
   { value: "localities", label: "Students by locality" },
+  { value: "classInfo", label: "Class information sheet (to print)" },
   { value: "staff", label: "Staff register (choose columns)" },
 ];
 
@@ -24,6 +26,7 @@ export function PeopleReports() {
       <SelectField label="Report" value={report} onChange={(e) => setReport(e.target.value as Report)} options={REPORTS} wrapperClassName="w-full sm:w-64 print:hidden" />
       {report === "birthdays" && <Birthdays />}
       {report === "localities" && <Localities />}
+      {report === "classInfo" && <ClassInfo />}
       {report === "staff" && <StaffRegister />}
     </div>
   );
@@ -195,6 +198,68 @@ function Localities() {
           }
           empty={{ title: "No students in this locality" }}
         />
+      )}
+    </div>
+  );
+}
+
+interface InfoStudent {
+  rollNo: number | null;
+  admissionNo: string;
+  name: string;
+  gender: string;
+  dateOfBirth: string | null;
+  bFormNo: string | null;
+  admittedOn: string;
+  address: string;
+  locality: string;
+  guardians: { relation: string; name: string; phone: string }[];
+}
+
+/** One section's students with their parents, birth dates and addresses, on a sheet to print. */
+function ClassInfo() {
+  const [sectionId, setSectionId] = useState("");
+  const sections = useSectionOptions({ enabled: true });
+  const report = useApi<{ section: string; students: InfoStudent[] }>(sectionId ? `/reports/people/class-info?sectionId=${encodeURIComponent(sectionId)}` : null);
+  const rows = report.data?.students ?? [];
+  const parents = (s: InfoStudent) => s.guardians.map((g) => `${g.name} (${g.relation}) ${g.phone}`).join("; ");
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end gap-3 print:hidden">
+        <SelectField label="Class and section" value={sectionId} onChange={(e) => setSectionId(e.target.value)} placeholder="Choose a section" options={sections.options} wrapperClassName="w-full sm:w-64" />
+        <Button variant="secondary" size="sm" icon={<Download />} disabled={!rows.length} onClick={() => downloadCsv(`class-information-${report.data?.section.replace(/\s+/g, "-").toLowerCase()}.csv`, ["Roll no", "Admission no.", "Student", "Gender", "Date of birth", "B-form", "Admitted", "Parents", "Locality", "Address"], rows.map((s) => [s.rollNo ?? "", s.admissionNo, s.name, s.gender, s.dateOfBirth ?? "", s.bFormNo ?? "", s.admittedOn, parents(s), s.locality, s.address]))}>
+          Download
+        </Button>
+        <Button variant="secondary" size="sm" icon={<Printer />} disabled={!rows.length} onClick={() => window.print()}>Print</Button>
+      </div>
+      {!sectionId ? (
+        <Card><p className="text-sm text-fg-muted">Choose a section to see its information sheet.</p></Card>
+      ) : report.error ? (
+        <p className="text-sm text-danger">{report.error}</p>
+      ) : !report.data ? (
+        <SkeletonRows rows={5} columns={4} />
+      ) : (
+        <div className="overflow-x-auto">
+          <h2 className="mb-2 font-display text-base font-semibold text-fg">{report.data.section} · {rows.length} students</h2>
+          <table className="w-full border-collapse text-xs" aria-label="Class information sheet">
+            <thead>
+              <tr>{["Roll", "Adm. no.", "Student", "Date of birth", "B-form", "Parents", "Address"].map((h) => <th key={h} className="border border-border px-1.5 py-1 text-left">{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map((s) => (
+                <tr key={s.admissionNo}>
+                  <td className="border border-border px-1.5 py-1 tabular-nums">{s.rollNo ?? ""}</td>
+                  <td className="border border-border px-1.5 py-1">{s.admissionNo}</td>
+                  <td className="border border-border px-1.5 py-1">{s.name}</td>
+                  <td className="border border-border px-1.5 py-1">{s.dateOfBirth ? day(s.dateOfBirth) : ""}</td>
+                  <td className="border border-border px-1.5 py-1">{s.bFormNo ?? ""}</td>
+                  <td className="border border-border px-1.5 py-1">{s.guardians.map((g) => <div key={g.phone}>{g.name} ({g.relation}) {g.phone}</div>)}</td>
+                  <td className="border border-border px-1.5 py-1">{[s.address, s.locality].filter(Boolean).join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
