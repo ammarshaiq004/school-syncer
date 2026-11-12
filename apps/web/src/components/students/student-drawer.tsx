@@ -7,6 +7,7 @@ import {
   ChartNoAxesColumn,
   ExternalLink,
   MessageCircle,
+  FolderOpen,
   Pencil,
   Phone,
   ShieldPlus,
@@ -33,6 +34,7 @@ import {
   Tabs,
   type TabItem,
 } from "@/components/ui";
+import { StudentFilesTab } from "@/components/students/student-files-tab";
 import { CommitmentDialog } from "@/components/fees/commitment-dialog";
 import { CreditDialog } from "@/components/fees/credit-dialog";
 import { day, rupees } from "@/lib/format";
@@ -78,6 +80,7 @@ export function StudentDrawer({
     { value: "contact", label: "Emergency contact", icon: <Phone /> },
     { value: "performance", label: "Performance", icon: <ChartNoAxesColumn /> },
     { value: "attendance", label: "Attendance", icon: <CalendarCheck /> },
+    ...(perms.setup ? [{ value: "files", label: "Documents & notes", icon: <FolderOpen /> }] : []),
     ...(perms.fees ? [{ value: "fees", label: "Fees", icon: <Wallet /> }] : []),
   ];
 
@@ -151,6 +154,11 @@ export function StudentDrawer({
               {perf && <AttendanceTab perf={perf} name={row.name} />}
             </PerfGate>
           </TabPanel>
+          {perms.setup && (
+            <TabPanel value="files">
+              <StudentFilesTab studentId={row.id} />
+            </TabPanel>
+          )}
           {perms.fees && (
             <TabPanel value="fees">
               <PerfGate api={perfApi}>
