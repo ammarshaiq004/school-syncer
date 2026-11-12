@@ -112,6 +112,8 @@ const paymentSchema = z.object({
   amount: z.number().int().positive(),
   method: z.enum(PaymentMethod),
   reference: z.string().trim().max(80).optional(),
+  /** Day the money was received (YYYY-MM-DD), for a receipt entered later; defaults to today. */
+  paidOn: z.iso.date().optional(),
   // Sent by the client so a retried or double-clicked save records the payment once.
   // Namespaced so it can never match a gateway's key.
   idempotencyKey: z
@@ -531,7 +533,7 @@ export class FeesController {
     const where = { schoolId: user.schoolId, student: inFeeScope(user) };
     const school = await this.prisma.school.findUniqueOrThrow({ where: { id: user.schoolId } });
     const [owed, overdue] = await Promise.all([
-      feeOutstanding(this.prisma, where, today),
+      feeOutstanding(this.prisma, where, today, true),
       this.prisma.invoice.findMany({
         where: { ...where, ...overdueWhere(today) },
         select: { dueDate: true, total: true, paid: true, status: true, fineBooked: true, fineWaivedAt: true },

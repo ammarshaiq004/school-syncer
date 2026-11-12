@@ -1,11 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
-import { InvoiceStatus, Role } from '@prisma/client';
+import { InvoiceStatus, Prisma, Role } from '@prisma/client';
 import { ATTENDANCE_ROLES, campusScope, FEE_ROLES, hasAnyRole, STAFF_ROLES } from '../common/admin-roles.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
-import { dayStart, daysBefore, localToday, startOfLocalDay } from '../common/dates.js';
+import { dayStart, daysBefore, localToday, SCHOOL_TIMEZONE, startOfLocalDay } from '../common/dates.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { billedOf, feeOutstanding } from '../fees/outstanding.js';
+import { ageOn, challanCounts, genderCounts, monthsOwed, teachingDesignationWhere } from './dashboard-rules.js';
 
 const TEACHING_ROLES: Role[] = [Role.TEACHER, Role.CLASS_TEACHER];
 
@@ -63,6 +64,12 @@ export class DashboardController {
       staff,
       teachers,
       registers,
+      genders,
+      withdrawals,
+      birthdays,
+      challanRows,
+      cashByMonth,
+      staffNoDesignation,
     ] = await Promise.all([
       this.prisma.student.count({ where: { schoolId, status: 'ACTIVE', ...campusFilter } }),
       this.prisma.student.count({
@@ -88,7 +95,7 @@ export class DashboardController {
         _count: true,
       }),
       // The shared outstanding calculation, as /fees/outstanding and the defaulters list use.
-      feeOutstanding(this.prisma, { schoolId, student: campusFilter }, todayIso),
+      feeOutstanding(this.prisma, { schoolId, student: campusFilter }, todayIso, true),
       this.prisma.invoice.groupBy({
         by: ['period'],
         where: { schoolId, period: { in: periods }, status: { not: InvoiceStatus.CANCELLED }, student: campusFilter },
@@ -155,8 +162,14 @@ export class DashboardController {
       this.prisma.user.count({
         where: { schoolId, isActive: true, roles: { some: { role: { in: STAFF_ROLES }, ...staffFilter } } },
       }),
+      // Teaching staff by role, or by a designation like "Teacher" (schools that only filled in designations).
       this.prisma.user.count({
-        where: { schoolId, isActive: true, roles: { some: { role: { in: TEACHING_ROLES }, ...staffFilter } } },
+        where: {
+          schoolId,
+          isActive: true,
+          roles: { some: { role: { in: STAFF_ROLES }, ...staffFilter } },
+          OR: [{ roles: { some: { role: { in: TEACHING_ROLES }, ...staffFilter } } }, ...teachingDesignationWhere()],
+        },
       }),
       // Every class with pupils owes a register today; whether it is in says how much of the school today's rate covers.
       this.prisma.section.findMany({
@@ -167,6 +180,42 @@ export class DashboardController {
           ...(scope ? { class: { campusId: { in: scope } } } : {}),
         },
         select: { id: true, attendanceSessions: { where: { date: today }, select: { id: true } } },
+      }),
+      this.prisma.student.groupBy({ by: ['gender'], where: { schoolId, status: 'ACTIVE', ...campusFilter }, _count: true }),
+      // Left this month: needs the real leaving date, not the day the record was edited.
+      this.prisma.student.count({
+        where: { schoolId, status: 'LEFT', leftOn: { gte: dayStart(`${period}-01`), lte: today }, ...campusFilter },
+      }),
+      this.prisma.$queryRaw<{ id: string; firstName: string; lastName: string | null; admissionNo: string; dateOfBirth: string }[]>(Prisma.sql`
+        SELECT id, "firstName", "lastName", "admissionNo", "dateOfBirth"::text AS "dateOfBirth" FROM "Student"
+        WHERE "schoolId" = ${schoolId} AND status = 'ACTIVE' AND "dateOfBirth" IS NOT NULL
+          AND to_char("dateOfBirth", 'MM-DD') = ${todayIso.slice(5)}
+          ${scope ? Prisma.sql`AND "campusId" = ANY(${scope})` : Prisma.empty}
+        ORDER BY "firstName" LIMIT 12`),
+      // This month's vouchers plus every older voucher still owing, per student and month.
+      canFees
+        ? this.prisma.invoice.groupBy({
+            by: ['studentId', 'period'],
+            where: {
+              schoolId,
+              student: campusFilter,
+              status: { notIn: [InvoiceStatus.CANCELLED, InvoiceStatus.CARRIED_FORWARD] },
+              OR: [{ period }, { status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] } }],
+            },
+            _sum: { total: true, paid: true },
+          })
+        : [],
+      // Cash by the month it was received, so back-dated receipts fill the history.
+      canFees
+        ? this.prisma.$queryRaw<{ period: string; amount: number }[]>(Prisma.sql`
+            SELECT to_char((p."receivedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${SCHOOL_TIMEZONE}, 'YYYY-MM') AS period, SUM(p.amount)::int AS amount
+            FROM "Payment" p JOIN "Invoice" i ON i.id = p."invoiceId" JOIN "Student" st ON st.id = i."studentId"
+            WHERE p."schoolId" = ${schoolId} AND p."reversedAt" IS NULL AND p."receivedAt" >= ${startOfLocalDay(`${periods[0]}-01`)}
+              ${scope ? Prisma.sql`AND st."campusId" = ANY(${scope})` : Prisma.empty}
+            GROUP BY 1`)
+        : [],
+      this.prisma.user.count({
+        where: { schoolId, isActive: true, roles: { some: { role: { in: STAFF_ROLES }, ...staffFilter } }, staffProfile: { is: null } },
       }),
     ]);
     const topDefaulters = canFees ? await this.topDefaulters(schoolId, campusFilter) : [];
@@ -206,8 +255,18 @@ export class DashboardController {
     return {
       students,
       newStudentsThisMonth: newStudents,
+      withdrawalsThisMonth: withdrawals,
+      genderSplit: genderCounts(genders.map((g) => ({ gender: g.gender, _count: g._count }))),
+      birthdaysToday: birthdays.map((b) => ({
+        id: b.id,
+        name: [b.firstName, b.lastName].filter(Boolean).join(' '),
+        admissionNo: b.admissionNo,
+        turns: ageOn(b.dateOfBirth, todayIso),
+      })),
+      challans: canFees ? { period, ...challanCounts(challanRows.map((r) => ({ studentId: r.studentId, period: r.period, total: r._sum.total ?? 0, paid: r._sum.paid ?? 0 })), period) } : null,
       staff,
       teachers,
+      staffWithoutDesignation: staffNoDesignation,
       attendanceToday: {
         marked,
         present: count('PRESENT') + count('LATE'),
@@ -232,7 +291,7 @@ export class DashboardController {
       collectionTrend: canFees
         ? periods.map((p) => {
             const row = trend.find((t) => t.period === p);
-            return { period: p, billed: row ? billedOf(row._sum) : 0, collected: row?._sum.paid ?? 0 };
+            return { period: p, billed: row ? billedOf(row._sum) : 0, collected: cashByMonth.find((c) => c.period === p)?.amount ?? 0 };
           })
         : [],
       recentPayments: payments.map((p) => ({
@@ -277,16 +336,34 @@ export class DashboardController {
       _sum: { total: true, paid: true },
       _count: true,
     });
-    const top = byStudent
+    const ranked = byStudent
       .map((r) => ({
         studentId: r.studentId,
         balance: Math.max(0, (r._sum.total ?? 0) - (r._sum.paid ?? 0)),
-        monthsOwed: r._count,
+        vouchers: r._count,
       }))
       .filter((r) => r.balance > 0)
       .sort((a, b) => b.balance - a.balance)
       .slice(0, 5);
-    if (!top.length) return [];
+    if (!ranked.length) return [];
+    // Months owed come from the balance and the monthly fee, since arrears often sit on a single voucher.
+    const [monthly, months] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: { schoolId, studentId: { in: ranked.map((r) => r.studentId) }, kind: 'MONTHLY', status: { not: InvoiceStatus.CANCELLED } },
+        orderBy: { period: 'desc' },
+        select: { studentId: true, total: true, arrears: true, fineBooked: true },
+      }),
+      this.prisma.invoice.groupBy({
+        by: ['studentId', 'period'],
+        where: { schoolId, studentId: { in: ranked.map((r) => r.studentId) }, status: { in: [InvoiceStatus.UNPAID, InvoiceStatus.PARTIAL] } },
+      }),
+    ]);
+    const top = ranked.map((r) => {
+      const latest = monthly.find((m) => m.studentId === r.studentId);
+      const fee = latest ? latest.total - latest.arrears - latest.fineBooked : 0;
+      const openMonths = months.filter((m) => m.studentId === r.studentId).length;
+      return { studentId: r.studentId, balance: r.balance, monthsOwed: monthsOwed(r.balance, fee, openMonths) };
+    });
 
     const students = await this.prisma.student.findMany({
       where: { id: { in: top.map((r) => r.studentId) } },

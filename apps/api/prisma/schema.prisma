@@ -462,6 +462,8 @@ enum Gender {
   MALE
   FEMALE
   OTHER
+  /// Not recorded (an old system left it blank); never forced to a guess.
+  UNSPECIFIED
 }
 
 enum StudentStatus {
@@ -502,6 +504,7 @@ model Student {
   campus      Campus             @relation(fields: [campusId], references: [id], onDelete: Restrict)
   locality    Locality?          @relation(fields: [localityId], references: [id], onDelete: SetNull)
   user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  credits     StudentCredit[]
   photoFile   StoredFile?        @relation("StudentPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   guardians   StudentGuardian[]
   enrollments Enrollment[]
@@ -789,6 +792,25 @@ model Invoice {
   @@unique([studentId, monthlyPeriod])
   @@index([schoolId, period, status])
   @@index([schoolId, status, dueDate])
+}
+
+/// Money a family paid ahead of any voucher (an advance), kept per student. Positive rows add
+/// credit; negative rows take it back (refunded or used). The sum is the student's credit, and
+/// it is netted off what the student and the school owe.
+model StudentCredit {
+  id          String   @id @default(cuid())
+  schoolId    String
+  studentId   String
+  amount      Int
+  note        String?
+  /// The day the money was received (or the adjustment made); may be back-dated.
+  effectiveOn DateTime @db.Date
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, studentId])
 }
 
 /// One instalment of a voucher's payment plan. Payments are taken against the voucher

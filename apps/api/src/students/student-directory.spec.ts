@@ -35,10 +35,20 @@ describe('feeSummary', () => {
       totalBilled: 15000,
       totalPaid: 7000,
       balance: 8000,
+      credit: 0,
+      netBalance: 8000,
       overdueBalance: 3000,
       openInvoices: 2,
       status: 'OVERDUE',
     });
+  });
+});
+
+describe('feeSummary with an advance credit', () => {
+  it('shows what is still owed after the credit, negative when the family is ahead', () => {
+    const open = [{ total: 5000, paid: 0, status: 'UNPAID', dueDate: '2026-11-10' }];
+    expect(feeSummary(open, '2026-11-12', 700)).toMatchObject({ balance: 5000, credit: 700, netBalance: 4300 });
+    expect(feeSummary([], '2026-11-12', 200)).toMatchObject({ balance: 0, netBalance: -200 });
   });
 });
 

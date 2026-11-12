@@ -300,7 +300,7 @@ export interface FeeInvoiceInput {
 }
 
 /** Billed, paid and outstanding totals over a student's invoices (cancelled ones ignored). */
-export function feeSummary(invoices: FeeInvoiceInput[], today: string) {
+export function feeSummary(invoices: FeeInvoiceInput[], today: string, credit = 0) {
   const live = invoices.filter((i) => i.status !== 'CANCELLED');
   const open = live.filter((i) => i.status === 'UNPAID' || i.status === 'PARTIAL');
   const due = (list: FeeInvoiceInput[]) => list.reduce((s, i) => s + Math.max(0, i.total - i.paid), 0);
@@ -308,6 +308,10 @@ export function feeSummary(invoices: FeeInvoiceInput[], today: string) {
     totalBilled: live.reduce((s, i) => s + i.total - (i.arrears ?? 0), 0),
     totalPaid: live.reduce((s, i) => s + i.paid, 0),
     balance: due(open),
+    /** Advance paid ahead of any voucher. */
+    credit,
+    /** What the family still owes after the credit; negative when they are ahead. */
+    netBalance: due(open) - credit,
     overdueBalance: due(open.filter((i) => i.dueDate < today)),
     openInvoices: open.length,
     status: feeStatusOf(open, today),
@@ -334,7 +338,7 @@ export async function studentPerformance(
   const heatmapFrom = daysBefore(today, HEATMAP_DAYS - 1);
   const year = await currentYear(prisma, schoolId);
 
-  const [result, recent, yearCounts, invoices, lastPayment] = await Promise.all([
+  const [result, recent, yearCounts, invoices, credit, lastPayment] = await Promise.all([
     access.exams
       ? prisma.examResult.findFirst({
           where: { studentId, exam: { status: 'PUBLISHED', schoolId } },
@@ -375,6 +379,7 @@ export async function studentPerformance(
           select: { total: true, paid: true, status: true, dueDate: true, arrears: true },
         })
       : [],
+    access.fees ? prisma.studentCredit.aggregate({ where: { studentId, schoolId }, _sum: { amount: true } }) : null,
     access.fees
       ? prisma.payment.findFirst({
           where: { invoice: { studentId }, schoolId, reversedAt: null },
@@ -442,6 +447,7 @@ export async function studentPerformance(
           ...feeSummary(
             invoices.map((i) => ({ ...i, dueDate: iso(i.dueDate) })),
             today,
+            credit?._sum.amount ?? 0,
           ),
           lastPayment: lastPayment
             ? {

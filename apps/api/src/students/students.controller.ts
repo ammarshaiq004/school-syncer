@@ -43,6 +43,7 @@ import {
 } from './student-login.js';
 import { bFormField } from '../common/identity.js';
 import { billAdmissionFee } from '../fees/adhoc-vouchers.js';
+import { studentDates } from './student-dates.js';
 import { createStudentRecord, guardianInputSchema, importWarnings } from './student-records.js';
 import {
   directoryQuerySchema,
@@ -59,6 +60,8 @@ const createStudentSchema = z.object({
   lastName: z.string().trim().max(80).optional(),
   gender: z.enum(Gender),
   dateOfBirth: z.coerce.date().optional(),
+  /** The real admission day for a student moved from another system; defaults to today. */
+  admittedOn: z.coerce.date().optional(),
   bFormNo: bFormField.optional(),
   address: z.string().trim().max(250).optional(),
   localityId: z.string().min(1).nullable().optional(),
@@ -72,7 +75,7 @@ type CreateStudentInput = z.infer<typeof createStudentSchema>;
 const updateStudentSchema = createStudentSchema
   .omit({ sectionId: true, guardians: true, admissionNo: true, confirmed: true })
   .partial()
-  .extend({ status: z.enum(StudentStatus).optional() });
+  .extend({ status: z.enum(StudentStatus).optional(), leftOn: z.coerce.date().optional() });
 type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
 
 const importSchema = z.object({
@@ -448,13 +451,14 @@ export class StudentsController {
       await this.subscriptions.assertStudentRoom(user.schoolId, 1);
     }
     const leaving = Boolean(body.status && body.status !== StudentStatus.ACTIVE);
+    const dates = studentDates({ before, status: body.status, admittedOn: body.admittedOn, leftOn: body.leftOn, today: localToday() });
     const [after, offUserIds] = await this.prisma.$transaction(async (tx) => {
       const updated = await tx.student.update({
         where: { id },
         data: {
           ...body,
-          // Marks the day a student leaves; coming back clears it.
-          ...(body.status === StudentStatus.LEFT ? { leftOn: dayStart(localToday()) } : body.status ? { leftOn: null } : {}),
+          // The day a student leaves (today unless given); coming back clears it.
+          ...dates,
         },
       });
       if (!leaving) return [updated, [] as string[]] as const;

@@ -20,6 +20,22 @@ export interface Owed {
   amount: number;
 }
 
+/** What is owed once advance credits are taken off; never below zero. */
+export interface OwedNet extends Owed {
+  /** Advance credits held by the same students. */
+  credits: number;
+  /** Owed on open vouchers before credits. */
+  gross: number;
+}
+
+/** Takes advance credits off an owed total. */
+export const netOfCredits = (owed: Owed, credits: number): OwedNet => ({
+  invoices: owed.invoices,
+  amount: Math.max(0, owed.amount - credits),
+  credits,
+  gross: owed.amount,
+});
+
 /**
  * The one "outstanding" calculation the defaulters list, the dashboard, the
  * reports and the fees page all use: the balance (total less live payments)
@@ -30,7 +46,9 @@ export async function feeOutstanding(
   prisma: PrismaService | Prisma.TransactionClient,
   where: Prisma.InvoiceWhereInput,
   today = localToday(),
-): Promise<{ outstanding: Owed; overdue: Owed }> {
+  /** Take the students' advance credits off `outstanding` (for school-wide figures, not filtered lists). */
+  withCredits = false,
+): Promise<{ outstanding: Owed | OwedNet; overdue: Owed }> {
   const [open, late] = await Promise.all([
     prisma.invoice.aggregate({ where: { ...where, ...OPEN_INVOICE }, _sum: { total: true, paid: true }, _count: true }),
     prisma.invoice.aggregate({ where: { ...where, ...overdueWhere(today) }, _sum: { total: true, paid: true }, _count: true }),
@@ -39,7 +57,12 @@ export async function feeOutstanding(
     invoices: a._count,
     amount: Math.max(0, (a._sum.total ?? 0) - (a._sum.paid ?? 0)),
   });
-  return { outstanding: owed(open), overdue: owed(late) };
+  if (!withCredits) return { outstanding: owed(open), overdue: owed(late) };
+  const credit = await prisma.studentCredit.aggregate({
+    where: { schoolId: where.schoolId as string, student: where.student },
+    _sum: { amount: true },
+  });
+  return { outstanding: netOfCredits(owed(open), credit._sum.amount ?? 0), overdue: owed(late) };
 }
 
 /** What vouchers billed, leaving out balances carried onto them from earlier vouchers. */

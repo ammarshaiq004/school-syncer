@@ -7,6 +7,7 @@ import { dayStart, localToday } from '../common/dates.js';
 import { fineRule, invoiceStatus, paymentRejection } from './fee-calculator.js';
 import { bookLateFine } from './fine-booking.js';
 import { receiptNo } from './invoice-codes.js';
+import { receivedInstant } from './paid-on.js';
 
 export interface PaymentInput {
   invoiceId: string;
@@ -20,6 +21,8 @@ export interface PaymentInput {
    */
   idempotencyKey?: string;
   receivedById?: string;
+  /** The day the money was received, YYYY-MM-DD, for a receipt entered late. Defaults to today. */
+  paidOn?: string;
 }
 
 @Injectable()
@@ -41,6 +44,8 @@ export class PaymentsService {
       if (existing) return this.repeat(existing, input);
     }
 
+    const today = localToday();
+    const receivedAt = receivedInstant(input.paidOn, today);
     let payment;
     try {
       payment = await this.retrying(() => this.prisma.$transaction(
@@ -64,7 +69,7 @@ export class PaymentsService {
           where: { id: schoolId },
           select: { lateFeePerDay: true, lateFeeMaxDays: true, lateFeeCap: true },
         });
-        const { invoice } = await bookLateFine(tx, found, dayStart(localToday()), fineRule(school));
+        const { invoice } = await bookLateFine(tx, found, dayStart(input.paidOn ?? today), fineRule(school));
         // A voucher never takes more than it owes.
         const rejection = paymentRejection(input.amount, invoice);
         if (rejection) throw new BadRequestException(rejection);
@@ -83,6 +88,7 @@ export class PaymentsService {
             idempotencyKey: input.idempotencyKey,
             receiptNo: receiptNo(),
             receivedById: input.receivedById,
+            receivedAt,
           },
         });
       },
