@@ -27,6 +27,7 @@ import { api } from "@/lib/api";
 import {
   CERTIFICATE_SHORT,
   CERTIFICATE_TITLE,
+  NEEDS_REMARKS,
   CONDUCT,
   type Certificate,
   type CertificateDetails,
@@ -51,7 +52,7 @@ interface StudentHit {
   enrollments: { section: { name: string; class: { name: string } } }[];
 }
 
-const TYPES: CertificateType[] = ["LEAVING", "CHARACTER", "ENROLMENT"];
+const TYPES: CertificateType[] = ["LEAVING", "CHARACTER", "ENROLMENT", "BIRTH", "STUDY", "PROVISIONAL", "SPORTS", "APPRECIATION", "WARNING"];
 
 /** Pick a student, then fill in and issue a certificate for them. */
 export default function NewCertificatePage() {
@@ -259,16 +260,19 @@ function IssueForm({
             <Select label="Conduct and character" name="conduct" defaultValue="Good" options={CONDUCT.map((c) => ({ value: c, label: c }))} />
             {type === "LEAVING" && (
               <>
-                <TextField label="Date of leaving" name="leavingOn" type="date" defaultValue={today} required />
-                <TextField label="Reason for leaving" name="reason" placeholder="Family moved to Islamabad" maxLength={200} />
+                <TextField label="Date of leaving" name="leavingOn" type="date" defaultValue={d.details.leavingOn ?? today} required />
+                <TextField label="Reason for leaving" name="reason" defaultValue={d.details.reason ?? ""} placeholder="Family moved to Islamabad" maxLength={200} />
               </>
             )}
           </div>
           <TextField
-            label={type === "LEAVING" ? "Remarks (optional)" : "Issued for (optional)"}
+            label={type === "LEAVING" ? "Remarks (optional)" : NEEDS_REMARKS.includes(type) ? "What is it for" : "Issued for (optional)"}
             name="remarks"
             maxLength={300}
-            placeholder={type === "LEAVING" ? "Passed the annual examination" : "a passport application"}
+            required={NEEDS_REMARKS.includes(type)}
+            placeholder={
+              type === "LEAVING" ? "Passed the annual examination" : type === "SPORTS" ? "the inter-school cricket tournament" : type === "APPRECIATION" ? "first position in the science fair" : type === "WARNING" ? "repeated absence without leave" : "a passport application"
+            }
           />
 
           {type === "LEAVING" && d.duesOwed > 0 && !blocked && (

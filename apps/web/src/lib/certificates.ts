@@ -1,15 +1,27 @@
-export type CertificateType = "LEAVING" | "CHARACTER" | "ENROLMENT";
+export type CertificateType = "LEAVING" | "CHARACTER" | "ENROLMENT" | "BIRTH" | "STUDY" | "PROVISIONAL" | "SPORTS" | "APPRECIATION" | "WARNING";
 
 export const CERTIFICATE_TITLE: Record<CertificateType, string> = {
   LEAVING: "School Leaving Certificate",
   CHARACTER: "Character Certificate",
   ENROLMENT: "Enrolment Certificate",
+  BIRTH: "Birth Certificate",
+  STUDY: "Study Certificate",
+  PROVISIONAL: "Provisional Certificate",
+  SPORTS: "Sports Certificate",
+  APPRECIATION: "Certificate of Appreciation",
+  WARNING: "Warning Letter",
 };
 
 export const CERTIFICATE_SHORT: Record<CertificateType, string> = {
   LEAVING: "Leaving",
   CHARACTER: "Character",
   ENROLMENT: "Enrolment",
+  BIRTH: "Birth",
+  STUDY: "Study",
+  PROVISIONAL: "Provisional",
+  SPORTS: "Sports",
+  APPRECIATION: "Appreciation",
+  WARNING: "Warning letter",
 };
 
 export const CONDUCT = ["Excellent", "Very good", "Good", "Satisfactory"];
@@ -18,7 +30,7 @@ export interface CertificateDetails {
   studentName: string;
   guardianName: string | null;
   guardianRelation: string | null;
-  gender: "MALE" | "FEMALE";
+  gender: "MALE" | "FEMALE" | "OTHER" | "UNSPECIFIED";
   status: string;
   admissionNo: string;
   dateOfBirth: string | null;
@@ -70,3 +82,6 @@ export const verifyUrl = (code: string) =>
 export const childOf = (gender: string) => (gender === "FEMALE" ? "daughter" : "son");
 export const pronoun = (gender: string) =>
   gender === "FEMALE" ? { he: "she", his: "her", He: "She", His: "Her" } : { he: "he", his: "his", He: "He", His: "His" };
+
+/** Types whose wording needs a line from the issuer (what for) before they can be issued. */
+export const NEEDS_REMARKS: CertificateType[] = ["SPORTS", "APPRECIATION", "WARNING"];

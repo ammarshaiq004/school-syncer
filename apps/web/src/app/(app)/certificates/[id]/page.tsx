@@ -14,6 +14,7 @@ import {
   verifyUrl,
   type Certificate,
   type CertificateDetails,
+  type CertificateType,
 } from "@/lib/certificates";
 import { day, rupees } from "@/lib/format";
 import { hasRole, SETUP, useSession } from "@/lib/session";
@@ -239,33 +240,71 @@ function LeavingBody({ d }: { d: CertificateDetails }) {
   );
 }
 
-/** Character and enrolment certificates read as a short letter. */
-function LetterBody({ type, d }: { type: "CHARACTER" | "ENROLMENT"; d: CertificateDetails }) {
+/** Everything except the leaving certificate reads as a short letter. */
+function LetterBody({ type, d }: { type: Exclude<CertificateType, "LEAVING">; d: CertificateDetails }) {
   const p = pronoun(d.gender);
   const studying = d.status === "ACTIVE";
   const of = d.guardianName ? `, ${childOf(d.gender)} of ${d.guardianName},` : "";
   const dob = d.dateOfBirth
     ? ` ${p.His} date of birth as recorded by the school is ${day(d.dateOfBirth)} (${d.dateOfBirthWords}).`
     : "";
+  const what = d.remarks?.replace(/^for\s+/i, "").replace(/\.$/, "") ?? "";
+  const who = (
+    <>
+      <b>{d.studentName}</b>
+      {of} Admission No. <b>{d.admissionNo}</b>
+    </>
+  );
   return (
     <div className="space-y-5 font-serif text-[17px] leading-8">
-      <p>To whom it may concern,</p>
+      <p>{type === "WARNING" ? `Dear parent or guardian,` : `To whom it may concern,`}</p>
       {type === "ENROLMENT" ? (
         <p>
-          This is to certify that <b>{d.studentName}</b>{of} Admission No. <b>{d.admissionNo}</b>, is a bonafide student of
-          this school, studying in <b>{d.className ?? "–"}</b>
+          This is to certify that {who}, is a bonafide student of this school, studying in <b>{d.className ?? "–"}</b>
           {d.session && <> in the {d.session} session</>}. {p.He} has been a student here since {day(d.admittedOn)}.{dob}
+        </p>
+      ) : type === "BIRTH" ? (
+        <p>
+          This is to certify that {who}, was born on <b>{d.dateOfBirth ? day(d.dateOfBirth) : "–"}</b>
+          {d.dateOfBirthWords && <> ({d.dateOfBirthWords})</>}, according to the admission record of this school.
+        </p>
+      ) : type === "STUDY" ? (
+        <p>
+          This is to certify that {who}, {studying ? "is studying" : "studied"} in this school
+          {d.className && <>, {studying ? "currently in" : "last in"} <b>{d.className}</b></>}
+          {d.session && <> during the {d.session} session</>}, having joined on {day(d.admittedOn)}.
+        </p>
+      ) : type === "PROVISIONAL" ? (
+        <p>
+          This is a provisional certificate to confirm that {who}, {studying ? "is" : "was"} a student of this school
+          {d.className && <>, {studying ? "currently in" : "last in"} <b>{d.className}</b></>}. It is issued until the final
+          certificate is ready and is valid only for the purpose stated.
+        </p>
+      ) : type === "SPORTS" ? (
+        <p>
+          This is to certify that {who}, took part in <b>{what}</b> and represented the school with spirit and sportsmanship.
+        </p>
+      ) : type === "APPRECIATION" ? (
+        <p>
+          This certificate is presented to {who}, in appreciation of <b>{what}</b>. The school is proud of {p.his} effort.
+        </p>
+      ) : type === "WARNING" ? (
+        <p>
+          This letter is to formally inform you that {who}, has been given a warning for <b>{what}</b>. We ask for your help
+          so that this does not happen again; a repeat may lead to further action under the school rules.
         </p>
       ) : (
         <p>
-          This is to certify that <b>{d.studentName}</b>{of} Admission No. <b>{d.admissionNo}</b>, {studying ? "is" : "was"} a
-          student of this school{d.className && <>, {studying ? "currently in" : "last in"} <b>{d.className}</b></>}. During{" "}
-          {p.his} time here {p.his} conduct and character {studying ? "have been" : "were"} <b>{d.conduct.toLowerCase()}</b>.
-          To the best of our knowledge {p.he} bears a good moral character.
+          This is to certify that {who}, {studying ? "is" : "was"} a student of this school
+          {d.className && <>, {studying ? "currently in" : "last in"} <b>{d.className}</b></>}. During {p.his} time here {p.his}{" "}
+          conduct and character {studying ? "have been" : "were"} <b>{d.conduct.toLowerCase()}</b>. To the best of our knowledge{" "}
+          {p.he} bears a good moral character.
         </p>
       )}
-      {d.remarks && <p>It is issued at the parent&apos;s request for {d.remarks.replace(/^for\s+/i, "").replace(/\.$/, "")}.</p>}
-      <p>We wish {p.he === "she" ? "her" : "him"} every success.</p>
+      {d.remarks && !["SPORTS", "APPRECIATION", "WARNING"].includes(type) && (
+        <p>It is issued at the parent&apos;s request for {d.remarks.replace(/^for\s+/i, "").replace(/\.$/, "")}.</p>
+      )}
+      {type !== "WARNING" && <p>We wish {p.he === "she" ? "her" : "him"} every success.</p>}
     </div>
   );
 }

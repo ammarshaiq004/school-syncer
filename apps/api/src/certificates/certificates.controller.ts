@@ -148,8 +148,14 @@ export class CertificatesController {
         },
       }),
     ]);
+    const prefill = certificateDetails(student, { conduct: 'Good', remarks: null });
+    // A student already marked Left brings the date and reason from the leaving form.
+    if (student.status === StudentStatus.LEFT) {
+      prefill.leavingOn = iso(student.leftOn) ?? undefined;
+      prefill.reason = student.leavingReason ?? null;
+    }
     return {
-      details: certificateDetails(student, { conduct: 'Good', remarks: null }),
+      details: prefill,
       status: student.status,
       duesOwed: owed,
       booksOut: books,
@@ -177,6 +183,16 @@ export class CertificatesController {
         throw new ConflictException(
           `${details.studentName} is not studying here now, so an enrolment certificate can't be issued`,
         );
+    }
+
+    if (body.type === CertificateType.BIRTH && !details.dateOfBirth) {
+      throw new ConflictException(`${details.studentName} has no date of birth on file; add it first`);
+    }
+    if (
+      (body.type === CertificateType.SPORTS || body.type === CertificateType.APPRECIATION || body.type === CertificateType.WARNING) &&
+      !body.remarks?.trim()
+    ) {
+      throw new ConflictException('Say what this is for in the remarks');
     }
 
     if (body.type === CertificateType.LEAVING) {
@@ -233,9 +249,18 @@ export class CertificatesController {
       // Leaving: the student leaves their class and stops riding the van.
       if (body.type === CertificateType.LEAVING) {
         const leavingOn = details.leavingOn!;
+        const reasons = (await tx.school.findUniqueOrThrow({ where: { id: user.schoolId }, select: { leavingReasons: true } })).leavingReasons;
+        const typed = body.reason?.trim();
         await tx.student.update({
           where: { id: student.id },
-          data: { status: StudentStatus.LEFT, leftOn: dayStart(leavingOn) },
+          data: {
+            status: StudentStatus.LEFT,
+            leftOn: dayStart(leavingOn),
+            // The certificate's reason is also the student's leaving reason (a listed one, else "Other" with the text as remarks).
+            leavingReason: typed && reasons.includes(typed) ? typed : (reasons.includes('Other') ? 'Other' : reasons[0]),
+            leavingRemarks: typed && !reasons.includes(typed) ? typed : null,
+            leavingBalance: details.duesOwed ?? 0,
+          },
         });
         offUserIds = await disableStudentLogins(tx, [student.id]);
         await tx.enrollment.updateMany({
