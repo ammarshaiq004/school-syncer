@@ -21,9 +21,10 @@ export function dueInDays(days: number, today = localToday()): string {
  */
 export async function createAdhocVoucher(
   tx: Prisma.TransactionClient,
-  input: { schoolId: string; studentId: string; lines: InvoiceLineDraft[]; dueDate: string },
+  input: { schoolId: string; studentId: string; lines: InvoiceLineDraft[]; dueDate: string; issuedOn?: string },
 ) {
-  const period = localToday().slice(0, 7);
+  // Back-dated vouchers (opening balances) are listed under the month they belong to.
+  const period = (input.issuedOn ?? localToday()).slice(0, 7);
   const total = input.lines.reduce((s, l) => s + l.amount, 0);
   return tx.invoice.create({
     data: {
@@ -33,6 +34,7 @@ export async function createAdhocVoucher(
       period,
       kind: InvoiceKind.ADHOC,
       dueDate: dayStart(input.dueDate),
+      ...(input.issuedOn ? { issueDate: dayStart(input.issuedOn) } : {}),
       total,
       status: total <= 0 ? InvoiceStatus.PAID : InvoiceStatus.UNPAID,
       lines: { create: input.lines },

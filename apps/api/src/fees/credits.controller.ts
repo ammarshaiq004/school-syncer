@@ -8,6 +8,7 @@ import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { creditEntry } from './credits.js';
+import { applyOpeningBalance } from './opening-balance.js';
 
 const entrySchema = z.object({
   studentId: z.string().min(1),
@@ -16,6 +17,15 @@ const entrySchema = z.object({
   note: z.string().trim().max(200).optional(),
   /** The day the money was received (YYYY-MM-DD); defaults to today. */
   effectiveOn: z.iso.date().optional(),
+});
+
+const openingSchema = z.object({
+  studentId: z.string().min(1),
+  /** Positive: the student owes this much from before. Negative: the family is this far ahead. */
+  amount: z.number().int().min(-10_000_000).max(10_000_000),
+  note: z.string().trim().max(200).optional(),
+  /** The day the balance stood (YYYY-MM-DD); defaults to today. */
+  asOf: z.iso.date().optional(),
 });
 
 /** Advance credits: money a family paid ahead of any voucher, kept per student. */
@@ -71,5 +81,17 @@ export class CreditsController {
     });
     await this.audit.record(user, 'credit.add', 'StudentCredit', entry.id, { after: entry });
     return entry;
+  }
+
+  /** A balance brought forward: arrears become a back-dated voucher, an advance becomes credit. */
+  @Post('opening-balance')
+  @Roles(...FEE_ROLES)
+  async opening(@CurrentUser() user: AuthUser, @Body(new ZodValidationPipe(openingSchema)) body: z.infer<typeof openingSchema>) {
+    await this.student(user, body.studentId);
+    const result = await this.prisma.$transaction((tx) =>
+      applyOpeningBalance(tx, { schoolId: user.schoolId, ...body, userId: user.sub }),
+    );
+    await this.audit.record(user, 'opening_balance.set', 'Student', body.studentId, { after: { ...body, result } });
+    return result ?? { kind: 'none' as const };
   }
 }

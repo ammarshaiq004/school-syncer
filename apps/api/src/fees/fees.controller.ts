@@ -114,6 +114,8 @@ const paymentSchema = z.object({
   reference: z.string().trim().max(80).optional(),
   /** Day the money was received (YYYY-MM-DD), for a receipt entered later; defaults to today. */
   paidOn: z.iso.date().optional(),
+  /** Who took the money, when it was not the person entering it (a staff user of this school). */
+  receivedById: z.string().min(1).optional(),
   // Sent by the client so a retried or double-clicked save records the payment once.
   // Namespaced so it can never match a gateway's key.
   idempotencyKey: z
@@ -582,6 +584,17 @@ export class FeesController {
     return { ...invoice, lateFine: fine, balance: owing ? Math.max(0, invoice.total - invoice.paid) : 0 };
   }
 
+  /** Staff who can be named as the receiver of a payment (for entering a receipt on someone's behalf). */
+  @Get('receivers')
+  @Roles(...FEE_ROLES)
+  receivers(@CurrentUser() user: AuthUser) {
+    return this.prisma.user.findMany({
+      where: { schoolId: user.schoolId, isActive: true, roles: { some: { role: { in: STAFF_ROLES } } } },
+      orderBy: { name: 'asc' },
+      select: { id: true, name: true },
+    });
+  }
+
   /** Records a counter or bank payment. */
   @Post('invoices/:id/payments')
   @Roles(...FEE_ROLES)
@@ -594,10 +607,16 @@ export class FeesController {
       where: { id, schoolId: user.schoolId, student: inFeeScope(user) },
     });
     if (!owned) throw new NotFoundException('Invoice not found');
+    if (body.receivedById && body.receivedById !== user.sub) {
+      const staff = await this.prisma.user.count({
+        where: { id: body.receivedById, schoolId: user.schoolId, isActive: true, roles: { some: { role: { in: STAFF_ROLES } } } },
+      });
+      if (!staff) throw new BadRequestException('Pick a staff member of this school as the receiver.');
+    }
     const result = await this.payments.record(user.schoolId, {
       invoiceId: id,
       ...body,
-      receivedById: user.sub,
+      receivedById: body.receivedById ?? user.sub,
     });
     await this.audit.record(user, 'payment.create', 'Payment', result.payment.id, { after: result.payment });
     return result;

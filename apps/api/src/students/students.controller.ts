@@ -44,6 +44,7 @@ import {
 import { bFormField } from '../common/identity.js';
 import { billAdmissionFee } from '../fees/adhoc-vouchers.js';
 import { studentDates } from './student-dates.js';
+import { applyOpeningBalance } from '../fees/opening-balance.js';
 import { createStudentRecord, guardianInputSchema, importWarnings } from './student-records.js';
 import {
   directoryQuerySchema,
@@ -424,7 +425,12 @@ export class StudentsController {
       .sort((a, b) => Number(!a.admissionNo) - Number(!b.admissionNo));
     await this.prisma.$transaction(
       async (tx) => {
-        for (const s of students) await createStudentRecord(tx, { ...s, schoolId: user.schoolId, confirmed: true });
+        for (const { openingBalance, ...s } of students) {
+          const created = await createStudentRecord(tx, { ...s, schoolId: user.schoolId, confirmed: true });
+          if (openingBalance) {
+            await applyOpeningBalance(tx, { schoolId: user.schoolId, studentId: created.id, amount: openingBalance, userId: user.sub });
+          }
+        }
       },
       { timeout: 300_000, maxWait: 10_000 },
     );

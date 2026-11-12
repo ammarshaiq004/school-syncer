@@ -256,3 +256,17 @@ describe('gender and admission date', () => {
     expect(future.errors).toContain('Admission date is in the future');
   });
 });
+
+describe('opening balance', () => {
+  it('reads owed and paid-ahead amounts and rejects junk', () => {
+    const [owed, ahead, junk, zero] = checkImportRows(
+      [row({ openingBalance: 'Rs. 4,500' }), row({ openingBalance: '-700' }), row({ openingBalance: 'a lot' }), row({ openingBalance: '0' })],
+      sections,
+      new Set(),
+    );
+    expect(owed.student?.openingBalance).toBe(4500);
+    expect(ahead.student?.openingBalance).toBe(-700);
+    expect(junk.errors[0]).toContain('Opening balance "a lot"');
+    expect(zero.student?.openingBalance).toBeUndefined();
+  });
+});

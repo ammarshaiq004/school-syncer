@@ -116,6 +116,7 @@ export class DashboardController {
           method: true,
           receiptNo: true,
           receivedAt: true,
+          receivedBy: { select: { name: true } },
           invoice: {
             select: {
               id: true,
@@ -300,6 +301,7 @@ export class DashboardController {
         method: p.method,
         receiptNo: p.receiptNo,
         receivedAt: p.receivedAt,
+        receivedBy: p.receivedBy?.name ?? null,
         invoiceId: p.invoice.id,
         period: p.invoice.period,
         invoiceStatus: p.invoice.status,

@@ -23,6 +23,7 @@ export const importRowSchema = z.object({
   gender: cell,
   dateOfBirth: cell,
   admissionDate: cell,
+  openingBalance: cell,
   class: cell,
   section: cell,
   rollNo: cell,
@@ -54,6 +55,8 @@ export interface ParsedStudent {
   gender: Gender;
   dateOfBirth?: Date;
   admittedOn?: Date;
+  /** Rupees owed from before (positive) or paid ahead (negative). */
+  openingBalance?: number;
   bFormNo?: string;
   address?: string;
   guardians: GuardianInput[];
@@ -155,6 +158,14 @@ export function checkImportRows(
       admittedOn = parseDate(r.admissionDate);
       if (!admittedOn) errors.push(`Admission date "${r.admissionDate}" should look like 21/03/2024`);
       else if (admittedOn > today) errors.push('Admission date is in the future');
+    }
+
+    let openingBalance: number | undefined;
+    if (r.openingBalance) {
+      const n = Number(r.openingBalance.replace(/[,\s]|rs\.?/gi, ''));
+      if (!Number.isInteger(n) || Math.abs(n) > 10_000_000) {
+        errors.push(`Opening balance "${r.openingBalance}" should be a whole number of rupees (negative if paid ahead)`);
+      } else if (n !== 0) openingBalance = n;
     }
 
     // A single "Class" cell like "Grade 1 A" works when the section column is empty.
@@ -297,6 +308,7 @@ export function checkImportRows(
         gender,
         dateOfBirth,
         admittedOn,
+        openingBalance,
         bFormNo,
         address: r.address || undefined,
         guardians,

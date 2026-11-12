@@ -17,6 +17,7 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { PrismaService } from '../prisma/prisma.service.js';
 import { monthBounds, riderFee } from '../transport/transport-rules.js';
 import { fineRule, invoiceLines, type InvoiceLineDraft, type StructureRow } from './fee-calculator.js';
+import { creditToApply } from './credits.js';
 import { bookLateFine } from './fine-booking.js';
 import { voucherNo } from './invoice-codes.js';
 import { OPEN_INVOICE } from './outstanding.js';
@@ -168,6 +169,12 @@ export class VoucherRunsService {
             });
           }
           if (!lines.length) return null;
+          // Money the family paid ahead comes off this voucher, up to what it bills.
+          const held = (await tx.studentCredit.aggregate({ where: { studentId: e.studentId }, _sum: { amount: true } }))._sum.amount ?? 0;
+          const credit = creditToApply(held, lines.reduce((sum, l) => sum + l.amount, 0));
+          if (credit > 0) {
+            lines.push({ feeHeadId: null, description: 'Advance credit applied', amount: -credit, kind: InvoiceLineKind.ADJUSTMENT });
+          }
           const total = lines.reduce((sum, l) => sum + l.amount, 0);
           const invoice = await tx.invoice.create({
             data: {
@@ -187,6 +194,18 @@ export class VoucherRunsService {
               lines: { create: lines },
             },
           });
+          if (credit > 0) {
+            await tx.studentCredit.create({
+              data: {
+                schoolId: user.schoolId,
+                studentId: e.studentId,
+                amount: -credit,
+                note: `Applied to voucher ${invoice.voucherNo}`,
+                effectiveOn: dayStart(localToday()),
+                createdById: user.sub,
+              },
+            });
+          }
           if (fines.length) {
             await tx.bookLoan.updateMany({
               where: { id: { in: fines.map((f) => f.id) }, fineStatus: FineStatus.DUE },

@@ -12,3 +12,6 @@ export function creditEntry(amount: number, held: number, effectiveOn: string, t
   }
   return amount;
 }
+
+/** How much of a student's advance credit a voucher billing `billed` rupees takes. */
+export const creditToApply = (held: number, billed: number): number => Math.max(0, Math.min(held, billed));
