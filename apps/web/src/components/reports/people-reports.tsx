@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Cake, Download, Printer } from "lucide-react";
+import { Cake, Download, MapPin, Printer } from "lucide-react";
 import { Button, Card, Checkbox, DataTable, SelectField, SkeletonRows, type Column } from "@/components/ui";
 import { downloadCsv } from "@/lib/csv";
 import { day, rupees, todayIso } from "@/lib/format";
@@ -9,9 +9,10 @@ import { useApi } from "@/lib/use-api";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-type Report = "birthdays" | "staff";
+type Report = "birthdays" | "localities" | "staff";
 const REPORTS: { value: Report; label: string }[] = [
   { value: "birthdays", label: "Birthdays" },
+  { value: "localities", label: "Students by locality" },
   { value: "staff", label: "Staff register (choose columns)" },
 ];
 
@@ -22,6 +23,7 @@ export function PeopleReports() {
     <div className="flex flex-col gap-4">
       <SelectField label="Report" value={report} onChange={(e) => setReport(e.target.value as Report)} options={REPORTS} wrapperClassName="w-full sm:w-64 print:hidden" />
       {report === "birthdays" && <Birthdays />}
+      {report === "localities" && <Localities />}
       {report === "staff" && <StaffRegister />}
     </div>
   );
@@ -133,6 +135,66 @@ function StaffRegister() {
             <tbody>{rows.map((m) => <tr key={m.id}>{cols.map((c) => <td key={c.id} className="border border-border px-2 py-1">{c.get(m)}</td>)}</tr>)}</tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+interface Area { id: string | null; name: string; total: number; boys: number; girls: number }
+interface AreaStudent { name: string; admissionNo: string; section: string; address: string; guardian: string; phone: string }
+
+/** How many students live in each area, and the families of any one area. */
+function Localities() {
+  const [areaId, setAreaId] = useState("");
+  const report = useApi<{ localities: Area[]; students: AreaStudent[] }>(`/reports/people/localities${areaId ? `?localityId=${encodeURIComponent(areaId)}` : ""}`);
+  const areas = report.data?.localities ?? [];
+  const students = report.data?.students ?? [];
+  const areaCols: Column<Area>[] = [
+    { id: "name", header: "Locality", sortValue: (a) => a.name, cell: (a) => <span className="font-medium text-fg">{a.name}</span> },
+    { id: "total", header: "Students", align: "right", sortValue: (a) => a.total, cell: (a) => a.total },
+    { id: "boys", header: "Boys", align: "right", sortValue: (a) => a.boys, cell: (a) => a.boys, hideBelow: "sm" },
+    { id: "girls", header: "Girls", align: "right", sortValue: (a) => a.girls, cell: (a) => a.girls, hideBelow: "sm" },
+  ];
+  const studentCols: Column<AreaStudent>[] = [
+    { id: "name", header: "Student", sortValue: (s) => s.name, cell: (s) => <div><div className="font-medium text-fg">{s.name}</div><div className="text-xs text-fg-muted">{s.admissionNo}</div></div> },
+    { id: "section", header: "Class", sortValue: (s) => s.section, cell: (s) => s.section, hideBelow: "sm" },
+    { id: "guardian", header: "Parent", cell: (s) => <div><div>{s.guardian}</div><div className="text-xs text-fg-muted">{s.phone}</div></div> },
+    { id: "address", header: "Address", cell: (s) => s.address, hideBelow: "md" },
+  ];
+  return (
+    <div className="flex flex-col gap-4">
+      <DataTable
+        label="Students by locality"
+        columns={areaCols}
+        data={report.data ? areas : undefined}
+        error={report.error}
+        onRetry={report.reload}
+        getRowId={(a) => a.id ?? "none"}
+        toolbarActions={
+          <>
+            <SelectField aria-label="Show the families of" value={areaId} onChange={(e) => setAreaId(e.target.value)} placeholder="Show the families of…" options={areas.map((a) => ({ value: a.id ?? "none", label: a.name }))} wrapperClassName="w-56 print:hidden" />
+            <Button variant="secondary" size="sm" icon={<Download />} disabled={!areas.length} onClick={() => downloadCsv("students-by-locality.csv", ["Locality", "Students", "Boys", "Girls"], areas.map((a) => [a.name, a.total, a.boys, a.girls]))}>
+              Download
+            </Button>
+          </>
+        }
+        empty={{ icon: <MapPin />, title: "No students yet", description: "Localities are set on each student's record." }}
+      />
+      {areaId && (
+        <DataTable
+          label="Families in this locality"
+          columns={studentCols}
+          data={report.data ? students : undefined}
+          getRowId={(s) => s.admissionNo}
+          getSearchText={(s) => `${s.name} ${s.admissionNo} ${s.guardian}`}
+          searchPlaceholder="Search student or parent"
+          toolbarActions={
+            <Button variant="secondary" size="sm" icon={<Download />} disabled={!students.length} onClick={() => downloadCsv("locality-families.csv", ["Admission no.", "Student", "Class", "Parent", "Phone", "Address"], students.map((s) => [s.admissionNo, s.name, s.section, s.guardian, s.phone, s.address]))}>
+              Download
+            </Button>
+          }
+          empty={{ title: "No students in this locality" }}
+        />
       )}
     </div>
   );
