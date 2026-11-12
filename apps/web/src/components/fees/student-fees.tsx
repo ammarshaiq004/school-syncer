@@ -24,7 +24,7 @@ import {
 } from "@/components/ui";
 import { api } from "@/lib/api";
 import { rupees, todayIso } from "@/lib/format";
-import { can, useSession } from "@/lib/session";
+import { can, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
 export interface StudentInvoice {
@@ -430,6 +430,8 @@ function AdhocVoucherDialog({
   const blank = (key: number): DraftLine => ({ key, feeHeadId: "", description: "", amount: "" });
   const [lines, setLines] = useState<DraftLine[]>([blank(0)]);
   const [dueDate, setDueDate] = useState(todayIso());
+  // Admins may back-date a voucher to recreate history.
+  const canBackdate = hasRole(useSession(), SETUP);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const set = (key: number, patch: Partial<DraftLine>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -530,7 +532,7 @@ function AdhocVoucherDialog({
           >
             Add charge
           </Button>
-          <TextField label="Due date" type="date" min={todayIso()} required value={dueDate} onChange={(e) => setDueDate(e.target.value)} wrapperClassName="w-44" />
+          <TextField label="Due date" type="date" min={canBackdate ? undefined : todayIso()} max="2100-12-31" required value={dueDate} onChange={(e) => setDueDate(e.target.value)} wrapperClassName="w-44" />
         </div>
         {error && <Alert tone="danger">{error}</Alert>}
       </form>

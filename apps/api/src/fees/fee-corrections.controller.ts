@@ -7,21 +7,11 @@ import { dateRange, nextDay } from '../common/date-range.js';
 import { startOfLocalDay } from '../common/dates.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
+import { adjustmentSchema } from './adjustment-input.js';
 import { FeeCorrectionsService } from './fee-corrections.service.js';
 
 const reason = z.string().trim().min(3, 'Give a reason of at least 3 characters').max(300);
 const reasonSchema = z.object({ reason });
-const adjustmentSchema = z.object({
-  amount: z
-    .number()
-    .int()
-    .min(-10_000_000)
-    .max(10_000_000)
-    .refine((n) => n !== 0, 'Enter a discount (negative) or a charge (positive)'),
-  reason,
-  description: z.string().trim().max(80).optional(),
-});
-
 /**
  * The receipts list and corrections to fee money (SCHOOL-137). Writes need
  * fees "manage" (the class-level @Permission), reads need "view".
@@ -96,13 +86,16 @@ export class FeeCorrectionsController {
     return this.corrections.waiveFine(user, id, body.reason);
   }
 
-  /** Adds a discount (negative) or extra charge (positive) line to a voucher. */
+  /**
+   * Adds a discount or extra charge line to a voucher. Send `type` (DISCOUNT or CHARGE) with a
+   * positive amount, or a signed amount alone (negative discount, positive charge). Unknown fields are refused.
+   */
   @Post('invoices/:id/adjustments')
   @Roles(...FEE_ROLES)
   adjust(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body(new ZodValidationPipe(adjustmentSchema)) body: z.infer<typeof adjustmentSchema>,
+    @Body(new ZodValidationPipe(adjustmentSchema)) body: z.output<typeof adjustmentSchema>,
   ) {
     return this.corrections.adjustInvoice(user, id, body);
   }

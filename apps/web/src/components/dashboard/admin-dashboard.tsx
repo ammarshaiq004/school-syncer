@@ -174,7 +174,7 @@ export function AdminDashboard() {
 
   const quickActions: QuickAction[] = (
     [
-      { href: "/students", label: "Add student", description: "Enrol a new pupil", icon: <Plus /> },
+      { href: "/students?add=1", label: "Add student", description: "Enrol a new pupil", icon: <Plus /> },
       { href: "/attendance", label: "Take attendance", description: "Mark today's register", icon: <CalendarCheck /> },
       { href: "/fees", label: "Collect fees", description: "Record a payment", icon: <Receipt /> },
       { href: "/announcements", label: "Post a notice", description: "Message parents and staff", icon: <Megaphone /> },
@@ -246,7 +246,7 @@ export function AdminDashboard() {
               </Link>
             )}
             {reachable.has("/students") && (
-              <Link href="/students" className={buttonClass("primary")}>
+              <Link href="/students?add=1" className={buttonClass("primary")}>
                 <Plus aria-hidden />
                 Add student
               </Link>

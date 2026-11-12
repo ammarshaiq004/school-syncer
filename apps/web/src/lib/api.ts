@@ -1,4 +1,5 @@
 import { reportError } from "./error-reporting";
+import { issueMessage } from "./api-errors";
 
 /** Set at build time; next.config.ts refuses a production build without it. */
 export const API_URL =
@@ -255,7 +256,7 @@ async function request<T>(path: string, init: RequestInit, token: string | null,
     const issues: { path: string; message: string }[] | undefined =
       data?.issues;
     const message = issues?.length
-      ? issues.map((i) => `${i.path}: ${i.message}`).join(", ")
+      ? issues.map(issueMessage).join(", ")
       : (data?.message ?? `Request failed (${res.status})`);
     const requestId: string | null = data?.requestId ?? res.headers.get("X-Request-Id") ?? sentId ?? null;
     const error = new ApiError(res.status, withReference(message, res.status, requestId), data, requestId);

@@ -19,7 +19,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { z } from 'zod';
-import { assertSchoolWide, campusScopeFor, FEE_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
+import { assertSchoolWide, campusScopeFor, FEE_ROLES, hasAnyRole, SETUP_ROLES, STAFF_ROLES } from '../common/admin-roles.js';
 import { AuditService } from '../common/audit.service.js';
 import type { AuthUser } from '../common/auth-user.js';
 import { CurrentUser, Permission, RequiresFeature, Roles } from '../common/decorators.js';
@@ -73,7 +73,7 @@ const generateSchema = z.object({
   // Defaults to the school's fee rule.
   carryForward: z.boolean().optional(),
 });
-const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+const isoDay = z.iso.date('Enter a real date, like 2026-11-30').refine((d) => d >= '2000-01-01' && d <= '2100-12-31', 'Enter a year between 2000 and 2100');
 const adhocSchema = z.object({
   lines: z
     .array(
@@ -338,7 +338,10 @@ export class FeesController {
       return { feeHeadId: l.feeHeadId ?? null, description, amount: l.amount };
     });
     const today = localToday();
-    if (body.dueDate && body.dueDate < today) throw new BadRequestException('The due date cannot be in the past.');
+    // Admins may back-date a voucher (to recreate history); fee staff may not.
+    if (body.dueDate && body.dueDate < today && !hasAnyRole(user, SETUP_ROLES)) {
+      throw new BadRequestException('The due date cannot be in the past.');
+    }
     const invoice = await this.prisma.$transaction((tx) =>
       createAdhocVoucher(tx, { schoolId: user.schoolId, studentId, lines, dueDate: body.dueDate ?? today }),
     );

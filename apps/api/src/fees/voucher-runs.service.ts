@@ -179,6 +179,8 @@ export class VoucherRunsService {
               kind: InvoiceKind.MONTHLY,
               runId: run.id,
               dueDate,
+              // A past month recreated for history is dated to that month, not to today.
+              ...(body.period < localToday().slice(0, 7) ? { issueDate: dayStart(`${body.period}-01`) } : {}),
               total,
               arrears: carriedLines.reduce((s, c) => s + c.amount, 0),
               status: total <= 0 ? InvoiceStatus.PAID : InvoiceStatus.UNPAID,

@@ -124,8 +124,17 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
   const [searchText, setSearchText] = useState(query.search);
   const [open, setOpen] = useState<DirectoryRow | null>(null);
   const [action, setAction] = useState<StudentAction>(null);
-  const [adding, setAdding] = useState(false);
+  // The dashboard's "Add student" links here with ?add=1 to open the form straight away.
+  const [adding, setAdding] = useState(() => searchParams.get("add") === "1" && perms.setup);
   const [exporting, setExporting] = useState(false);
+  useEffect(() => {
+    if (searchParams.get("add") !== "1") return;
+    const rest = new URLSearchParams(searchParams.toString());
+    rest.delete("add");
+    router.replace(rest.size ? `${pathname}?${rest}` : pathname);
+    // Runs once for the link; later filter changes rewrite the URL themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const apiParams = new URLSearchParams(writeQuery(query));
   apiParams.set("page", String(query.page));
