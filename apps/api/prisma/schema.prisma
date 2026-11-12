@@ -69,6 +69,8 @@ model School {
   siblingThirdPercent  Int            @default(0)
   siblingFeeHeadIds    String[]       @default([])
   /// Reasons offered when a student leaves, graduates or is suspended (Setup > Students).
+  /// Kinds of document kept on a student's file (Setup > Students).
+  documentTypes        String[]       @default(["Birth certificate / B-Form", "Previous school leaving certificate", "Previous report card", "Guardian CNIC copy", "Medical record", "Other"])
   leavingReasons       String[]       @default(["Fee Defaulter", "Migration", "Misbehaviour", "Regular Absents", "Duplicate Entry", "Wrong Entry", "Course Completed", "Other"])
   /// A one-time fee head billed on its own voucher when a student is admitted,
   /// at the amount the fee setup gives the student's class. Null = none.
@@ -344,6 +346,7 @@ model User {
   staffCertificates       StaffCertificate[] @relation("StaffCertificateSubject")
   staffCertificatesIssued StaffCertificate[] @relation("StaffCertificateIssuer")
   payslips           Payslip[]
+  securityEntries    StaffSecurityEntry[]
   bookLoans          BookLoan[]        @relation("BookLoans")
   bookReservations   BookReservation[] @relation("BookReservations")
   certificatesIssued Certificate[]
@@ -515,6 +518,8 @@ model Student {
   user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
   credits     StudentCredit[]
   commitments FeeCommitment[]
+  notes       StudentNote[]
+  documents   StudentDocument[]
   photoFile   StoredFile?        @relation("StudentPhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   guardians   StudentGuardian[]
   enrollments Enrollment[]
@@ -840,6 +845,37 @@ model FeeCommitment {
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, promisedOn])
+  @@index([studentId])
+}
+
+/// A timestamped internal note on a student (never shown to parents or the student).
+model StudentNote {
+  id          String   @id @default(cuid())
+  schoolId    String
+  studentId   String
+  body        String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId, createdAt])
+}
+
+/// A document kept on a student's file: a scan or photo, filed under one of the school's document types.
+model StudentDocument {
+  id          String   @id @default(cuid())
+  schoolId    String
+  studentId   String
+  type        String
+  title       String
+  fileId      String   @unique
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  student Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  file    StoredFile @relation("StudentDocumentFile", fields: [fileId], references: [id], onDelete: Restrict)
+
   @@index([studentId])
 }
 
@@ -1236,8 +1272,28 @@ model StaffPayItem {
   name      String
   type      PayItemType
   amount    Int
+  /// A deduction the school holds as security and owes back; each finalised payslip adds it to the employee's security balance.
+  isSecurity Boolean     @default(false)
 
   profile StaffProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+/// Money held from an employee as security (positive) or given back (negative); the sum is the running balance.
+model StaffSecurityEntry {
+  id          String   @id @default(cuid())
+  schoolId    String
+  userId      String
+  amount      Int
+  note        String?
+  /// Set when a finalised payslip held the money, so finalising never counts a month twice.
+  payslipId   String?  @unique
+  effectiveOn DateTime @db.Date
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, userId])
 }
 
 model StaffAttendance {
@@ -2011,6 +2067,12 @@ enum CertificateType {
   LEAVING // school leaving certificate, issued when a student leaves
   CHARACTER
   ENROLMENT // "is a bonafide student of class ..."
+  BIRTH // date of birth as recorded by the school
+  STUDY // studied / is studying in a class and session
+  PROVISIONAL // issued before the final result or leaving certificate
+  SPORTS // took part in a sports event (remarks name it)
+  APPRECIATION // praise for an achievement (remarks say what for)
+  WARNING // a formal warning letter (remarks say why)
 }
 
 // A certificate as issued: the details printed on it are kept as they were
@@ -2643,6 +2705,7 @@ enum FilePurpose {
   PROBLEM_REPORT
   PAYMENT_PROOF
   CANDIDATE_CV
+  STUDENT_DOCUMENT
 }
 
 /// A file uploaded to the school's storage (S3-compatible bucket or local
@@ -2673,6 +2736,8 @@ model StoredFile {
   paymentClaim  PaymentClaim?  @relation("PaymentClaimProof")
   /// A job candidate's CV in the HR CV bank (purpose CANDIDATE_CV).
   candidateCv   Candidate?     @relation("CandidateCv")
+  /// A document kept on a student's file (purpose STUDENT_DOCUMENT).
+  studentDocument StudentDocument? @relation("StudentDocumentFile")
 
   @@index([schoolId])
   @@index([uploadedById])

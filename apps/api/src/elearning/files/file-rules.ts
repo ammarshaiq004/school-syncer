@@ -82,6 +82,8 @@ export const LIMITS: Record<FilePurpose, Partial<Record<FileKind, number>>> = {
   PAYMENT_PROOF: { image: 5 * MB, document: 5 * MB },
   // A job applicant's CV in the HR CV bank.
   CANDIDATE_CV: { document: 10 * MB, image: 10 * MB },
+  // A scan or photo kept on a student's file.
+  STUDENT_DOCUMENT: { document: 10 * MB, image: 10 * MB },
 };
 
 /** Bytes the type check needs from the start of a file. */

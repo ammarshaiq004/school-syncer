@@ -32,6 +32,7 @@ import { CandidatesController } from './hr/candidates.controller.js';
 import { PayrollRulesController } from './hr/payroll-rules.controller.js';
 import { AccountsController } from './accounts/accounts.controller.js';
 import { AccountsReportsController } from './accounts/accounts-reports.controller.js';
+import { StudentExtrasController } from './students/student-extras.controller.js';
 import { CommitmentsController } from './fees/commitments.controller.js';
 import { CreditsController } from './fees/credits.controller.js';
 import { FamiliesController } from './fees/families.controller.js';
@@ -196,6 +197,7 @@ import { UsersController } from './users/users.controller.js';
     FamiliesController,
     CreditsController,
     CommitmentsController,
+    StudentExtrasController,
     InstallmentsController,
     FeeReportsController,
     InsightsController,

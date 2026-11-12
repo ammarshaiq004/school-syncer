@@ -1,6 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { mkdtempSync, rmSync } from 'node:fs';
 import type { Server } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
@@ -11,6 +14,7 @@ describe('EduPortal gap closure (e2e)', () => {
   let app: INestApplication;
   let server: Server;
   let prisma: PrismaService;
+  const storageDir = mkdtempSync(join(tmpdir(), 'gap-docs-'));
   const run = `${Date.now()}${Math.floor(Math.random() * 1e6)}`;
   const email = `gap+${run}@test.pk`;
   const phone = (n: number) => `030${run.slice(-7)}${n}`;
@@ -27,6 +31,8 @@ describe('EduPortal gap closure (e2e)', () => {
   const summary = async () => (await request(server).get('/api/dashboard/summary').set(owner).expect(200)).body;
 
   beforeAll(async () => {
+    process.env.STORAGE_DRIVER = 'local';
+    process.env.STORAGE_LOCAL_DIR = storageDir;
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleFixture.createNestApplication({ rawBody: true });
     app.setGlobalPrefix('api');
@@ -44,6 +50,7 @@ describe('EduPortal gap closure (e2e)', () => {
   afterAll(async () => {
     await deleteSchools(prisma, { slug: schoolSlug });
     await app.close();
+    rmSync(storageDir, { recursive: true, force: true });
   });
 
   it('sets up a school with a fee structure', async () => {
@@ -266,5 +273,26 @@ describe('EduPortal gap closure (e2e)', () => {
     expect(found.admittedOn.toISOString().slice(0, 10)).toBe('2024-04-01');
     const credit = await prisma.studentCredit.aggregate({ where: { studentId: found.id }, _sum: { amount: true } });
     expect(credit._sum.amount).toBe(250);
+  });
+  it('keeps student documents and timestamped internal notes', async () => {
+    const types = (await request(server).get('/api/students/config/document-types').set(owner).expect(200)).body as string[];
+    expect(types.length).toBeGreaterThan(2);
+    const pdf = Buffer.from('%PDF-1.4\n%fake b-form\n');
+    const file = (await request(server).post('/api/students/files/upload').set(owner).attach('file', pdf, 'bform.pdf').expect(201)).body;
+    await request(server).post(`/api/students/${sara}/documents`).set(owner).send({ fileId: file.id, type: 'Made up', title: 'x' }).expect(400);
+    await request(server).post(`/api/students/${sara}/documents`).set(owner).send({ fileId: file.id, type: types[0], title: 'B-Form' }).expect(201);
+    // the same upload cannot be attached twice
+    await request(server).post(`/api/students/${ahmed}/documents`).set(owner).send({ fileId: file.id, type: types[0], title: 'again' }).expect(400);
+    const docs = (await request(server).get(`/api/students/${sara}/documents`).set(owner).expect(200)).body;
+    expect(docs).toHaveLength(1);
+    expect(docs[0].title).toBe('B-Form');
+    await request(server).delete(`/api/students/${sara}/documents/${docs[0].id}`).set(owner).expect(200);
+    expect((await request(server).get(`/api/students/${sara}/documents`).set(owner)).body).toHaveLength(0);
+
+    await request(server).post(`/api/students/${sara}/notes`).set(owner).send({ body: '  ' }).expect(400);
+    const note = (await request(server).post(`/api/students/${sara}/notes`).set(owner).send({ body: 'Father asked for a fee extension' }).expect(201)).body;
+    const notes = (await request(server).get(`/api/students/${sara}/notes`).set(owner).expect(200)).body;
+    expect(notes[0]).toMatchObject({ id: note.id, body: 'Father asked for a fee extension', by: 'Owner' });
+    await request(server).delete(`/api/students/${sara}/notes/${note.id}`).set(owner).expect(200);
   });
 });
