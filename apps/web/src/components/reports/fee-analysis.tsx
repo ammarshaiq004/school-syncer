@@ -11,6 +11,7 @@ import { day, rupees, thisMonth, todayIso } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
 const SUB = {
+  monthly: "Monthly summary",
   discounts: "Discounts",
   advance: "Advance fee",
   multi: "Months owed",
@@ -24,7 +25,7 @@ const label = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 
 /** Fee reports: discounts, advance fees, months owed, families, structure and instalments. */
 export function FeeAnalysis() {
-  const [sub, setSub] = useState<Sub>("discounts");
+  const [sub, setSub] = useState<Sub>("monthly");
   const [range, setRange] = useState({ from: `${thisMonth()}-01`, to: todayIso() });
   const dated = sub === "discounts" || sub === "advance" || sub === "installments";
   return (
@@ -38,6 +39,7 @@ export function FeeAnalysis() {
         />
         {dated && <DateRange from={range.from} to={range.to} onChange={setRange} />}
       </div>
+      {sub === "monthly" && <MonthlySummary />}
       {sub === "discounts" && <Discounts range={range} />}
       {sub === "advance" && <Advance range={range} />}
       {sub === "multi" && <MultiMonth />}
@@ -55,6 +57,35 @@ function Download_({ name, header, rows }: { name: string; header: string[]; row
     <Button variant="secondary" size="sm" icon={<Download />} disabled={!rows.length} className="print:hidden" onClick={() => downloadCsv(name, header, rows)}>
       Download for Excel
     </Button>
+  );
+}
+
+interface MonthRow { period: string; vouchers: number; billed: number; collected: number; outstanding: number; carried: number; collectedPct: number }
+
+/** Each billing month: billed, collected and still owed, newest first. */
+function MonthlySummary() {
+  const report = useApi<{ from: string; to: string; months: MonthRow[] }>("/reports/fees/monthly");
+  const cols: Column<MonthRow>[] = [
+    { id: "period", header: "Month", sortValue: (r) => r.period, cell: (r) => r.period },
+    { id: "vouchers", header: "Vouchers", align: "right", sortValue: (r) => r.vouchers, cell: (r) => r.vouchers, hideBelow: "sm" },
+    { id: "billed", header: "Billed", align: "right", sortValue: (r) => r.billed, cell: (r) => rupees(r.billed) },
+    { id: "collected", header: "Collected", align: "right", sortValue: (r) => r.collected, cell: (r) => rupees(r.collected) },
+    { id: "outstanding", header: "Still owed", align: "right", sortValue: (r) => r.outstanding, cell: (r) => rupees(r.outstanding) },
+    { id: "carried", header: "Carried forward", align: "right", sortValue: (r) => r.carried, cell: (r) => rupees(r.carried), hideBelow: "md" },
+    { id: "pct", header: "Collected %", align: "right", sortValue: (r) => r.collectedPct, cell: (r) => `${r.collectedPct}%` },
+  ];
+  const rows = report.data?.months ?? [];
+  return (
+    <DataTable
+      label="Monthly fee summary"
+      columns={cols}
+      data={report.data ? rows : undefined}
+      error={report.error}
+      onRetry={report.reload}
+      getRowId={(r) => r.period}
+      toolbarActions={<Download_ name="monthly-fee-summary.csv" header={["Month", "Vouchers", "Billed", "Collected", "Still owed", "Carried forward", "Collected %"]} rows={rows.map((r) => [r.period, r.vouchers, r.billed, r.collected, r.outstanding, r.carried, r.collectedPct])} />}
+      empty={{ title: "No vouchers in the last twelve months" }}
+    />
   );
 }
 

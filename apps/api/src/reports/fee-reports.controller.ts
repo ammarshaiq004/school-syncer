@@ -13,7 +13,7 @@ import { familyTotals, fullName, loadFamilies } from '../fees/families.js';
 import { allocate } from '../fees/installments.js';
 import { OPEN_INVOICE } from '../fees/outstanding.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { discountKind, isAdvance, multiMonth, pct } from './fee-analysis.js';
+import { discountKind, isAdvance, monthlyFeeSummary, multiMonth, pct } from './fee-analysis.js';
 
 const ROW_LIMIT = 500;
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
@@ -114,6 +114,23 @@ export class FeeReportsController {
       })),
       truncated: early.length > ROW_LIMIT,
     };
+  }
+
+  /** Billed, collected and still owed for each month's vouchers (the last twelve months unless a range is given). */
+  @Get('monthly')
+  async monthly(
+    @CurrentUser() user: AuthUser,
+    @Query('from', new ZodValidationPipe(month.optional())) from?: string,
+    @Query('to', new ZodValidationPipe(month.optional())) to?: string,
+  ) {
+    const last = to ?? localToday().slice(0, 7);
+    const [y, m] = last.split('-').map(Number);
+    const first = from ?? new Date(Date.UTC(y, m - 12, 1)).toISOString().slice(0, 7);
+    const invoices = await this.prisma.invoice.findMany({
+      where: { schoolId: user.schoolId, kind: InvoiceKind.MONTHLY, period: { gte: first, lte: last }, ...this.money(user).invoices },
+      select: { period: true, status: true, total: true, paid: true, arrears: true },
+    });
+    return { from: first, to: last, months: monthlyFeeSummary(invoices) };
   }
 
   /** Students who owe several months at once. */
