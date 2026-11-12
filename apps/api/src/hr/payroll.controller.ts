@@ -20,9 +20,15 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { staffWhere } from './staff-where.js';
 import { calculatePayslip, daysBetween, workingDays, type PayItem } from './payroll-calculator.js';
 import { DEFAULT_RULES, isLate } from './payroll-rules.js';
+import { securityHeld } from './security-fee.js';
 
 const period = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use YYYY-MM');
 const runSchema = z.object({ period });
+const refundSchema = z.object({
+  amount: z.number().int().min(1).max(10_000_000),
+  note: z.string().trim().max(200).optional(),
+  on: z.iso.date().optional(),
+});
 const paySchema = z.object({ method: z.enum(['CASH', 'BANK', 'CHEQUE']).default('BANK') });
 
 const slipInclude = {
@@ -214,8 +220,67 @@ export class PayrollController {
       if (!run) throw new NotFoundException('Payroll not found');
       throw new ConflictException('Already finalised');
     }
+    await this.holdSecurity(user.schoolId, id, user.sub);
     await this.audit.record(user, 'finalize', 'PayrollRun', id);
     return this.run(user, id);
+  }
+
+  /** Each finalised payslip adds what it held back as security to the employee's balance (once per payslip). */
+  private async holdSecurity(schoolId: string, runId: string, byId: string) {
+    const run = await this.prisma.payrollRun.findUniqueOrThrow({ where: { id: runId }, include: { payslips: true } });
+    const items = await this.prisma.staffPayItem.findMany({
+      where: { isSecurity: true, type: 'DEDUCTION', profile: { schoolId } },
+      select: { name: true, profile: { select: { userId: true } } },
+    });
+    const data = run.payslips.flatMap((p) => {
+      const names = items.filter((i) => i.profile.userId === p.userId).map((i) => i.name);
+      const amount = securityHeld(p.lines as unknown as PayItem[], names);
+      return amount > 0
+        ? [{ schoolId, userId: p.userId, amount, payslipId: p.id, note: `Held in ${run.period} salary`, effectiveOn: dayStart(`${run.period}-01`), createdById: byId }]
+        : [];
+    });
+    if (data.length) await this.prisma.staffSecurityEntry.createMany({ data, skipDuplicates: true });
+  }
+
+  /** Security money held per employee; refunds are negative entries. */
+  @Get('security')
+  @Roles(...FEE_ROLES)
+  async security(@CurrentUser() user: AuthUser) {
+    const scope = payrollScope(user);
+    const staff = await this.prisma.user.findMany({
+      where: { ...staffWhere(user.schoolId, scope), securityEntries: { some: {} } },
+      select: {
+        id: true,
+        name: true,
+        staffProfile: { select: { employeeNo: true } },
+        securityEntries: { orderBy: { effectiveOn: 'desc' }, take: 20, select: { id: true, amount: true, note: true, effectiveOn: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+    const sums = await this.prisma.staffSecurityEntry.groupBy({ by: ['userId'], where: { schoolId: user.schoolId }, _sum: { amount: true } });
+    return staff.map((u) => ({ ...u, balance: sums.find((s) => s.userId === u.id)?._sum.amount ?? 0 }));
+  }
+
+  @Post('security/:userId/refund')
+  @Roles(...FEE_ROLES)
+  async refundSecurity(
+    @CurrentUser() user: AuthUser,
+    @Param('userId') userId: string,
+    @Body(new ZodValidationPipe(refundSchema)) body: z.infer<typeof refundSchema>,
+  ) {
+    assertSchoolWide(user, WHOLE_SCHOOL, FEE_ROLES);
+    const [owner, sum] = await Promise.all([
+      this.prisma.user.findFirst({ where: { id: userId, schoolId: user.schoolId }, select: { id: true } }),
+      this.prisma.staffSecurityEntry.aggregate({ where: { schoolId: user.schoolId, userId }, _sum: { amount: true } }),
+    ]);
+    if (!owner) throw new NotFoundException('Staff member not found');
+    const balance = sum._sum.amount ?? 0;
+    if (body.amount > balance) throw new ConflictException(`Only Rs ${balance} is held for this employee`);
+    const entry = await this.prisma.staffSecurityEntry.create({
+      data: { schoolId: user.schoolId, userId, amount: -body.amount, note: body.note ?? 'Security refunded', effectiveOn: dayStart(body.on ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })), createdById: user.sub },
+    });
+    await this.audit.record(user, 'security_refund', 'User', userId, { after: { amount: body.amount } });
+    return { ...entry, balance: balance - body.amount };
   }
 
   @Post('payroll/:id/payslips/:payslipId/pay')

@@ -54,7 +54,7 @@ const profileSchema = z.object({
   bankAccount: z.string().trim().max(40).optional(),
   status: z.enum(StaffStatus).default(StaffStatus.ACTIVE),
   payItems: z
-    .array(z.object({ name: z.string().trim().min(2).max(60), type: z.enum(PayItemType), amount: rupees }))
+    .array(z.object({ name: z.string().trim().min(2).max(60), type: z.enum(PayItemType), amount: rupees, isSecurity: z.boolean().default(false) }))
     .default([]),
 });
 const attendanceSchema = z.object({

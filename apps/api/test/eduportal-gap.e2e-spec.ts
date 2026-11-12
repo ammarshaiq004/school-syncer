@@ -295,4 +295,19 @@ describe('EduPortal gap closure (e2e)', () => {
     expect(notes[0]).toMatchObject({ id: note.id, body: 'Father asked for a fee extension', by: 'Owner' });
     await request(server).delete(`/api/students/${sara}/notes/${note.id}`).set(owner).expect(200);
   });
+  it('holds a security fee from salary and tracks the balance until it is refunded', async () => {
+    const staff = (await request(server).post('/api/users').set(owner).send({ name: 'Security Teacher', phone: phone(5), password: 'password123', roles: [{ role: 'TEACHER' }] }).expect(201)).body;
+    await request(server)
+      .put(`/api/hr/staff/${staff.id}`)
+      .set(owner)
+      .send({ designation: 'Teacher', joinedOn: '2022-04-01', basicSalary: 30000, payItems: [{ name: 'Security fee', type: 'DEDUCTION', amount: 1000, isSecurity: true }] })
+      .expect(200);
+    const draft = (await request(server).post('/api/hr/payroll').set(owner).send({ period: '2026-08' }).expect(201)).body;
+    await request(server).post(`/api/hr/payroll/${draft.id}/finalize`).set(owner).expect(201);
+    const held = (await request(server).get('/api/hr/security').set(owner).expect(200)).body;
+    expect(held.find((h: { id: string }) => h.id === staff.id).balance).toBe(1000);
+    await request(server).post(`/api/hr/security/${staff.id}/refund`).set(owner).send({ amount: 5000 }).expect(409);
+    const refund = await request(server).post(`/api/hr/security/${staff.id}/refund`).set(owner).send({ amount: 400, note: 'Part refund' }).expect(201);
+    expect(refund.body.balance).toBe(600);
+  });
 });
