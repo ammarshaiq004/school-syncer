@@ -61,6 +61,7 @@ export default function config(phase: string): NextConfig {
   ];
   return {
     poweredByHeader: false,
+    experimental: { agentUpgrade: "security" },
     async headers() {
       return [
         // Nothing may frame the portal, except its own website editor framing the live preview.
