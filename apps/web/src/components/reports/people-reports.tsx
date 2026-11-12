@@ -1,16 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Cake, Download } from "lucide-react";
-import { Button, DataTable, SelectField, type Column } from "@/components/ui";
+import { Cake, Download, Printer } from "lucide-react";
+import { Button, Card, Checkbox, DataTable, SelectField, SkeletonRows, type Column } from "@/components/ui";
 import { downloadCsv } from "@/lib/csv";
-import { todayIso } from "@/lib/format";
+import { day, rupees, todayIso } from "@/lib/format";
 import { useApi } from "@/lib/use-api";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-type Report = "birthdays";
-const REPORTS: { value: Report; label: string }[] = [{ value: "birthdays", label: "Birthdays" }];
+type Report = "birthdays" | "staff";
+const REPORTS: { value: Report; label: string }[] = [
+  { value: "birthdays", label: "Birthdays" },
+  { value: "staff", label: "Staff register (choose columns)" },
+];
 
 /** Lists of people for the school office. */
 export function PeopleReports() {
@@ -19,6 +22,7 @@ export function PeopleReports() {
     <div className="flex flex-col gap-4">
       <SelectField label="Report" value={report} onChange={(e) => setReport(e.target.value as Report)} options={REPORTS} wrapperClassName="w-full sm:w-64 print:hidden" />
       {report === "birthdays" && <Birthdays />}
+      {report === "staff" && <StaffRegister />}
     </div>
   );
 }
@@ -56,5 +60,80 @@ function Birthdays() {
       }
       empty={{ icon: <Cake />, title: "No birthdays this month", description: "Staff birthdays need a date of birth on their HR record." }}
     />
+  );
+}
+
+interface StaffMember {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  isActive: boolean;
+  roles: { role: string }[];
+  staffProfile: {
+    employeeNo: string;
+    designation: string;
+    department: string | null;
+    joinedOn: string | null;
+    dateOfBirth: string | null;
+    cnic: string | null;
+    basicSalary: number;
+    bankName: string | null;
+    bankAccount: string | null;
+    status: string;
+  } | null;
+}
+
+const date = (d: string | null | undefined) => (d ? day(d) : "");
+const STAFF_COLUMNS: { id: string; label: string; get: (m: StaffMember) => string; on?: boolean }[] = [
+  { id: "no", label: "Employee no.", get: (m) => m.staffProfile?.employeeNo ?? "", on: true },
+  { id: "name", label: "Name", get: (m) => m.name, on: true },
+  { id: "post", label: "Designation", get: (m) => m.staffProfile?.designation ?? "", on: true },
+  { id: "dept", label: "Department", get: (m) => m.staffProfile?.department ?? "" },
+  { id: "phone", label: "Phone", get: (m) => m.phone ?? "", on: true },
+  { id: "email", label: "Email", get: (m) => m.email ?? "" },
+  { id: "cnic", label: "CNIC", get: (m) => m.staffProfile?.cnic ?? "" },
+  { id: "dob", label: "Date of birth", get: (m) => date(m.staffProfile?.dateOfBirth) },
+  { id: "joined", label: "Joined", get: (m) => date(m.staffProfile?.joinedOn) },
+  { id: "salary", label: "Basic salary", get: (m) => (m.staffProfile ? rupees(m.staffProfile.basicSalary) : "") },
+  { id: "bank", label: "Bank", get: (m) => m.staffProfile?.bankName ?? "" },
+  { id: "account", label: "Account no.", get: (m) => m.staffProfile?.bankAccount ?? "" },
+  { id: "status", label: "Status", get: (m) => (m.staffProfile?.status === "LEFT" ? "Left" : m.isActive ? "Active" : "Inactive") },
+];
+
+/** The staff list with only the columns you tick, for printing or Excel. */
+function StaffRegister() {
+  const [picked, setPicked] = useState(() => new Set(STAFF_COLUMNS.filter((c) => c.on).map((c) => c.id)));
+  const staff = useApi<StaffMember[]>("/hr/staff");
+  const cols = STAFF_COLUMNS.filter((c) => picked.has(c.id));
+  const rows = (staff.data ?? []).filter((m) => m.staffProfile);
+  return (
+    <div className="flex flex-col gap-4">
+      <Card padding="sm" className="print:hidden">
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {STAFF_COLUMNS.map((c) => (
+            <Checkbox key={c.id} label={c.label} checked={picked.has(c.id)} onCheckedChange={(on) => setPicked((p) => { const n = new Set(p); if (on) n.add(c.id); else n.delete(c.id); return n; })} />
+          ))}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <Button variant="secondary" size="sm" icon={<Download />} disabled={!rows.length || !cols.length} onClick={() => downloadCsv("staff-register.csv", cols.map((c) => c.label), rows.map((m) => cols.map((c) => c.get(m))))}>
+            Download
+          </Button>
+          <Button variant="secondary" size="sm" icon={<Printer />} onClick={() => window.print()}>Print</Button>
+        </div>
+      </Card>
+      {staff.error ? (
+        <p className="text-sm text-danger">{staff.error}</p>
+      ) : !staff.data ? (
+        <SkeletonRows rows={5} columns={4} />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm" aria-label="Staff register">
+            <thead><tr>{cols.map((c) => <th key={c.id} className="border border-border px-2 py-1 text-left">{c.label}</th>)}</tr></thead>
+            <tbody>{rows.map((m) => <tr key={m.id}>{cols.map((c) => <td key={c.id} className="border border-border px-2 py-1">{c.get(m)}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

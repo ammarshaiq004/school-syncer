@@ -39,6 +39,7 @@ import {
   type Column,
 } from "@/components/ui";
 import { AdmissionsReport } from "@/components/reports/admissions-report";
+import { PayrollHistory } from "@/components/reports/payroll-history";
 import { PeopleReports } from "@/components/reports/people-reports";
 import { FeeAnalysis } from "@/components/reports/fee-analysis";
 import { ClosingReport, ProfitLoss } from "@/components/reports/finance-reports";
@@ -49,7 +50,7 @@ import { day, rupees, thisMonth, todayIso } from "@/lib/format";
 import { FEES, hasRole, SETUP, useSession } from "@/lib/session";
 import { useApi } from "@/lib/use-api";
 
-type Tab = "income" | "collection" | "outstanding" | "fees" | "closing" | "pnl" | "insights" | "attendance" | "admissions" | "people";
+type Tab = "income" | "collection" | "outstanding" | "fees" | "closing" | "pnl" | "insights" | "attendance" | "admissions" | "people" | "payroll";
 type Range = { from: string; to: string };
 
 const TAB_META: Record<Tab, { label: string; icon: ReactNode }> = {
@@ -63,6 +64,7 @@ const TAB_META: Record<Tab, { label: string; icon: ReactNode }> = {
   attendance: { label: "Attendance", icon: <CalendarCheck /> },
   admissions: { label: "Admissions and withdrawals", icon: <UserPlus /> },
   people: { label: "People lists", icon: <Users /> },
+  payroll: { label: "Payroll history", icon: <Banknote /> },
 };
 
 /** Top slices for a donut, with the rest folded into "Other". */
@@ -77,7 +79,7 @@ export default function ReportsPage() {
   const user = useSession();
   const school = useApi<{ name: string }>("/school");
   const tabs: Tab[] = [
-    ...(hasRole(user, FEES) ? (["income", "collection", "outstanding", "fees", "closing", "pnl"] as const) : []),
+    ...(hasRole(user, FEES) ? (["income", "collection", "outstanding", "fees", "closing", "pnl", "payroll"] as const) : []),
     ...(hasRole(user, SETUP) ? (["insights", "attendance", "admissions", "people"] as const) : []),
   ];
   const [tab, setTab] = useState<Tab>(tabs[0]);
@@ -150,6 +152,9 @@ export default function ReportsPage() {
           </TabPanel>
           <TabPanel value="admissions">
             <AdmissionsReport />
+          </TabPanel>
+          <TabPanel value="payroll">
+            <PayrollHistory />
           </TabPanel>
           <TabPanel value="people">
             <PeopleReports />
