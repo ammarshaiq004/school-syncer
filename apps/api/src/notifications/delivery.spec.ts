@@ -112,3 +112,24 @@ describe('masking and backoff', () => {
     expect(backoffMs(30)).toBe(6 * 60 * 60_000);
   });
 });
+
+describe('chooseSender with a number linked by QR', () => {
+  const evolution = { EVOLUTION_API_URL: 'http://evolution:8080', EVOLUTION_API_KEY: 'k' };
+  const linked = { enabled: false, phoneNumberId: '', token: '', linked: true };
+
+  it('sends from the linked number as plain text, ahead of the platform number', () => {
+    const sender = chooseSender({ ...platformWhatsApp, ...evolution }, linked, 'school1');
+    expect(sender.source).toBe('school');
+    expect(sender.driver.kind).toBe('whatsapp');
+    expect(sender.driver).toMatchObject({ instance: 'ss-school1', linked: true });
+  });
+
+  it('keeps the school’s Cloud API number first when it has both', () => {
+    expect(chooseSender(evolution, { ...own, linked: true }, 'school1').driver).toBeInstanceOf(WhatsAppDriver);
+  });
+
+  it('is not used without Evolution on the server, or when the school is not linked', () => {
+    expect(chooseSender({}, linked, 'school1').source).toBe('log');
+    expect(chooseSender(evolution, { ...linked, linked: false }, 'school1').source).toBe('log');
+  });
+});

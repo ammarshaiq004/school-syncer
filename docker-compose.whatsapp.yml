@@ -1,0 +1,61 @@
+# WhatsApp by QR link: the Evolution API that lets each school link its own WhatsApp number (README: "WhatsApp by
+# QR link"). Ported from ShopSyncer. Private: no published port; only the SchoolSyncer API calls it, with
+# EVOLUTION_API_KEY (generate one: openssl rand -hex 32), at EVOLUTION_API_URL=http://evolution:8080.
+# Join the API's network, or change `networks` below to the one your API container uses. Linked sessions live in the
+# small database here (a lost session only means the school scans the QR again). Message texts are not stored.
+#   EVOLUTION_API_KEY=... docker compose -f docker-compose.whatsapp.yml up -d
+services:
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: schoolsyncer-whatsapp
+    environment:
+      - SERVER_URL=http://evolution:8080
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY:?set EVOLUTION_API_KEY}
+      - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=false
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:${EVOLUTION_API_KEY}@evolution-db:5432/evolution?schema=public
+      - DATABASE_CONNECTION_CLIENT_NAME=schoolsyncer
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=false
+      - DATABASE_SAVE_MESSAGE_UPDATE=false
+      - DATABASE_SAVE_DATA_CONTACTS=false
+      - DATABASE_SAVE_DATA_CHATS=false
+      - DATABASE_SAVE_DATA_LABELS=false
+      - DATABASE_SAVE_DATA_HISTORIC=false
+      - CACHE_REDIS_ENABLED=false
+      - CACHE_LOCAL_ENABLED=true
+      - CONFIG_SESSION_PHONE_CLIENT=SchoolSyncer
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+      - DEL_INSTANCE=false
+      - TELEMETRY_ENABLED=false
+      - LOG_LEVEL=ERROR,WARN
+    volumes:
+      - whatsapp_instances:/evolution/instances
+    networks:
+      - schoolsyncer-network
+    depends_on:
+      - evolution-db
+    mem_limit: 768m
+    restart: unless-stopped
+
+  evolution-db:
+    image: postgres:16-alpine
+    container_name: schoolsyncer-whatsapp-db
+    environment:
+      - POSTGRES_DB=evolution
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=${EVOLUTION_API_KEY:?set EVOLUTION_API_KEY}
+    volumes:
+      - whatsapp_db:/var/lib/postgresql/data
+    networks:
+      - schoolsyncer-network
+    mem_limit: 256m
+    restart: unless-stopped
+
+networks:
+  schoolsyncer-network:
+    name: schoolsyncer-network
+
+volumes:
+  whatsapp_instances:
+  whatsapp_db:

@@ -103,3 +103,12 @@ describe('effectiveFeatures', () => {
     expect(effectiveFeatures(['library', 'fees'])).toEqual(['fees', 'library']);
   });
 });
+
+describe('whatsapp_link', () => {
+  it('is in no default plan: the console switches it on school by school', () => {
+    for (const plan of DEFAULT_PLANS) expect(plan.features).not.toContain('whatsapp_link');
+  });
+  it('is a module the console can add to a school', () => {
+    expect(effectiveFeatures(['fees'], ['whatsapp_link'])).toContain('whatsapp_link');
+  });
+});

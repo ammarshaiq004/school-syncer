@@ -20,9 +20,15 @@ export const FEATURES = {
   certificates: 'Certificates and ID cards',
   elearning: 'E-school: courses, live classes, assignments and quizzes',
   ai_assistant: 'AI assistant: questions, drafts and at-risk students',
+  whatsapp_link:
+    'WhatsApp by QR link: send from the school\'s own number (unofficial, off until the console switches it on)',
 } as const;
 
 export type Feature = keyof typeof FEATURES;
+
+/** Not in any plan by default: WhatsApp can ban a linked number, so the console adds it school by school. */
+const OFF_BY_DEFAULT: Feature[] = ['whatsapp_link'];
+const allFeatures = () => (Object.keys(FEATURES) as Feature[]).filter((f) => !OFF_BY_DEFAULT.includes(f));
 
 export const isFeature = (value: string): value is Feature => value in FEATURES;
 
@@ -58,7 +64,7 @@ export const DEFAULT_PLANS = [
     maxStudents: 1500,
     maxCampuses: 3,
     maxStorageMb: 25600,
-    features: Object.keys(FEATURES) as Feature[],
+    features: allFeatures(),
     sortOrder: 2,
   },
   {
@@ -71,7 +77,7 @@ export const DEFAULT_PLANS = [
     maxStudents: null,
     maxCampuses: null,
     maxStorageMb: 102400,
-    features: Object.keys(FEATURES) as Feature[],
+    features: allFeatures(),
     sortOrder: 3,
   },
 ];
