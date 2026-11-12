@@ -68,6 +68,8 @@ model School {
   siblingSecondPercent Int            @default(0)
   siblingThirdPercent  Int            @default(0)
   siblingFeeHeadIds    String[]       @default([])
+  /// Reasons offered when a student leaves, graduates or is suspended (Setup > Students).
+  leavingReasons       String[]       @default(["Fee Defaulter", "Migration", "Misbehaviour", "Regular Absents", "Duplicate Entry", "Wrong Entry", "Course Completed", "Other"])
   /// A one-time fee head billed on its own voucher when a student is admitted,
   /// at the amount the fee setup gives the student's class. Null = none.
   admissionFeeHeadId   String?
@@ -495,6 +497,11 @@ model Student {
   admittedOn   DateTime      @default(now()) @db.Date
   /// The day the student left (status LEFT); null while enrolled or graduated. Feeds the admissions and withdrawals report.
   leftOn       DateTime?     @db.Date
+  /// Why the student left, graduated or was suspended (one of the school's leavingReasons), with optional remarks.
+  leavingReason  String?
+  leavingRemarks String?
+  /// What the student owed (net of advance credit) the day they left; negative when the family was ahead.
+  leavingBalance Int?
   /// The student's own sign-in (a User with the STUDENT role), if one was created.
   userId       String?       @unique
   createdAt    DateTime      @default(now())

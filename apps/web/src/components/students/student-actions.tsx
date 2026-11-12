@@ -22,7 +22,7 @@ import {
   useToast,
 } from "@/components/ui";
 import { api } from "@/lib/api";
-import { fullName } from "@/lib/format";
+import { fullName, todayIso } from "@/lib/format";
 import { formatCnic } from "@/lib/identity";
 import { useApi } from "@/lib/use-api";
 import { STATUS_OPTIONS, type StudentProfile } from "./directory-types";
@@ -136,10 +136,14 @@ const EDIT_FORM_ID = "edit-student-form";
 function EditStudentDrawer({ id, name, onClose, onSaved }: { id: string | null; name: string; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const profile = useApi<StudentProfile>(id ? `/students/${id}` : null);
+  const reasons = useApi<string[]>(id ? "/students/leaving-reasons" : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [statusDraft, setStatusDraft] = useState<string | null>(null);
   // useApi keeps the last student while the next one loads; only show the form for this one.
   const s = profile.data?.id === id ? profile.data : null;
+  const status = statusDraft ?? s?.status ?? "ACTIVE";
+  const leaves = status !== "ACTIVE";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -159,7 +163,15 @@ function EditStudentDrawer({ id, name, onClose, onSaved }: { id: string | null; 
           address: text("address") || undefined,
           localityId: text("localityId") || null,
           medicalNotes: text("medicalNotes") || undefined,
+          admittedOn: text("admittedOn") || undefined,
           status: text("status"),
+          ...(leaves
+            ? {
+                leavingReason: text("leavingReason") || undefined,
+                leavingRemarks: text("leavingRemarks") || undefined,
+                ...(status === "LEFT" ? { leftOn: text("leftOn") || undefined } : {}),
+              }
+            : {}),
         },
       });
       setError("");
@@ -179,6 +191,7 @@ function EditStudentDrawer({ id, name, onClose, onSaved }: { id: string | null; 
       onOpenChange={(o) => {
         if (!o) {
           setError("");
+          setStatusDraft(null);
           onClose();
         }
       }}
@@ -208,11 +221,29 @@ function EditStudentDrawer({ id, name, onClose, onSaved }: { id: string | null; 
             label="Gender"
             name="gender"
             defaultValue={s.gender}
-            options={[{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }, { value: "OTHER", label: "Other" }]}
+            options={[{ value: "MALE", label: "Male" }, { value: "FEMALE", label: "Female" }, { value: "OTHER", label: "Other" }, { value: "UNSPECIFIED", label: "Not specified" }]}
           />
           <Field label="Date of birth" name="dateOfBirth" type="date" defaultValue={s.dateOfBirth?.slice(0, 10) ?? ""} />
           <Field label="B-Form number" name="bFormNo" defaultValue={formatCnic(s.bFormNo)} />
-          <Select label="Status" name="status" defaultValue={s.status} options={STATUS_OPTIONS} />
+          <Field label="Admission date" name="admittedOn" type="date" max={todayIso()} defaultValue={s.admittedOn?.slice(0, 10) ?? ""} />
+          <Select label="Status" name="status" value={status} onChange={(e) => setStatusDraft(e.target.value)} options={STATUS_OPTIONS} />
+          {leaves && (
+            <>
+              <Select
+                label="Reason"
+                name="leavingReason"
+                required
+                defaultValue={s.leavingReason ?? ""}
+                options={[{ value: "", label: "Choose a reason" }, ...(reasons.data ?? []).map((r) => ({ value: r, label: r }))]}
+              />
+              {status === "LEFT" && (
+                <Field label="Leaving date" name="leftOn" type="date" max={todayIso()} min={s.admittedOn?.slice(0, 10)} defaultValue={s.leftOn?.slice(0, 10) ?? todayIso()} />
+              )}
+              <div className="sm:col-span-full">
+                <Field label="Remarks (optional)" name="leavingRemarks" defaultValue={s.leavingRemarks ?? ""} />
+              </div>
+            </>
+          )}
           <div className="sm:col-span-full">
             <Field label="Address" name="address" defaultValue={s.address ?? ""} />
           </div>

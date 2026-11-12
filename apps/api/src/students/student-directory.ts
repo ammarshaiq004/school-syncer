@@ -26,6 +26,8 @@ export const directoryQuerySchema = z.object({
   sectionId: multi<string>(null),
   /** Empty means current (ACTIVE) students only. */
   status: multi(Object.values(StudentStatus) as [StudentStatus, ...StudentStatus[]]),
+  /** Only students who left for these reasons (a school's leaving reasons). */
+  leavingReason: multi<string>(null),
   feeStatus: multi(FEE_STATUSES),
   sort: z.enum(['name', 'admissionNo', 'attendance', 'class']).default('name'),
   dir: z.enum(['asc', 'desc']).default('asc'),
@@ -74,6 +76,9 @@ interface DirectoryRow {
   sectionName: string | null;
   attendanceRate: number | null;
   balance: number;
+  credit: number;
+  leavingReason: string | null;
+  leftOn: string | null;
   feeStatus: FeeStatus;
   total: number;
 }
@@ -134,6 +139,7 @@ export async function studentDirectory(
   const statuses = q.status.length ? q.status : [StudentStatus.ACTIVE];
 
   const filters: Prisma.Sql[] = [Prisma.sql`b.status::text IN (${Prisma.join(statuses)})`];
+  if (q.leavingReason.length) filters.push(Prisma.sql`b."leavingReason" IN (${Prisma.join(q.leavingReason)})`);
   if (q.classId.length) filters.push(Prisma.sql`b."classId" IN (${Prisma.join(q.classId)})`);
   if (q.sectionId.length) filters.push(Prisma.sql`b."sectionId" IN (${Prisma.join(q.sectionId)})`);
   if (q.feeStatus.length) filters.push(Prisma.sql`b."feeStatus" IN (${Prisma.join(q.feeStatus)})`);
@@ -172,11 +178,15 @@ export async function studentDirectory(
       WHERE i."schoolId" = ${schoolId} AND i.status IN ('UNPAID', 'PARTIAL')
       GROUP BY i."studentId"
     ),
+    cred AS (
+      SELECT c."studentId", sum(c.amount) AS credit FROM "StudentCredit" c WHERE c."schoolId" = ${schoolId} GROUP BY c."studentId"
+    ),
     b AS (
       SELECT st.id, st."admissionNo", st."firstName", st."lastName", st."photoUrl", st.status,
+        st."leavingReason", st."leftOn"::text AS "leftOn", coalesce(cred.credit, 0)::int AS credit,
         en."classId", en."className", en."classSort", en."sectionId", en."sectionName",
         CASE WHEN att.marked > 0 THEN round(att.attended * 100.0 / att.marked, 1)::float8 END AS "attendanceRate",
-        coalesce(fee.balance, 0)::int AS balance,
+        (coalesce(fee.balance, 0) - coalesce(cred.credit, 0))::int AS balance,
         CASE WHEN fee.overdue THEN 'OVERDUE' WHEN fee."studentId" IS NOT NULL THEN 'PENDING' ELSE 'PAID' END AS "feeStatus"
       FROM "Student" st
       LEFT JOIN LATERAL (
@@ -191,6 +201,7 @@ export async function studentDirectory(
       ) en ON true
       LEFT JOIN att ON att."studentId" = st.id
       LEFT JOIN fee ON fee."studentId" = st.id
+      LEFT JOIN cred ON cred."studentId" = st.id
       WHERE st."schoolId" = ${schoolId}
         ${campuses ? Prisma.sql`AND st."campusId" IN (${campuses.length ? Prisma.join(campuses) : Prisma.sql`NULL`})` : Prisma.empty}
     )
@@ -236,7 +247,10 @@ export async function studentDirectory(
       guardian: guardianOf.get(r.id) ?? null,
       feeStatus: access.fees ? r.feeStatus : null,
       balance: access.fees ? r.balance : null,
+      credit: access.fees ? r.credit : null,
       status: r.status,
+      leavingReason: r.leavingReason,
+      leftOn: r.leftOn,
     })),
     total,
     page: q.page,

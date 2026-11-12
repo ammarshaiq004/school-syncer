@@ -176,7 +176,7 @@ describe('Admissions report and occupation list (e2e)', () => {
     for (const [i, firstName] of ['Ali', 'Sara'].entries()) {
       ids.push((await request(server).post('/api/students').set(owner).send({ sectionId, firstName, gender: 'MALE', guardians: [{ name: 'Parent', phone: `034${run.slice(-7)}${i}`, relation: 'Father' }] }).expect(201)).body.id);
     }
-    await request(server).patch(`/api/students/${ids[1]}`).set(owner).send({ status: 'LEFT' }).expect(200);
+    await request(server).patch(`/api/students/${ids[1]}`).set(owner).send({ status: 'LEFT', leavingReason: 'Other' }).expect(200);
     expect((await prisma.student.findUniqueOrThrow({ where: { id: ids[1] } })).leftOn?.toISOString().slice(0, 10)).toBe(today);
 
     const report = await request(server).get(`/api/reports/admissions-withdrawals?from=${today.slice(0, 4)}-01-01&to=${today}`).set(owner).expect(200);

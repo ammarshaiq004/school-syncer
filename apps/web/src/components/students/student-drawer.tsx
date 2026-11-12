@@ -205,6 +205,9 @@ function BioTab({ profile: s }: { profile: StudentProfile }) {
           items={[
             { label: "Admission no.", value: <span className="font-mono">{s.admissionNo}</span> },
             { label: "Admitted", value: day(s.admittedOn) },
+            ...(s.status !== "ACTIVE" && (s.leavingReason || s.leftOn)
+              ? [{ label: s.status === "LEFT" ? "Left" : s.status === "GRADUATED" ? "Graduated" : "Suspended", value: [s.leftOn ? day(s.leftOn) : null, s.leavingReason, s.leavingBalance != null ? `owed ${rupees(s.leavingBalance)} then` : null].filter(Boolean).join(" · ") }]
+              : []),
             { label: "Class", value: current ? `${current.section.class.name} ${current.section.name}` : "Not enrolled" },
             { label: "Roll no.", value: current?.rollNo != null ? <span className="tabular-nums">{current.rollNo}</span> : "Not set" },
             { label: "Academic year", value: current?.academicYear.name ?? "None" },

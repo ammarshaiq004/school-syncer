@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { downloadCsv } from "@/lib/csv";
 import { rupees, todayIso } from "@/lib/format";
+import { useApi } from "@/lib/use-api";
 import { useSectionOptions } from "@/lib/sections";
 import { AddStudentDrawer } from "./add-student-drawer";
 import {
@@ -44,6 +45,7 @@ interface DirectoryQuery {
   sectionId: string[];
   status: string[];
   feeStatus: string[];
+  leavingReason: string[];
   sort: SortKey;
   dir: "asc" | "desc";
 }
@@ -63,6 +65,7 @@ function readQuery(sp: URLSearchParams): DirectoryQuery {
     sectionId: list(sp.get("sectionId")),
     status: list(sp.get("status")),
     feeStatus: list(sp.get("feeStatus")),
+    leavingReason: list(sp.get("leavingReason")),
     sort: SORTS.includes(sort) ? sort : "name",
     dir: sp.get("dir") === "desc" ? "desc" : "asc",
   };
@@ -76,6 +79,7 @@ function writeQuery(q: DirectoryQuery) {
   if (q.sectionId.length) p.set("sectionId", q.sectionId.join(","));
   if (q.status.length) p.set("status", q.status.join(","));
   if (q.feeStatus.length) p.set("feeStatus", q.feeStatus.join(","));
+  if (q.leavingReason.length) p.set("leavingReason", q.leavingReason.join(","));
   if (q.sort !== "name") p.set("sort", q.sort);
   if (q.dir !== "asc") p.set("dir", q.dir);
   if (q.page > 1) p.set("page", String(q.page));
@@ -119,6 +123,7 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
   const query = useMemo(() => readQuery(new URLSearchParams(qs)), [qs]);
   const sections = useSectionOptions();
   const recordPayment = useRecordPayment();
+  const leavingReasons = useApi<string[]>("/students/leaving-reasons");
   const toast = useToast();
 
   const [searchText, setSearchText] = useState(query.search);
@@ -224,7 +229,7 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
   const sectionOptions = sections.options
     .filter((o) => query.classId.length === 0 || query.classId.includes(o.classId))
     .map((o) => ({ value: o.value, label: o.label }));
-  const filtered = query.classId.length + query.sectionId.length + query.status.length + query.feeStatus.length > 0;
+  const filtered = query.classId.length + query.sectionId.length + query.status.length + query.feeStatus.length + query.leavingReason.length > 0;
 
   const columns: Column<DirectoryRow>[] = [
     {
@@ -401,13 +406,19 @@ export function StudentDirectory({ perms }: { perms: DirectoryPermissions }) {
             />
             <MultiSelectFilter label="Section" options={sectionOptions} value={query.sectionId} onChange={(v) => update({ sectionId: v })} />
             <MultiSelectFilter label="Status" options={STATUS_OPTIONS} value={query.status} onChange={(v) => update({ status: v })} />
+            <MultiSelectFilter
+              label="Reason left"
+              options={(leavingReasons.data ?? []).map((r) => ({ value: r, label: r }))}
+              value={query.leavingReason}
+              onChange={(v) => update({ leavingReason: v })}
+            />
             <MultiSelectFilter label="Fee status" options={FEE_STATUS_OPTIONS} value={query.feeStatus} onChange={(v) => update({ feeStatus: v })} />
             {filtered && (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => update({ classId: [], sectionId: [], status: [], feeStatus: [] })}
+                onClick={() => update({ classId: [], sectionId: [], status: [], feeStatus: [], leavingReason: [] })}
               >
                 Clear filters
               </Button>

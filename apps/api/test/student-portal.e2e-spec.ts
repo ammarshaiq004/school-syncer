@@ -480,7 +480,7 @@ describe('Student portal (e2e)', () => {
       const username = (await prisma.user.findFirstOrThrow({ where: { studentProfile: { id: zaraId } } })).username!;
       const zara = await login(schoolSlug, username, 'zara-pass-1');
       await request(server).get('/api/student/me').set(zara).expect(200);
-      await request(server).patch(`/api/students/${zaraId}`).set(owner).send({ status: 'LEFT' }).expect(200);
+      await request(server).patch(`/api/students/${zaraId}`).set(owner).send({ status: 'LEFT', leavingReason: 'Other' }).expect(200);
       await request(server).get('/api/student/me').set(zara).expect(401);
       await login(schoolSlug, username, 'zara-pass-1', 401);
       // Even a login switched back on directly cannot see a former student's workspace.

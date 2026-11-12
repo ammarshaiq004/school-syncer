@@ -67,6 +67,10 @@ export interface StudentProfile {
   medicalNotes: string | null;
   status: StudentStatus;
   admittedOn: string;
+  leftOn?: string | null;
+  leavingReason?: string | null;
+  leavingRemarks?: string | null;
+  leavingBalance?: number | null;
   campus: { name: string };
   guardians: {
     relation: string;

@@ -593,7 +593,7 @@ describe('Attendance matrix and student directory (e2e)', () => {
       await request(server)
         .patch(`/api/students/${ids.bilal}`)
         .set(owner)
-        .send({ status: 'LEFT' })
+        .send({ status: 'LEFT', leavingReason: 'Other' })
         .expect(200);
       expect((await list('')).total).toBe(4);
       const left = await list('?status=LEFT');
