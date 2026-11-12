@@ -93,7 +93,8 @@ export type Feature =
   | "pos"
   | "certificates"
   | "elearning"
-  | "ai_assistant";
+  | "ai_assistant"
+  | "whatsapp_link";
 
 /** The school's SchoolSyncer plan, as /auth/me reports it. */
 export interface SchoolPlan {
