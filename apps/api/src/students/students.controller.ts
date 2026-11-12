@@ -27,7 +27,7 @@ import { AuditService } from '../common/audit.service.js';
 import { UserStatusService } from '../common/user-status.service.js';
 import { PermissionService } from '../common/permission.service.js';
 import type { AuthUser } from '../common/auth-user.js';
-import { dayStart, localToday } from '../common/dates.js';
+import { localToday } from '../common/dates.js';
 import { CurrentUser, Permission, Roles } from '../common/decorators.js';
 import { studentSearchWhere } from '../common/student-search.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
